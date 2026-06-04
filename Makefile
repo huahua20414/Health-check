@@ -4,7 +4,7 @@ up:
 	docker compose up -d --build
 
 seed:
-	docker compose exec backend /app/server seed
+	docker compose exec -T backend /app/server seed
 
 logs:
 	docker compose logs -f
