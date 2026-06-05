@@ -3,17 +3,12 @@
     <AppSidebar />
     <section class="main-shell">
       <AppTopbar />
-      <main class="workspace">
-        <section class="operator-strip">
+      <main class="workspace" :class="{ 'booking-workspace': route.name === 'booking' }">
+        <section v-if="route.name !== 'booking'" class="operator-strip">
           <div>
             <span class="muted">当前登录</span>
             <strong>{{ currentUser?.name || '-' }}</strong>
             <el-tag :type="isDoctor ? 'warning' : isAdmin ? 'danger' : 'success'">{{ roleLabel }}</el-tag>
-          </div>
-          <div>
-            <span class="muted">系统状态</span>
-            <strong>服务运行正常</strong>
-            <el-tag type="success">Docker 已启动</el-tag>
           </div>
         </section>
         <router-view />

@@ -10,7 +10,13 @@
       <el-form class="auth-form" label-position="top" @submit.prevent>
         <template v-if="!isDoctorRegister">
           <el-form-item label="姓名"><el-input v-model="userRegisterForm.name" /></el-form-item>
-          <el-form-item label="手机号"><el-input v-model="userRegisterForm.phone" /></el-form-item>
+          <el-form-item label="邮箱"><el-input v-model="userRegisterForm.email" /></el-form-item>
+          <el-form-item label="邮箱验证码">
+            <div class="inline-code">
+              <el-input v-model="userRegisterForm.code" maxlength="6" placeholder="6 位验证码" />
+              <el-button :loading="loading.authCode" :disabled="!userRegisterForm.email" @click="sendUserCode">发送验证码</el-button>
+            </div>
+          </el-form-item>
           <el-form-item label="性别">
             <el-select v-model="userRegisterForm.gender" placeholder="请选择">
               <el-option label="男" value="男" />
@@ -25,7 +31,13 @@
 
         <template v-else>
           <el-form-item label="姓名"><el-input v-model="doctorRegisterForm.name" /></el-form-item>
-          <el-form-item label="手机号"><el-input v-model="doctorRegisterForm.phone" /></el-form-item>
+          <el-form-item label="邮箱"><el-input v-model="doctorRegisterForm.email" /></el-form-item>
+          <el-form-item label="邮箱验证码">
+            <div class="inline-code">
+              <el-input v-model="doctorRegisterForm.code" maxlength="6" placeholder="6 位验证码" />
+              <el-button :loading="loading.authCode" :disabled="!doctorRegisterForm.email" @click="sendDoctorCode">发送验证码</el-button>
+            </div>
+          </el-form-item>
           <el-form-item label="工号"><el-input v-model="doctorRegisterForm.employeeNo" /></el-form-item>
           <el-form-item label="科室"><el-input v-model="doctorRegisterForm.department" /></el-form-item>
           <el-form-item label="职称"><el-input v-model="doctorRegisterForm.title" /></el-form-item>
@@ -45,11 +57,14 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useHealthData } from '../composables/useHealthData'
+import { useDebouncedFn } from '../composables/useDebouncedFn'
 
 const route = useRoute()
 const router = useRouter()
 const isDoctorRegister = computed(() => route.params.role === 'doctor')
-const { userRegisterForm, doctorRegisterForm, loading, registerUser, registerDoctor } = useHealthData()
+const { userRegisterForm, doctorRegisterForm, loading, registerUser, registerDoctor, sendAuthEmailCode } = useHealthData()
+const sendUserCode = useDebouncedFn(() => sendAuthEmailCode(userRegisterForm.email), 800)
+const sendDoctorCode = useDebouncedFn(() => sendAuthEmailCode(doctorRegisterForm.email), 800)
 
 async function submit() {
   try {

@@ -35,10 +35,8 @@
     </el-menu>
 
     <div class="sidebar-footer">
-      <p>演示账号</p>
-      <span>用户 13800000001 / 123456</span>
-      <span>医生 13900000001 / 123456</span>
-      <span>管理员 13700000001 / admin123</span>
+      <p>{{ currentUser?.name || '未登录' }}</p>
+      <span>{{ currentUser?.email || '' }}</span>
     </div>
   </aside>
 </template>

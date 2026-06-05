@@ -9,7 +9,7 @@
       </div>
       <el-table :data="doctorRows" stripe>
         <el-table-column prop="name" label="姓名" width="120" />
-        <el-table-column prop="phone" label="手机号" width="150" />
+        <el-table-column prop="email" label="邮箱" min-width="190" />
         <el-table-column prop="employeeNo" label="工号" width="120" />
         <el-table-column prop="department" label="科室" />
         <el-table-column prop="title" label="职称" width="120" />

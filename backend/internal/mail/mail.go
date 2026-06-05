@@ -21,6 +21,14 @@ func (s Sender) Enabled() bool {
 }
 
 func (s Sender) Send(to, subject, body string) error {
+	return s.send(to, subject, body, "text/plain")
+}
+
+func (s Sender) SendHTML(to, subject, body string) error {
+	return s.send(to, subject, body, "text/html")
+}
+
+func (s Sender) send(to, subject, body, contentType string) error {
 	if !s.Enabled() {
 		return fmt.Errorf("smtp is not configured")
 	}
@@ -31,7 +39,7 @@ func (s Sender) Send(to, subject, body string) error {
 		"From: " + s.config.SMTPUser,
 		"To: " + to,
 		"Subject: " + subject,
-		"Content-Type: text/plain; charset=UTF-8",
+		"Content-Type: " + contentType + "; charset=UTF-8",
 		"",
 		body,
 	}, "\r\n")

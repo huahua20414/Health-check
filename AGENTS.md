@@ -165,10 +165,10 @@ make down
 
 种子账号：
 
-- 用户：`13800000001 / 123456`
-- 医生：`13900000001 / 123456`
-- 待审核医生：`13900000002 / 123456`
-- 管理员：`13700000001 / admin123`
+- 用户：`huahua20414@foxmail.com / 123456`
+- 医生：`huahua20414@foxmail.com / doctor123`
+- 待审核医生：`pendingdoctor@example.com / 123456`
+- 管理员：`huahua20414@foxmail.com / admin123`
 
 ## 交付前检查
 

@@ -4,7 +4,7 @@
       <aside class="profile-card panel">
         <div class="avatar">{{ initials }}</div>
         <h3>{{ currentUser?.name }}</h3>
-        <p>{{ currentUser?.phone }}</p>
+        <p>{{ currentUser?.email }}</p>
         <el-tag :type="currentUser?.status === 'active' ? 'success' : 'warning'">{{ statusText(currentUser?.status || 'active') }}</el-tag>
         <div class="profile-stats">
           <div><strong>{{ myAppointments.length }}</strong><span>预约</span></div>

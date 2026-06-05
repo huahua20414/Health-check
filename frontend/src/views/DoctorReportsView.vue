@@ -33,19 +33,39 @@
             <p>沉淀客户健康档案和医生建议。</p>
           </div>
         </div>
-        <ReportList :reports="reports" />
+        <ReportList :reports="reports" @view-report="openReport" />
       </div>
     </div>
+
+    <el-dialog v-model="reportVisible" title="体检报告详情" width="920px" class="document-dialog">
+      <div class="dialog-actions">
+        <el-button type="primary" @click="downloadReport">下载 HTML</el-button>
+      </div>
+      <div class="document-preview" v-html="reportHTML" />
+    </el-dialog>
   </section>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import ReportList from '../components/ReportList.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
-import { useHealthData } from '../composables/useHealthData'
+import { downloadHTML, reportDocumentHTML, useHealthData } from '../composables/useHealthData'
 
 const { appointments, reports, reportForm, loading, createReport } = useHealthData()
 const reportableAppointments = computed(() => appointments.value.filter((item) => item.status === 'checked' || item.status === 'reported'))
 const submit = useDebouncedFn(createReport, 400)
+const selectedReport = ref(null)
+const reportVisible = ref(false)
+const reportHTML = computed(() => (selectedReport.value ? reportDocumentHTML(selectedReport.value) : ''))
+
+function openReport(report) {
+  selectedReport.value = report
+  reportVisible.value = true
+}
+
+function downloadReport() {
+  if (!selectedReport.value) return
+  downloadHTML(`${selectedReport.value.reportNo || 'checkup-report'}.html`, reportHTML.value)
+}
 </script>

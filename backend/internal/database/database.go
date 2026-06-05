@@ -28,6 +28,7 @@ func Open(dsn string) (*gorm.DB, error) {
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&models.User{},
+		&models.CheckupInstitution{},
 		&models.CheckupPackage{},
 		&models.ScheduleSlot{},
 		&models.Appointment{},
