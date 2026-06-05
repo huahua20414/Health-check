@@ -11,6 +11,7 @@ import DoctorReportsView from '../views/DoctorReportsView.vue'
 import PackageCatalogView from '../views/PackageCatalogView.vue'
 import PackageManagementView from '../views/PackageManagementView.vue'
 import PeopleView from '../views/PeopleView.vue'
+import ProfileView from '../views/ProfileView.vue'
 import DoctorReviewView from '../views/DoctorReviewView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import { useHealthData } from '../composables/useHealthData'
@@ -97,7 +98,7 @@ const router = createRouter({
         { path: 'booking', name: 'booking', component: AppointmentCreateView, meta: { title: '预约体检', roles: ['user'] } },
         { path: 'my-appointments', name: 'myAppointments', component: MyAppointmentsView, meta: { title: '我的预约', roles: ['user'] } },
         { path: 'my-reports', name: 'myReports', component: MyReportsView, meta: { title: '我的报告', roles: ['user'] } },
-        { path: 'profile', name: 'profile', component: PeopleView, meta: { title: '个人资料', roles: ['user'] } },
+        { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人资料', roles: ['user'] } },
         { path: 'doctor', name: 'doctorDashboard', component: DashboardView, meta: { title: '医生工作台', roles: ['doctor'] } },
         { path: 'appointments', name: 'appointments', component: DoctorAppointmentsView, meta: { title: '预约处理', roles: ['doctor'] } },
         { path: 'reports', name: 'reports', component: DoctorReportsView, meta: { title: '报告录入', roles: ['doctor'] } },

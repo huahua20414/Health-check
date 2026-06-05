@@ -14,8 +14,26 @@
       <div class="panel setting-card">
         <el-icon><Lock /></el-icon>
         <h3>权限说明</h3>
-        <p>当前为作业演示版，手机号模拟登录；生产环境可接入 JWT、RBAC 和审计日志。</p>
+        <p>系统已接入 JWT、Redis Session、角色菜单和后端权限校验。</p>
       </div>
+    </div>
+    <div class="panel" v-if="isAdmin">
+      <div class="panel-head">
+        <div>
+          <h3>邮件发送记录</h3>
+          <p>预约成功、候补递补、报告生成都会记录邮件发送结果。</p>
+        </div>
+      </div>
+      <el-table :data="mailLogs" stripe>
+        <el-table-column prop="to" label="收件人" width="190" />
+        <el-table-column prop="subject" label="主题" />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'sent' ? 'success' : 'danger'">{{ row.status === 'sent' ? '已发送' : '失败' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="error" label="错误信息" />
+      </el-table>
     </div>
   </section>
 </template>
@@ -23,4 +41,7 @@
 <script setup>
 import { Connection, DataAnalysis, Lock } from '@element-plus/icons-vue'
 import { apiBase } from '../api/client'
+import { useHealthData } from '../composables/useHealthData'
+
+const { isAdmin, mailLogs } = useHealthData()
 </script>

@@ -397,6 +397,78 @@ textarea {
   color: #6a7b8f;
 }
 
+.profile-layout {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.35fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.profile-card {
+  text-align: center;
+}
+
+.avatar {
+  width: 5.5rem;
+  height: 5.5rem;
+  margin: 0 auto 1rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1f78b4, #21a67a);
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.profile-card h3 {
+  margin: 0;
+  color: #18324c;
+}
+
+.profile-card p {
+  margin: 0.4rem 0 0.8rem;
+  color: #6a7b8f;
+}
+
+.profile-stats {
+  margin-top: 1.2rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.profile-stats div {
+  padding: 0.75rem 0.4rem;
+  border-radius: 8px;
+  background: #f4f7fb;
+}
+
+.profile-stats strong,
+.profile-stats span {
+  display: block;
+}
+
+.profile-stats strong {
+  color: #18324c;
+  font-size: 1.25rem;
+}
+
+.profile-stats span {
+  color: #6a7b8f;
+  font-size: 0.8rem;
+}
+
+.profile-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1rem;
+}
+
+.profile-form .el-form-item:nth-last-child(-n + 3),
+.profile-form .el-button {
+  grid-column: 1 / -1;
+}
+
 .report-card {
   padding: 14px;
   border: 1px solid #dce5ee;
@@ -582,6 +654,11 @@ code {
   }
 
   .auth-card {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-layout,
+  .profile-form {
     grid-template-columns: 1fr;
   }
 }

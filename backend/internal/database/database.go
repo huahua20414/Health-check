@@ -13,7 +13,7 @@ func Open(dsn string) (*gorm.DB, error) {
 	var db *gorm.DB
 	var err error
 	for i := 0; i < 30; i++ {
-		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
 		if err == nil {
 			sqlDB, pingErr := db.DB()
 			if pingErr == nil && sqlDB.Ping() == nil {
@@ -29,7 +29,10 @@ func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&models.User{},
 		&models.CheckupPackage{},
+		&models.ScheduleSlot{},
 		&models.Appointment{},
+		&models.WaitlistEntry{},
 		&models.Report{},
+		&models.MailLog{},
 	)
 }

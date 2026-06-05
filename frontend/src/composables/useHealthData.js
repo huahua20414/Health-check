@@ -18,7 +18,11 @@ const packages = ref([])
 const appointments = ref([])
 const reports = ref([])
 const users = ref([])
+const slots = ref([])
+const waitlist = ref([])
+const mailLogs = ref([])
 const appointmentForm = reactive({ packageId: null, date: '2026-06-05', period: '上午', note: '' })
+const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true })
 const packageForm = reactive({ id: null, name: '', description: '', price: 0, items: '', status: 'active' })
 const reportForm = reactive({
   appointmentId: null,
@@ -35,16 +39,17 @@ const loading = reactive({
   report: false,
   status: false,
   package: false,
+  profile: false,
 })
 
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', active: '启用', pending: '待审核', disabled: '停用' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', available: '可预约' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', active: 'success', pending: 'warning', disabled: 'danger' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', available: 'success' }[status] || 'info'
 }
 
 export function formatDate(value) {
@@ -56,6 +61,18 @@ function saveUser(user) {
   currentUser.value = user
   if (user) localStorage.setItem('currentUser', JSON.stringify(user))
   else localStorage.removeItem('currentUser')
+  if (user) {
+    Object.assign(profileForm, {
+      name: user.name || '',
+      gender: user.gender || '',
+      age: user.age || 0,
+      idCard: user.idCard || '',
+      email: user.email || '',
+      avatarUrl: user.avatarUrl || '',
+      bio: user.bio || '',
+      emailNotify: user.emailNotify !== false,
+    })
+  }
 }
 
 function assertPasswordsMatch(form) {
@@ -174,8 +191,11 @@ export function useHealthData() {
       if (!getAuthToken()) return
       appointments.value = await request('/appointments')
       reports.value = await request('/reports')
+      slots.value = await request(`/schedule/slots?date=${appointmentForm.date}&period=${appointmentForm.period}`)
+      if (isUser.value) waitlist.value = await request('/waitlist')
       if (isDoctor.value || isAdmin.value) users.value = await request('/users')
       else users.value = currentUser.value ? [currentUser.value] : []
+      if (isAdmin.value) mailLogs.value = await request('/mail-logs')
       if (!appointmentForm.packageId && packages.value[0]) appointmentForm.packageId = packages.value[0].id
       if (!reportForm.appointmentId && appointments.value[0]) reportForm.appointmentId = appointments.value[0].id
     } finally {
@@ -205,10 +225,26 @@ export function useHealthData() {
         method: 'POST',
         body: JSON.stringify(appointmentForm),
       })
-      ElMessage.success('预约已提交')
+      ElMessage.success('预约请求已提交，请查看预约或候补状态')
       await loadAll()
     } finally {
       loading.appointment = false
+    }
+  }
+
+  async function saveProfile() {
+    if (loading.profile) return
+    loading.profile = true
+    try {
+      const user = await request('/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(profileForm),
+      })
+      saveUser(user)
+      ElMessage.success('个人资料已保存')
+      await loadAll()
+    } finally {
+      loading.profile = false
     }
   }
 
@@ -315,7 +351,11 @@ export function useHealthData() {
     appointments,
     reports,
     users,
+    slots,
+    waitlist,
+    mailLogs,
     appointmentForm,
+    profileForm,
     packageForm,
     reportForm,
     loading,
@@ -338,6 +378,7 @@ export function useHealthData() {
     ensureBootstrapped,
     createAppointment,
     cancelAppointment,
+    saveProfile,
     markDone,
     createReport,
     updateUserStatus,

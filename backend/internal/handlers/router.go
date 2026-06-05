@@ -8,6 +8,7 @@ import (
 
 	"health-checkup/backend/internal/auth"
 	"health-checkup/backend/internal/config"
+	"health-checkup/backend/internal/mail"
 	"health-checkup/backend/internal/middleware"
 	"health-checkup/backend/internal/models"
 	"health-checkup/backend/internal/seed"
@@ -22,10 +23,11 @@ type Handler struct {
 	db     *gorm.DB
 	redis  *redis.Client
 	config config.Config
+	mailer mail.Sender
 }
 
 func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.Engine {
-	handler := &Handler{db: db, redis: redisClient, config: cfg}
+	handler := &Handler{db: db, redis: redisClient, config: cfg, mailer: mail.NewSender(cfg)}
 	router := gin.Default()
 	router.Use(cors.Default())
 	router.Use(middleware.IPRateLimit(120, time.Minute))
@@ -44,9 +46,12 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.Use(handler.authRequired())
 	protected.POST("/auth/logout", handler.logout)
 	protected.GET("/auth/me", handler.me)
+	protected.PATCH("/profile", handler.updateProfile)
 	protected.GET("/appointments", handler.appointments)
 	protected.POST("/appointments", handler.requireRole("user"), handler.createAppointment)
 	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
+	protected.GET("/schedule/slots", handler.scheduleSlots)
+	protected.GET("/waitlist", handler.requireRole("user"), handler.waitlist)
 	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
 	protected.POST("/reports", handler.requireRole("doctor"), handler.createReport)
@@ -54,6 +59,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
 	protected.PATCH("/users/:id/status", handler.requireRole("admin"), handler.updateUserStatus)
+	protected.GET("/mail-logs", handler.requireRole("admin"), handler.mailLogs)
 	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
 
 	return router
@@ -82,6 +88,8 @@ func (h *Handler) registerUser(c *gin.Context) {
 		Gender:       req.Gender,
 		Age:          req.Age,
 		IDCard:       req.IDCard,
+		Email:        req.Email,
+		EmailNotify:  true,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "phone already exists or invalid user data"})
@@ -155,6 +163,30 @@ func (h *Handler) me(c *gin.Context) {
 	c.JSON(http.StatusOK, currentUser(c))
 }
 
+func (h *Handler) updateProfile(c *gin.Context) {
+	var req profileRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	updates := map[string]any{
+		"name":         req.Name,
+		"gender":       req.Gender,
+		"age":          req.Age,
+		"id_card":      req.IDCard,
+		"email":        req.Email,
+		"avatar_url":   req.AvatarURL,
+		"bio":          req.Bio,
+		"email_notify": req.EmailNotify,
+	}
+	if err := h.db.Model(&models.User{}).Where("id = ?", current.ID).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.First(&current, current.ID)
+	c.JSON(http.StatusOK, current)
+}
+
 func (h *Handler) packages(c *gin.Context) {
 	var packages []models.CheckupPackage
 	query := h.db.Order("price asc")
@@ -171,9 +203,11 @@ func (h *Handler) packages(c *gin.Context) {
 func (h *Handler) appointments(c *gin.Context) {
 	current := currentUser(c)
 	var appointments []models.Appointment
-	query := h.db.Preload("User").Preload("Package").Preload("Report").Order("created_at desc")
+	query := h.db.Preload("User").Preload("Doctor").Preload("Package").Preload("Slot").Preload("Report").Order("created_at desc")
 	if current.Role == "user" {
 		query = query.Where("user_id = ?", current.ID)
+	} else if current.Role == "doctor" {
+		query = query.Where("doctor_id = ?", current.ID)
 	} else if userID := c.Query("userId"); userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
@@ -198,20 +232,60 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "package is unavailable"})
 		return
 	}
-	appointment := models.Appointment{
-		UserID:    current.ID,
-		PackageID: req.PackageID,
-		Date:      req.Date,
-		Period:    req.Period,
-		Status:    "booked",
-		Note:      req.Note,
-	}
-	if err := h.db.Create(&appointment).Error; err != nil {
+	var result any
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var slot models.ScheduleSlot
+		err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("date = ? AND period = ? AND status = ? AND booked_count < capacity", req.Date, req.Period, "available").
+			Order("start_time asc").
+			First(&slot).Error
+		if err != nil {
+			wait := models.WaitlistEntry{
+				UserID:    current.ID,
+				PackageID: req.PackageID,
+				Date:      req.Date,
+				Period:    req.Period,
+				Note:      req.Note,
+				Status:    "waiting",
+			}
+			if createErr := tx.Create(&wait).Error; createErr != nil {
+				return createErr
+			}
+			tx.Preload("Package").First(&wait, wait.ID)
+			result = gin.H{"type": "waitlist", "waitlist": wait}
+			return nil
+		}
+		appointment := models.Appointment{
+			UserID:    current.ID,
+			DoctorID:  slot.DoctorID,
+			SlotID:    slot.ID,
+			PackageID: req.PackageID,
+			Date:      slot.Date,
+			Period:    slot.Period,
+			StartTime: slot.StartTime,
+			EndTime:   slot.EndTime,
+			Status:    "booked",
+			Note:      req.Note,
+		}
+		if err := tx.Create(&appointment).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&slot).Update("booked_count", slot.BookedCount+1).Error; err != nil {
+			return err
+		}
+		tx.Preload("User").Preload("Doctor").Preload("Package").Preload("Slot").First(&appointment, appointment.ID)
+		result = gin.H{"type": "appointment", "appointment": appointment}
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.db.Preload("User").Preload("Package").First(&appointment, appointment.ID)
-	c.JSON(http.StatusCreated, appointment)
+	if payload, ok := result.(gin.H); ok && payload["type"] == "appointment" {
+		if appointment, ok := payload["appointment"].(models.Appointment); ok {
+			h.sendAppointmentMail(appointment, "体检预约成功")
+		}
+	}
+	c.JSON(http.StatusCreated, result)
 }
 
 func (h *Handler) cancelAppointment(c *gin.Context) {
@@ -230,7 +304,18 @@ func (h *Handler) cancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only booked appointments can be canceled"})
 		return
 	}
-	if err := h.db.Model(&appointment).Update("status", "canceled").Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&appointment).Update("status", "canceled").Error; err != nil {
+			return err
+		}
+		if appointment.SlotID != 0 {
+			if err := tx.Model(&models.ScheduleSlot{}).Where("id = ? AND booked_count > 0", appointment.SlotID).Update("booked_count", gorm.Expr("booked_count - 1")).Error; err != nil {
+				return err
+			}
+			return h.promoteWaitlist(tx, appointment.SlotID)
+		}
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -307,7 +392,43 @@ func (h *Handler) createReport(c *gin.Context) {
 		return
 	}
 	h.db.Preload("Appointment.Package").Preload("User").Preload("Doctor").First(&report, report.ID)
+	h.sendReportMail(report)
 	c.JSON(http.StatusCreated, report)
+}
+
+func (h *Handler) scheduleSlots(c *gin.Context) {
+	var slots []models.ScheduleSlot
+	query := h.db.Preload("Doctor").Order("date asc, start_time asc")
+	if date := c.Query("date"); date != "" {
+		query = query.Where("date = ?", date)
+	}
+	if period := c.Query("period"); period != "" {
+		query = query.Where("period = ?", period)
+	}
+	if err := query.Find(&slots).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, slots)
+}
+
+func (h *Handler) waitlist(c *gin.Context) {
+	current := currentUser(c)
+	var entries []models.WaitlistEntry
+	if err := h.db.Preload("Package").Where("user_id = ?", current.ID).Order("created_at desc").Find(&entries).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, entries)
+}
+
+func (h *Handler) mailLogs(c *gin.Context) {
+	var logs []models.MailLog
+	if err := h.db.Order("created_at desc").Limit(100).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
 }
 
 func (h *Handler) createPackage(c *gin.Context) {
@@ -339,19 +460,20 @@ func (h *Handler) updatePackage(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
-	updates := models.CheckupPackage{
-		Name:        req.Name,
-		Description: req.Description,
-		Price:       req.Price,
-		Items:       req.Items,
-		Status:      normalizeStatus(req.Status, "active"),
+	updates := map[string]any{
+		"name":        req.Name,
+		"description": req.Description,
+		"price":       req.Price,
+		"items":       req.Items,
+		"status":      normalizeStatus(req.Status, "active"),
 	}
 	if err := h.db.Model(&models.CheckupPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	h.db.First(&updates, id)
-	c.JSON(http.StatusOK, updates)
+	var pkg models.CheckupPackage
+	h.db.First(&pkg, id)
+	c.JSON(http.StatusOK, pkg)
 }
 
 func (h *Handler) users(c *gin.Context) {
@@ -397,6 +519,81 @@ func (h *Handler) seed(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "seeded"})
+}
+
+func (h *Handler) promoteWaitlist(tx *gorm.DB, slotID uint) error {
+	var slot models.ScheduleSlot
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&slot, slotID).Error; err != nil {
+		return err
+	}
+	if slot.BookedCount >= slot.Capacity || slot.Status != "available" {
+		return nil
+	}
+	var wait models.WaitlistEntry
+	if err := tx.Where("date = ? AND period = ? AND status = ?", slot.Date, slot.Period, "waiting").Order("created_at asc").First(&wait).Error; err != nil {
+		return nil
+	}
+	appointment := models.Appointment{
+		UserID:    wait.UserID,
+		DoctorID:  slot.DoctorID,
+		SlotID:    slot.ID,
+		PackageID: wait.PackageID,
+		Date:      slot.Date,
+		Period:    slot.Period,
+		StartTime: slot.StartTime,
+		EndTime:   slot.EndTime,
+		Status:    "booked",
+		Note:      wait.Note,
+	}
+	if err := tx.Create(&appointment).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&slot).Update("booked_count", slot.BookedCount+1).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&wait).Update("status", "promoted").Error; err != nil {
+		return err
+	}
+	tx.Preload("User").Preload("Doctor").Preload("Package").Preload("Slot").First(&appointment, appointment.ID)
+	go h.sendAppointmentMail(appointment, "候补预约成功")
+	return nil
+}
+
+func (h *Handler) sendAppointmentMail(appointment models.Appointment, subject string) {
+	if appointment.User.Email == "" || !appointment.User.EmailNotify {
+		return
+	}
+	body := "您好，" + appointment.User.Name + "：\n\n" +
+		"您的体检预约详情如下：\n" +
+		"套餐：" + appointment.Package.Name + "\n" +
+		"医生：" + appointment.Doctor.Name + "\n" +
+		"日期：" + appointment.Date + "\n" +
+		"时间：" + appointment.StartTime + "-" + appointment.EndTime + "\n\n" +
+		"请按预约时间到检。"
+	h.recordMail(appointment.UserID, appointment.User.Email, subject, body, h.mailer.Send(appointment.User.Email, subject, body))
+}
+
+func (h *Handler) sendReportMail(report models.Report) {
+	if report.User.Email == "" || !report.User.EmailNotify {
+		return
+	}
+	body := "您好，" + report.User.Name + "：\n\n" +
+		"您的体检报告已生成。\n" +
+		"摘要：" + report.Summary + "\n" +
+		"结论：" + report.Conclusion + "\n" +
+		"建议：" + report.Recommendation + "\n\n" +
+		"请登录系统查看完整报告。"
+	h.recordMail(report.UserID, report.User.Email, "体检报告已生成", body, h.mailer.Send(report.User.Email, "体检报告已生成", body))
+}
+
+func (h *Handler) recordMail(userID uint, to, subject, body string, err error) {
+	status := "sent"
+	errText := ""
+	if err != nil {
+		status = "failed"
+		errText = err.Error()
+	}
+	h.db.Create(&models.MailLog{UserID: userID, To: to, Subject: subject, Body: body, Status: status, Error: errText})
 }
 
 func (h *Handler) authRequired() gin.HandlerFunc {
@@ -481,6 +678,7 @@ type registerUserRequest struct {
 	Gender   string `json:"gender"`
 	Age      int    `json:"age"`
 	IDCard   string `json:"idCard"`
+	Email    string `json:"email"`
 }
 
 type registerDoctorRequest struct {
@@ -497,6 +695,17 @@ type appointmentRequest struct {
 	Date      string `json:"date" binding:"required"`
 	Period    string `json:"period" binding:"required"`
 	Note      string `json:"note"`
+}
+
+type profileRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Gender      string `json:"gender"`
+	Age         int    `json:"age"`
+	IDCard      string `json:"idCard"`
+	Email       string `json:"email"`
+	AvatarURL   string `json:"avatarUrl"`
+	Bio         string `json:"bio"`
+	EmailNotify bool   `json:"emailNotify"`
 }
 
 type packageRequest struct {

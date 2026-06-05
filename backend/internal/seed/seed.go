@@ -1,8 +1,10 @@
 package seed
 
 import (
+	"fmt"
 	"health-checkup/backend/internal/auth"
 	"health-checkup/backend/internal/models"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -21,9 +23,9 @@ func Run(db *gorm.DB) error {
 		return err
 	}
 	users := []models.User{
-		{Name: "张三", Phone: "13800000001", PasswordHash: userPassword, Role: "user", Status: "active", Gender: "男", Age: 30},
-		{Name: "李医生", Phone: "13900000001", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师"},
-		{Name: "王医生", Phone: "13900000002", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1002", Department: "内科", Title: "住院医师"},
+		{Name: "张三", Phone: "13800000001", Email: "huahua20414@foxmail.com", PasswordHash: userPassword, Role: "user", Status: "active", Gender: "男", Age: 30, EmailNotify: true, Bio: "关注年度体检和慢病风险管理。"},
+		{Name: "李医生", Phone: "13900000001", Email: "huahua20414@foxmail.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", EmailNotify: true},
+		{Name: "王医生", Phone: "13900000002", Email: "huahua20414@foxmail.com", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1002", Department: "内科", Title: "住院医师", EmailNotify: true},
 		{Name: "系统管理员", Phone: "13700000001", PasswordHash: adminPassword, Role: "admin", Status: "active"},
 	}
 	for _, user := range users {
@@ -56,15 +58,31 @@ func Run(db *gorm.DB) error {
 		return err
 	}
 
+	if err := seedSlots(db, doctor.ID); err != nil {
+		return err
+	}
+
+	var slot models.ScheduleSlot
+	if err := db.Where("doctor_id = ? AND date = ? AND start_time = ?", doctor.ID, "2026-06-05", "09:00").First(&slot).Error; err != nil {
+		return err
+	}
+
 	appointment := models.Appointment{
 		UserID:    user.ID,
+		DoctorID:  doctor.ID,
+		SlotID:    slot.ID,
 		PackageID: pkg.ID,
 		Date:      "2026-06-05",
 		Period:    "上午",
+		StartTime: "09:00",
+		EndTime:   "09:30",
 		Status:    "reported",
 		Note:      "模拟数据：用户已完成体检。",
 	}
 	if err := db.Where(models.Appointment{UserID: user.ID, PackageID: pkg.ID, Date: appointment.Date}).FirstOrCreate(&appointment).Error; err != nil {
+		return err
+	}
+	if err := db.Model(&slot).Update("booked_count", 1).Error; err != nil {
 		return err
 	}
 
@@ -77,4 +95,43 @@ func Run(db *gorm.DB) error {
 		Recommendation: "保持规律作息，每周进行 3 次以上中等强度运动，半年后复查血脂。",
 	}
 	return db.Where(models.Report{AppointmentID: appointment.ID}).FirstOrCreate(&report).Error
+}
+
+func seedSlots(db *gorm.DB, doctorID uint) error {
+	days := []string{"2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09"}
+	starts := []string{"08:30", "09:00", "09:30", "10:00", "10:30", "14:00", "14:30", "15:00", "15:30", "16:00"}
+	for _, day := range days {
+		for _, start := range starts {
+			end, err := addMinutes(start, 30)
+			if err != nil {
+				return err
+			}
+			period := "上午"
+			if start >= "12:00" {
+				period = "下午"
+			}
+			slot := models.ScheduleSlot{
+				DoctorID:    doctorID,
+				Date:        day,
+				Period:      period,
+				StartTime:   start,
+				EndTime:     end,
+				Capacity:    1,
+				BookedCount: 0,
+				Status:      "available",
+			}
+			if err := db.Where(models.ScheduleSlot{DoctorID: doctorID, Date: day, StartTime: start}).FirstOrCreate(&slot).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func addMinutes(value string, minutes int) (string, error) {
+	parsed, err := time.Parse("15:04", value)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%02d:%02d", parsed.Add(time.Duration(minutes)*time.Minute).Hour(), parsed.Add(time.Duration(minutes)*time.Minute).Minute()), nil
 }

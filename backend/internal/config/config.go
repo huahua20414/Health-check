@@ -8,6 +8,10 @@ type Config struct {
 	RedisAddr  string
 	JWTSecret  string
 	TokenHours int
+	SMTPHost   string
+	SMTPPort   string
+	SMTPUser   string
+	SMTPPass   string
 }
 
 func Load() Config {
@@ -17,6 +21,10 @@ func Load() Config {
 		RedisAddr:  getEnv("REDIS_ADDR", "127.0.0.1:6379"),
 		JWTSecret:  getEnv("JWT_SECRET", "dev-health-checkup-secret"),
 		TokenHours: 12,
+		SMTPHost:   getEnv("SMTP_HOST", "smtp.qq.com"),
+		SMTPPort:   getEnv("SMTP_PORT", "587"),
+		SMTPUser:   getEnv("SMTP_USER", ""),
+		SMTPPass:   getEnv("SMTP_PASS", ""),
 	}
 }
 
