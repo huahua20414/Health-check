@@ -458,6 +458,35 @@ textarea {
   font-size: 0.8rem;
 }
 
+.profile-meta {
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid #dce5ee;
+  border-radius: 8px;
+  background: #fbfdff;
+  text-align: left;
+}
+
+.profile-meta span,
+.profile-meta strong {
+  display: block;
+}
+
+.profile-meta span {
+  margin-bottom: 0.3rem;
+  color: #6a7b8f;
+  font-size: 0.8rem;
+}
+
+.profile-meta strong {
+  color: #18324c;
+  overflow-wrap: anywhere;
+}
+
+.profile-main {
+  min-width: 0;
+}
+
 .profile-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -467,6 +496,45 @@ textarea {
 .profile-form .el-form-item:nth-last-child(-n + 3),
 .profile-form .el-button {
   grid-column: 1 / -1;
+}
+
+.email-verify {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e5ecf3;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.section-head h4 {
+  margin: 0 0 0.25rem;
+  color: #18324c;
+  font-size: 1rem;
+}
+
+.section-head p {
+  margin: 0;
+  color: #6a7b8f;
+  line-height: 1.5;
+}
+
+.email-form {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1.1fr) minmax(10rem, 0.6fr);
+  gap: 0 1rem;
+}
+
+.email-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .report-card {
@@ -658,7 +726,14 @@ code {
   }
 
   .profile-layout,
-  .profile-form {
+  .profile-form,
+  .email-form {
     grid-template-columns: 1fr;
+  }
+
+  .section-head,
+  .email-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

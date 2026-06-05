@@ -11,9 +11,13 @@
           <div><strong>{{ reports.length }}</strong><span>报告</span></div>
           <div><strong>{{ waitlist.length }}</strong><span>候补</span></div>
         </div>
+        <div class="profile-meta">
+          <span>当前邮箱</span>
+          <strong>{{ currentUser?.email || '未绑定' }}</strong>
+        </div>
       </aside>
 
-      <div class="panel">
+      <div class="panel profile-main">
         <div class="panel-head">
           <div>
             <h3>资料设置</h3>
@@ -22,7 +26,6 @@
         </div>
         <el-form label-position="top" class="profile-form">
           <el-form-item label="姓名"><el-input v-model="profileForm.name" /></el-form-item>
-          <el-form-item label="邮箱"><el-input v-model="profileForm.email" placeholder="用于接收通知邮件" /></el-form-item>
           <el-form-item label="性别">
             <el-select v-model="profileForm.gender" clearable>
               <el-option label="男" value="男" />
@@ -38,6 +41,29 @@
           </el-form-item>
           <el-button type="primary" :loading="loading.profile" @click="submit">保存资料</el-button>
         </el-form>
+
+        <div class="email-verify">
+          <div class="section-head">
+            <div>
+              <h4>邮箱验证</h4>
+              <p>修改邮箱前必须向目标邮箱发送验证码，验证通过后才会生效。</p>
+            </div>
+            <el-tag type="success" v-if="currentUser?.email">已绑定</el-tag>
+            <el-tag type="warning" v-else>未绑定</el-tag>
+          </div>
+          <el-form label-position="top" class="email-form">
+            <el-form-item label="目标邮箱">
+              <el-input v-model="emailForm.email" placeholder="请输入要绑定的新邮箱" />
+            </el-form-item>
+            <el-form-item label="验证码">
+              <el-input v-model="emailForm.code" maxlength="6" placeholder="6 位验证码" />
+            </el-form-item>
+            <div class="email-actions">
+              <el-button :loading="loading.emailCode" :disabled="!emailForm.email" @click="sendCode">发送验证码</el-button>
+              <el-button type="primary" :loading="loading.emailUpdate" :disabled="!canUpdateEmail" @click="confirmEmail">验证并更换邮箱</el-button>
+            </div>
+          </el-form>
+        </div>
       </div>
     </div>
   </section>
@@ -48,7 +74,10 @@ import { computed } from 'vue'
 import { statusText, useHealthData } from '../composables/useHealthData'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 
-const { currentUser, profileForm, myAppointments, reports, waitlist, loading, saveProfile } = useHealthData()
+const { currentUser, profileForm, emailForm, myAppointments, reports, waitlist, loading, saveProfile, sendEmailCode, updateEmail } = useHealthData()
 const initials = computed(() => currentUser.value?.name?.slice(0, 1) || '用')
 const submit = useDebouncedFn(saveProfile, 350)
+const sendCode = useDebouncedFn(sendEmailCode, 800)
+const confirmEmail = useDebouncedFn(updateEmail, 500)
+const canUpdateEmail = computed(() => Boolean(emailForm.email && emailForm.code?.length === 6))
 </script>

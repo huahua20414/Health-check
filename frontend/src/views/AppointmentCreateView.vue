@@ -5,7 +5,7 @@
         <div class="panel-head">
           <div>
             <h3>选择套餐</h3>
-            <p>选择套餐、日期和时段后，系统自动分配医生和半小时号源。</p>
+            <p>先选体检套餐，再选择有库存的日期和具体半小时号源。</p>
           </div>
         </div>
         <div class="package-list">
@@ -30,75 +30,122 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h3>创建预约</h3>
-            <p>提交后可在“我的预约”中跟踪状态。</p>
+            <h3>日期库存</h3>
+            <p>无库存日期不可选择；选择日期后再选具体号源。</p>
           </div>
+          <el-button :loading="loading.load" @click="loadAll">刷新库存</el-button>
         </div>
-        <el-form label-position="top" class="form-grid">
-          <el-form-item label="预约套餐">
-            <el-select v-model="appointmentForm.packageId" placeholder="选择套餐">
-              <el-option v-for="pkg in activePackages" :key="pkg.id" :label="pkg.name" :value="pkg.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="预约日期">
-            <el-date-picker v-model="appointmentForm.date" value-format="YYYY-MM-DD" type="date" placeholder="选择日期" />
-          </el-form-item>
-          <el-form-item label="预约时段">
-            <el-select v-model="appointmentForm.period">
-              <el-option label="上午" value="上午" />
-              <el-option label="下午" value="下午" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="备注说明">
-            <el-input v-model="appointmentForm.note" type="textarea" :rows="4" placeholder="例如既往病史、特殊检查需求" />
-          </el-form-item>
-          <el-button type="primary" :disabled="!appointmentForm.packageId" :loading="loading.appointment" @click="submit">
-            {{ availableSlotCount > 0 ? '提交预约' : '加入候补' }}
-          </el-button>
-        </el-form>
+        <div class="date-stock-grid">
+          <button
+            v-for="item in dateStocks"
+            :key="item.date"
+            type="button"
+            class="date-stock"
+            :class="{ selected: appointmentForm.date === item.date, disabled: item.available === 0 }"
+            :disabled="item.available === 0"
+            @click="selectDate(item.date)"
+          >
+            <strong>{{ item.date }}</strong>
+            <span>{{ item.available > 0 ? `剩余 ${item.available}` : '无库存' }}</span>
+          </button>
+        </div>
       </div>
     </div>
 
     <div class="panel">
       <div class="panel-head">
         <div>
-          <h3>可用号源</h3>
-          <p>一个医生每个半小时号源只能预约一人，满员时自动进入候补。</p>
+          <h3>选择具体时间段</h3>
+          <p>一个医生一个半小时号源只能预约一人。</p>
         </div>
-        <el-button :loading="loading.load" @click="loadAll">刷新号源</el-button>
       </div>
-      <el-table :data="slots" stripe>
-        <el-table-column label="医生" width="120">
-          <template #default="{ row }">{{ row.doctor?.name }}</template>
-        </el-table-column>
-        <el-table-column prop="date" label="日期" width="120" />
-        <el-table-column prop="period" label="时段" width="90" />
-        <el-table-column label="时间" width="130">
-          <template #default="{ row }">{{ row.startTime }}-{{ row.endTime }}</template>
-        </el-table-column>
-        <el-table-column label="库存">
-          <template #default="{ row }">{{ row.capacity - row.bookedCount }} / {{ row.capacity }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.capacity > row.bookedCount ? 'success' : 'warning'">{{ row.capacity > row.bookedCount ? '可预约' : '满员' }}</el-tag>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div v-if="appointmentForm.date" class="slot-grid">
+        <button
+          v-for="slot in selectedDateSlots"
+          :key="slot.id"
+          type="button"
+          class="slot-card"
+          :class="{ selected: appointmentForm.slotId === slot.id, disabled: !hasStock(slot) }"
+          :disabled="!hasStock(slot)"
+          @click="selectSlot(slot)"
+        >
+          <div>
+            <strong>{{ slot.startTime }}-{{ slot.endTime }}</strong>
+            <span>{{ slot.doctor?.name }} · {{ slot.period }}</span>
+          </div>
+          <el-tag :type="hasStock(slot) ? 'success' : 'warning'">
+            {{ hasStock(slot) ? `剩余 ${slot.capacity - slot.bookedCount}` : '满员' }}
+          </el-tag>
+        </button>
+      </div>
+      <el-empty v-else description="请先选择有库存的日期" />
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>确认预约</h3>
+          <p>提交后系统会发送邮件，并在“我的预约”中展示具体医生和时间。</p>
+        </div>
+      </div>
+      <el-form label-position="top" class="form-grid">
+        <el-form-item label="已选套餐">
+          <el-input :model-value="selectedPackage?.name || ''" disabled />
+        </el-form-item>
+        <el-form-item label="已选号源">
+          <el-input :model-value="selectedSlotText" disabled />
+        </el-form-item>
+        <el-form-item label="备注说明">
+          <el-input v-model="appointmentForm.note" type="textarea" :rows="4" placeholder="例如既往病史、特殊检查需求" />
+        </el-form-item>
+        <el-button type="primary" :disabled="!canSubmit" :loading="loading.appointment" @click="submit">
+          提交预约
+        </el-button>
+      </el-form>
     </div>
   </section>
 </template>
 
 <script setup>
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { useHealthData } from '../composables/useHealthData'
 
 const { packages, slots, appointmentForm, loading, loadAll, selectPackage, createAppointment } = useHealthData()
 const activePackages = computed(() => packages.value.filter((item) => item.status !== 'disabled'))
-const availableSlotCount = computed(() => slots.value.filter((item) => item.capacity > item.bookedCount).length)
+const selectedPackage = computed(() => activePackages.value.find((item) => item.id === appointmentForm.packageId))
+const dateStocks = computed(() => {
+  const map = new Map()
+  for (const slot of slots.value) {
+    const current = map.get(slot.date) || { date: slot.date, available: 0, total: 0 }
+    current.total += slot.capacity
+    current.available += Math.max(0, slot.capacity - slot.bookedCount)
+    map.set(slot.date, current)
+  }
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
+})
+const selectedDateSlots = computed(() => slots.value.filter((slot) => slot.date === appointmentForm.date).sort((a, b) => a.startTime.localeCompare(b.startTime)))
+const selectedSlot = computed(() => slots.value.find((slot) => slot.id === appointmentForm.slotId))
+const selectedSlotText = computed(() => {
+  if (!selectedSlot.value) return ''
+  return `${selectedSlot.value.date} ${selectedSlot.value.startTime}-${selectedSlot.value.endTime} ${selectedSlot.value.doctor?.name || ''}`
+})
+const canSubmit = computed(() => Boolean(appointmentForm.packageId && appointmentForm.date && appointmentForm.period && appointmentForm.slotId))
 const submit = useDebouncedFn(createAppointment, 400)
-const refreshSlots = useDebouncedFn(loadAll, 350)
 
-watch(() => [appointmentForm.date, appointmentForm.period], refreshSlots)
+function hasStock(slot) {
+  return slot.status === 'available' && slot.capacity > slot.bookedCount
+}
+
+function selectDate(date) {
+  appointmentForm.date = date
+  appointmentForm.slotId = null
+  appointmentForm.period = ''
+}
+
+function selectSlot(slot) {
+  appointmentForm.slotId = slot.id
+  appointmentForm.date = slot.date
+  appointmentForm.period = slot.period
+}
 </script>

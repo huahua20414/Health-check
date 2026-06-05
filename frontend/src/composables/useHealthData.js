@@ -21,8 +21,9 @@ const users = ref([])
 const slots = ref([])
 const waitlist = ref([])
 const mailLogs = ref([])
-const appointmentForm = reactive({ packageId: null, date: '2026-06-05', period: '上午', note: '' })
+const appointmentForm = reactive({ packageId: null, slotId: null, date: '', period: '', note: '' })
 const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true })
+const emailForm = reactive({ email: '', code: '' })
 const packageForm = reactive({ id: null, name: '', description: '', price: 0, items: '', status: 'active' })
 const reportForm = reactive({
   appointmentId: null,
@@ -40,6 +41,8 @@ const loading = reactive({
   status: false,
   package: false,
   profile: false,
+  emailCode: false,
+  emailUpdate: false,
 })
 
 let bootstrapped = false
@@ -72,6 +75,7 @@ function saveUser(user) {
       bio: user.bio || '',
       emailNotify: user.emailNotify !== false,
     })
+    Object.assign(emailForm, { email: user.email || '', code: '' })
   }
 }
 
@@ -191,7 +195,7 @@ export function useHealthData() {
       if (!getAuthToken()) return
       appointments.value = await request('/appointments')
       reports.value = await request('/reports')
-      slots.value = await request(`/schedule/slots?date=${appointmentForm.date}&period=${appointmentForm.period}`)
+      slots.value = await request('/schedule/slots')
       if (isUser.value) waitlist.value = await request('/waitlist')
       if (isDoctor.value || isAdmin.value) users.value = await request('/users')
       else users.value = currentUser.value ? [currentUser.value] : []
@@ -221,11 +225,12 @@ export function useHealthData() {
     if (!currentUser.value || loading.appointment) return
     loading.appointment = true
     try {
-      await request('/appointments', {
+      const result = await request('/appointments', {
         method: 'POST',
         body: JSON.stringify(appointmentForm),
       })
-      ElMessage.success('预约请求已提交，请查看预约或候补状态')
+      if (result.type === 'waitlist') ElMessage.warning('当前号源已满，已自动加入候补')
+      else ElMessage.success('预约成功，医生和时间已分配')
       await loadAll()
     } finally {
       loading.appointment = false
@@ -236,15 +241,55 @@ export function useHealthData() {
     if (loading.profile) return
     loading.profile = true
     try {
+      const payload = {
+        name: profileForm.name,
+        gender: profileForm.gender,
+        age: Number(profileForm.age || 0),
+        idCard: profileForm.idCard,
+        avatarUrl: profileForm.avatarUrl,
+        bio: profileForm.bio,
+        emailNotify: profileForm.emailNotify,
+      }
       const user = await request('/profile', {
         method: 'PATCH',
-        body: JSON.stringify(profileForm),
+        body: JSON.stringify(payload),
       })
       saveUser(user)
       ElMessage.success('个人资料已保存')
       await loadAll()
     } finally {
       loading.profile = false
+    }
+  }
+
+  async function sendEmailCode() {
+    if (loading.emailCode) return
+    loading.emailCode = true
+    try {
+      await request('/profile/email-code', {
+        method: 'POST',
+        body: JSON.stringify({ email: emailForm.email }),
+      })
+      emailForm.code = ''
+      ElMessage.success('验证码已发送，请查看目标邮箱')
+    } finally {
+      loading.emailCode = false
+    }
+  }
+
+  async function updateEmail() {
+    if (loading.emailUpdate) return
+    loading.emailUpdate = true
+    try {
+      const user = await request('/profile/email', {
+        method: 'PATCH',
+        body: JSON.stringify({ email: emailForm.email, code: emailForm.code }),
+      })
+      saveUser(user)
+      ElMessage.success('邮箱已验证并更新')
+      await loadAll()
+    } finally {
+      loading.emailUpdate = false
     }
   }
 
@@ -356,6 +401,7 @@ export function useHealthData() {
     mailLogs,
     appointmentForm,
     profileForm,
+    emailForm,
     packageForm,
     reportForm,
     loading,
@@ -379,6 +425,8 @@ export function useHealthData() {
     createAppointment,
     cancelAppointment,
     saveProfile,
+    sendEmailCode,
+    updateEmail,
     markDone,
     createReport,
     updateUserStatus,

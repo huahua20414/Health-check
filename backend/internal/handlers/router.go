@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"fmt"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,6 +50,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.POST("/auth/logout", handler.logout)
 	protected.GET("/auth/me", handler.me)
 	protected.PATCH("/profile", handler.updateProfile)
+	protected.POST("/profile/email-code", handler.sendEmailCode)
+	protected.PATCH("/profile/email", handler.updateEmail)
 	protected.GET("/appointments", handler.appointments)
 	protected.POST("/appointments", handler.requireRole("user"), handler.createAppointment)
 	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
@@ -174,7 +179,6 @@ func (h *Handler) updateProfile(c *gin.Context) {
 		"gender":       req.Gender,
 		"age":          req.Age,
 		"id_card":      req.IDCard,
-		"email":        req.Email,
 		"avatar_url":   req.AvatarURL,
 		"bio":          req.Bio,
 		"email_notify": req.EmailNotify,
@@ -183,6 +187,62 @@ func (h *Handler) updateProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.db.First(&current, current.ID)
+	c.JSON(http.StatusOK, current)
+}
+
+func (h *Handler) sendEmailCode(c *gin.Context) {
+	var req emailCodeRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	if exists, err := h.redis.Exists(c.Request.Context(), emailCodeCooldownKey(current.ID)).Result(); err == nil && exists > 0 {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "email code requests are too frequent"})
+		return
+	}
+	code, err := generateEmailCode()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate email code failed"})
+		return
+	}
+	key := emailCodeKey(current.ID)
+	if err := h.redis.Set(c.Request.Context(), key, req.Email+"|"+code, 10*time.Minute).Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "save email code failed"})
+		return
+	}
+	body := "您好，" + current.Name + "：\n\n您的邮箱变更验证码是：" + code + "\n验证码 10 分钟内有效。"
+	sendErr := h.mailer.Send(req.Email, "邮箱变更验证码", body)
+	h.recordMail(current.ID, req.Email, "邮箱变更验证码", "邮箱变更验证码邮件，正文已脱敏。", sendErr)
+	if sendErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "send email code failed"})
+		return
+	}
+	h.redis.Set(c.Request.Context(), emailCodeCooldownKey(current.ID), "1", time.Minute)
+	c.JSON(http.StatusOK, gin.H{"status": "sent"})
+}
+
+func (h *Handler) updateEmail(c *gin.Context) {
+	var req updateEmailRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	value, err := h.redis.Get(c.Request.Context(), emailCodeKey(current.ID)).Result()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email code expired"})
+		return
+	}
+	parts := strings.SplitN(value, "|", 2)
+	if len(parts) != 2 || parts[0] != req.Email || parts[1] != req.Code {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email code"})
+		return
+	}
+	if err := h.db.Model(&models.User{}).Where("id = ?", current.ID).Update("email", req.Email).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.redis.Del(c.Request.Context(), emailCodeKey(current.ID))
 	h.db.First(&current, current.ID)
 	c.JSON(http.StatusOK, current)
 }
@@ -235,16 +295,29 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	var result any
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		var slot models.ScheduleSlot
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("date = ? AND period = ? AND status = ? AND booked_count < capacity", req.Date, req.Period, "available").
-			Order("start_time asc").
-			First(&slot).Error
+		query := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("status = ? AND booked_count < capacity", "available")
+		if req.SlotID != 0 {
+			query = query.Where("id = ?", req.SlotID)
+		} else {
+			query = query.Where("date = ? AND period = ?", req.Date, req.Period).Order("start_time asc")
+		}
+		err := query.First(&slot).Error
 		if err != nil {
+			waitDate := req.Date
+			waitPeriod := req.Period
+			if req.SlotID != 0 {
+				var requestedSlot models.ScheduleSlot
+				if lookupErr := tx.First(&requestedSlot, req.SlotID).Error; lookupErr == nil {
+					waitDate = requestedSlot.Date
+					waitPeriod = requestedSlot.Period
+				}
+			}
 			wait := models.WaitlistEntry{
 				UserID:    current.ID,
 				PackageID: req.PackageID,
-				Date:      req.Date,
-				Period:    req.Period,
+				Date:      waitDate,
+				Period:    waitPeriod,
 				Note:      req.Note,
 				Status:    "waiting",
 			}
@@ -692,6 +765,7 @@ type registerDoctorRequest struct {
 
 type appointmentRequest struct {
 	PackageID uint   `json:"packageId" binding:"required"`
+	SlotID    uint   `json:"slotId"`
 	Date      string `json:"date" binding:"required"`
 	Period    string `json:"period" binding:"required"`
 	Note      string `json:"note"`
@@ -702,10 +776,18 @@ type profileRequest struct {
 	Gender      string `json:"gender"`
 	Age         int    `json:"age"`
 	IDCard      string `json:"idCard"`
-	Email       string `json:"email"`
 	AvatarURL   string `json:"avatarUrl"`
 	Bio         string `json:"bio"`
 	EmailNotify bool   `json:"emailNotify"`
+}
+
+type emailCodeRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type updateEmailRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code" binding:"required"`
 }
 
 type packageRequest struct {
@@ -732,4 +814,20 @@ func normalizeStatus(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func emailCodeKey(userID uint) string {
+	return fmt.Sprintf("email-code:%d", userID)
+}
+
+func emailCodeCooldownKey(userID uint) string {
+	return fmt.Sprintf("email-code-cooldown:%d", userID)
+}
+
+func generateEmailCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }
