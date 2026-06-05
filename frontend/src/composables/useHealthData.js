@@ -1,29 +1,48 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { request } from '../api/client'
+import { request, setAuthToken, getAuthToken } from '../api/client'
 
-const role = ref('user')
-const loginForm = reactive({ phone: '13800000001', name: '张三' })
-const currentUser = ref(null)
+const loginForm = reactive({ phone: '13800000001', password: '123456' })
+const userRegisterForm = reactive({ name: '', phone: '', password: '', confirmPassword: '', gender: '', age: null, idCard: '' })
+const doctorRegisterForm = reactive({
+  name: '',
+  phone: '',
+  password: '',
+  confirmPassword: '',
+  employeeNo: '',
+  department: '',
+  title: '',
+})
+const currentUser = ref(JSON.parse(localStorage.getItem('currentUser') || 'null'))
 const packages = ref([])
 const appointments = ref([])
 const reports = ref([])
+const users = ref([])
 const appointmentForm = reactive({ packageId: null, date: '2026-06-05', period: '上午', note: '' })
 const reportForm = reactive({
   appointmentId: null,
-  summary: '本次体检主要指标未见明显异常。',
-  conclusion: '总体健康状况良好。',
-  recommendation: '建议保持规律作息，按年度复查。',
+  summary: '',
+  conclusion: '',
+  recommendation: '',
+})
+const loading = reactive({
+  login: false,
+  register: false,
+  logout: false,
+  load: false,
+  appointment: false,
+  report: false,
+  status: false,
 })
 
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', active: '启用', pending: '待审核', disabled: '停用' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', active: 'success', pending: 'warning', disabled: 'danger' }[status] || 'info'
 }
 
 export function formatDate(value) {
@@ -31,14 +50,31 @@ export function formatDate(value) {
   return new Date(value).toLocaleDateString('zh-CN')
 }
 
+function saveUser(user) {
+  currentUser.value = user
+  if (user) localStorage.setItem('currentUser', JSON.stringify(user))
+  else localStorage.removeItem('currentUser')
+}
+
+function assertPasswordsMatch(form) {
+  if (form.password !== form.confirmPassword) {
+    throw new Error('两次输入的密码不一致')
+  }
+}
+
 export function useHealthData() {
-  const isUser = computed(() => currentUser.value?.role === 'user')
-  const isDoctor = computed(() => currentUser.value?.role === 'doctor')
+  const isAuthenticated = computed(() => Boolean(getAuthToken() && currentUser.value))
+  const role = computed(() => currentUser.value?.role || '')
+  const isUser = computed(() => role.value === 'user')
+  const isDoctor = computed(() => role.value === 'doctor')
+  const isAdmin = computed(() => role.value === 'admin')
   const myAppointments = computed(() => appointments.value.filter((item) => item.userId === currentUser.value?.id))
   const bookedCount = computed(() => appointments.value.filter((item) => item.status === 'booked').length)
   const reportedCount = computed(() => appointments.value.filter((item) => item.status === 'reported').length)
   const pendingDoctorCount = computed(() => appointments.value.filter((item) => item.status !== 'reported').length)
+  const pendingDoctors = computed(() => users.value.filter((item) => item.role === 'doctor' && item.status === 'pending'))
   const peopleRows = computed(() => {
+    if (isAdmin.value) return users.value
     const rows = new Map()
     for (const item of appointments.value) {
       if (item.user?.id) rows.set(`user-${item.user.id}`, { ...item.user, source: '预约客户' })
@@ -47,76 +83,177 @@ export function useHealthData() {
       if (report.doctor?.id) rows.set(`doctor-${report.doctor.id}`, { ...report.doctor, source: '报告医生' })
       if (report.user?.id) rows.set(`user-${report.user.id}`, { ...report.user, source: '报告客户' })
     }
-    if (currentUser.value?.id) {
-      rows.set(`current-${currentUser.value.role}-${currentUser.value.id}`, { ...currentUser.value, source: '当前登录' })
-    }
+    if (currentUser.value?.id) rows.set(`current-${currentUser.value.role}-${currentUser.value.id}`, { ...currentUser.value, source: '当前登录' })
     return Array.from(rows.values())
   })
 
   async function login() {
-    currentUser.value = await request('/login', {
-      method: 'POST',
-      body: JSON.stringify({ ...loginForm, role: role.value }),
-    })
-    await loadAll()
-    ElMessage.success('登录成功')
+    if (loading.login) return
+    loading.login = true
+    try {
+      const result = await request('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(loginForm),
+      })
+      setAuthToken(result.accessToken)
+      saveUser(result.user)
+      await loadAll()
+      ElMessage.success('登录成功')
+      return result.user
+    } finally {
+      loading.login = false
+    }
   }
 
-  async function quickLogin(nextRole = role.value) {
-    role.value = nextRole
-    if (role.value === 'doctor') {
-      loginForm.phone = '13900000001'
-      loginForm.name = '李医生'
-    } else {
-      loginForm.phone = '13800000001'
-      loginForm.name = '张三'
+  async function registerUser() {
+    if (loading.register) return
+    loading.register = true
+    try {
+      assertPasswordsMatch(userRegisterForm)
+      await request('/auth/register/user', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: userRegisterForm.name,
+          phone: userRegisterForm.phone,
+          password: userRegisterForm.password,
+          gender: userRegisterForm.gender,
+          age: Number(userRegisterForm.age || 0),
+          idCard: userRegisterForm.idCard,
+        }),
+      })
+      ElMessage.success('用户注册成功，请登录')
+    } finally {
+      loading.register = false
     }
-    await login()
+  }
+
+  async function registerDoctor() {
+    if (loading.register) return
+    loading.register = true
+    try {
+      assertPasswordsMatch(doctorRegisterForm)
+      await request('/auth/register/doctor', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: doctorRegisterForm.name,
+          phone: doctorRegisterForm.phone,
+          password: doctorRegisterForm.password,
+          employeeNo: doctorRegisterForm.employeeNo,
+          department: doctorRegisterForm.department,
+          title: doctorRegisterForm.title,
+        }),
+      })
+      ElMessage.success('医生注册已提交，审核通过后可登录')
+    } finally {
+      loading.register = false
+    }
+  }
+
+  async function logout() {
+    if (loading.logout) return
+    loading.logout = true
+    try {
+      if (getAuthToken()) await request('/auth/logout', { method: 'POST' }).catch(() => null)
+      setAuthToken('')
+      saveUser(null)
+      appointments.value = []
+      reports.value = []
+      users.value = []
+    } finally {
+      loading.logout = false
+    }
   }
 
   async function loadAll() {
-    packages.value = await request('/packages')
-    appointments.value = await request('/appointments')
-    const userId = isUser.value && currentUser.value ? `?userId=${currentUser.value.id}` : ''
-    reports.value = currentUser.value ? await request(`/reports${userId}`) : []
-    if (!appointmentForm.packageId && packages.value[0]) appointmentForm.packageId = packages.value[0].id
-    if (!reportForm.appointmentId && appointments.value[0]) reportForm.appointmentId = appointments.value[0].id
+    if (loading.load) return
+    loading.load = true
+    try {
+      packages.value = await request('/packages')
+      if (!getAuthToken()) return
+      appointments.value = await request('/appointments')
+      reports.value = await request('/reports')
+      if (isDoctor.value || isAdmin.value) users.value = await request('/users')
+      else users.value = currentUser.value ? [currentUser.value] : []
+      if (!appointmentForm.packageId && packages.value[0]) appointmentForm.packageId = packages.value[0].id
+      if (!reportForm.appointmentId && appointments.value[0]) reportForm.appointmentId = appointments.value[0].id
+    } finally {
+      loading.load = false
+    }
   }
 
   async function ensureBootstrapped() {
     if (bootstrapped) return
     bootstrapped = true
-    await login()
+    if (getAuthToken()) {
+      const user = await request('/auth/me').catch(() => null)
+      if (user) saveUser(user)
+      else {
+        setAuthToken('')
+        saveUser(null)
+      }
+    }
+    await loadAll()
   }
 
   async function createAppointment() {
-    if (!currentUser.value) return
-    await request('/appointments', {
-      method: 'POST',
-      body: JSON.stringify({ ...appointmentForm, userId: currentUser.value.id }),
-    })
-    ElMessage.success('预约已提交')
-    await loadAll()
+    if (!currentUser.value || loading.appointment) return
+    loading.appointment = true
+    try {
+      await request('/appointments', {
+        method: 'POST',
+        body: JSON.stringify(appointmentForm),
+      })
+      ElMessage.success('预约已提交')
+      await loadAll()
+    } finally {
+      loading.appointment = false
+    }
   }
 
   async function markDone(row) {
-    await request(`/appointments/${row.id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'checked' }),
-    })
-    reportForm.appointmentId = row.id
-    ElMessage.success('已标记完成体检，可继续生成报告')
-    await loadAll()
+    if (loading.status) return
+    loading.status = true
+    try {
+      await request(`/appointments/${row.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'checked' }),
+      })
+      reportForm.appointmentId = row.id
+      ElMessage.success('已标记完成体检，可继续生成报告')
+      await loadAll()
+    } finally {
+      loading.status = false
+    }
   }
 
   async function createReport() {
-    if (!currentUser.value) return
-    await request('/reports', {
-      method: 'POST',
-      body: JSON.stringify({ ...reportForm, doctorId: currentUser.value.id }),
-    })
-    ElMessage.success('报告已生成')
-    await loadAll()
+    if (!currentUser.value || loading.report) return
+    loading.report = true
+    try {
+      await request('/reports', {
+        method: 'POST',
+        body: JSON.stringify(reportForm),
+      })
+      ElMessage.success('报告已生成')
+      await loadAll()
+    } finally {
+      loading.report = false
+    }
+  }
+
+  async function updateUserStatus(user, status) {
+    if (loading.status) return
+    loading.status = true
+    try {
+      await request(`/users/${user.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      ElMessage.success('状态已更新')
+      await loadAll()
+    } finally {
+      loading.status = false
+    }
   }
 
   function selectPackage(pkg) {
@@ -124,28 +261,38 @@ export function useHealthData() {
   }
 
   return {
-    role,
     loginForm,
+    userRegisterForm,
+    doctorRegisterForm,
     currentUser,
     packages,
     appointments,
     reports,
+    users,
     appointmentForm,
     reportForm,
+    loading,
+    role,
+    isAuthenticated,
     isUser,
     isDoctor,
+    isAdmin,
     myAppointments,
     bookedCount,
     reportedCount,
     pendingDoctorCount,
+    pendingDoctors,
     peopleRows,
     login,
-    quickLogin,
+    registerUser,
+    registerDoctor,
+    logout,
     loadAll,
     ensureBootstrapped,
     createAppointment,
     markDone,
     createReport,
+    updateUserStatus,
     selectPackage,
   }
 }

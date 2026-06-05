@@ -3,12 +3,20 @@ package models
 import "time"
 
 type User struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name" gorm:"size:64;not null"`
-	Phone     string    `json:"phone" gorm:"size:32;uniqueIndex;not null"`
-	Role      string    `json:"role" gorm:"size:16;not null"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID           uint      `json:"id" gorm:"primaryKey"`
+	Name         string    `json:"name" gorm:"size:64;not null"`
+	Phone        string    `json:"phone" gorm:"size:32;uniqueIndex;not null"`
+	PasswordHash string    `json:"-" gorm:"size:255;not null;default:''"`
+	Role         string    `json:"role" gorm:"size:16;not null"`
+	Status       string    `json:"status" gorm:"size:16;not null;default:'active'"`
+	Gender       string    `json:"gender" gorm:"size:16"`
+	Age          int       `json:"age"`
+	IDCard       string    `json:"idCard" gorm:"size:32"`
+	EmployeeNo   string    `json:"employeeNo" gorm:"size:32"`
+	Department   string    `json:"department" gorm:"size:64"`
+	Title        string    `json:"title" gorm:"size:64"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type CheckupPackage struct {

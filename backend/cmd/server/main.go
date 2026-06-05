@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
+	"health-checkup/backend/internal/cache"
 	"health-checkup/backend/internal/config"
 	"health-checkup/backend/internal/database"
 	"health-checkup/backend/internal/handlers"
@@ -28,7 +30,11 @@ func main() {
 
 	switch command {
 	case "serve":
-		router := handlers.NewRouter(db)
+		redisClient := cache.Open(cfg.RedisAddr)
+		if err := cache.Ping(context.Background(), redisClient); err != nil {
+			log.Fatalf("connect redis: %v", err)
+		}
+		router := handlers.NewRouter(db, redisClient, cfg)
 		if err := router.Run(cfg.Addr); err != nil {
 			log.Fatalf("start server: %v", err)
 		}

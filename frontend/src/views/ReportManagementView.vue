@@ -1,7 +1,7 @@
 <template>
   <section class="view">
-    <div class="layout-two">
-      <div class="panel">
+    <div :class="isDoctor ? 'layout-two' : 'single-layout'">
+      <div v-if="isDoctor" class="panel">
         <div class="panel-head">
           <div>
             <h3>报告录入</h3>
@@ -28,7 +28,7 @@
           <el-form-item label="健康建议">
             <el-input v-model="reportForm.recommendation" type="textarea" :rows="3" />
           </el-form-item>
-          <el-button type="success" :disabled="!isDoctor" @click="createReport">生成/更新报告</el-button>
+          <el-button type="success" :disabled="!isDoctor" :loading="loading.report" @click="createReport">生成/更新报告</el-button>
         </el-form>
       </div>
 
@@ -61,5 +61,5 @@
 <script setup>
 import { formatDate, useHealthData } from '../composables/useHealthData'
 
-const { appointments, reports, reportForm, isDoctor, isUser, createReport } = useHealthData()
+const { appointments, reports, reportForm, isDoctor, isUser, loading, createReport } = useHealthData()
 </script>

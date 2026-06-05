@@ -14,7 +14,7 @@
     </el-table-column>
     <el-table-column label="操作" width="170">
       <template #default="{ row }">
-        <el-button size="small" :disabled="!isDoctor || row.status === 'reported'" @click="$emit('mark-done', row)">
+        <el-button size="small" :loading="loading" :disabled="!isDoctor || row.status === 'reported'" @click="$emit('mark-done', row)">
           完成体检
         </el-button>
       </template>
@@ -31,6 +31,10 @@ defineProps({
     required: true,
   },
   isDoctor: {
+    type: Boolean,
+    default: false,
+  },
+  loading: {
     type: Boolean,
     default: false,
   },

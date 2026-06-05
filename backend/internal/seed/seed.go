@@ -1,18 +1,33 @@
 package seed
 
 import (
+	"health-checkup/backend/internal/auth"
 	"health-checkup/backend/internal/models"
 
 	"gorm.io/gorm"
 )
 
 func Run(db *gorm.DB) error {
+	userPassword, err := auth.HashPassword("123456")
+	if err != nil {
+		return err
+	}
+	doctorPassword, err := auth.HashPassword("123456")
+	if err != nil {
+		return err
+	}
+	adminPassword, err := auth.HashPassword("admin123")
+	if err != nil {
+		return err
+	}
 	users := []models.User{
-		{Name: "张三", Phone: "13800000001", Role: "user"},
-		{Name: "李医生", Phone: "13900000001", Role: "doctor"},
+		{Name: "张三", Phone: "13800000001", PasswordHash: userPassword, Role: "user", Status: "active", Gender: "男", Age: 30},
+		{Name: "李医生", Phone: "13900000001", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师"},
+		{Name: "王医生", Phone: "13900000002", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1002", Department: "内科", Title: "住院医师"},
+		{Name: "系统管理员", Phone: "13700000001", PasswordHash: adminPassword, Role: "admin", Status: "active"},
 	}
 	for _, user := range users {
-		if err := db.FirstOrCreate(&user, models.User{Phone: user.Phone}).Error; err != nil {
+		if err := db.Where(models.User{Phone: user.Phone}).Assign(user).FirstOrCreate(&user).Error; err != nil {
 			return err
 		}
 	}

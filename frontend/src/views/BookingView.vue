@@ -1,6 +1,6 @@
 <template>
   <section class="view">
-    <div class="layout-two booking-layout">
+    <div v-if="showBookingForm" class="layout-two booking-layout">
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -52,7 +52,7 @@
           <el-form-item label="备注说明">
             <el-input v-model="appointmentForm.note" type="textarea" :rows="4" placeholder="例如既往病史、特殊检查需求" />
           </el-form-item>
-          <el-button type="primary" :disabled="!isUser" @click="createAppointment">提交预约</el-button>
+          <el-button type="primary" :disabled="!isUser" :loading="loading.appointment" @click="createAppointment">提交预约</el-button>
         </el-form>
       </div>
     </div>
@@ -70,14 +70,19 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppointmentTable from '../components/AppointmentTable.vue'
 import { useHealthData } from '../composables/useHealthData'
 
+const route = useRoute()
+const showBookingForm = computed(() => route.name !== 'myAppointments')
 const {
   packages,
   appointmentForm,
   myAppointments,
   isUser,
+  loading,
   selectPackage,
   createAppointment,
 } = useHealthData()

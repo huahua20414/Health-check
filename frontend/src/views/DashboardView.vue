@@ -27,16 +27,20 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h3>业务流程</h3>
-            <p>覆盖体检预约、执行、报告生成、报告查看</p>
+            <h3>待处理事项</h3>
+            <p>根据当前角色和实时业务数据生成</p>
           </div>
         </div>
-        <el-steps :active="3" finish-status="success">
-          <el-step title="选择套餐" description="用户根据需求选择体检套餐" />
-          <el-step title="提交预约" description="选择日期和时段生成预约" />
-          <el-step title="医生处理" description="确认体检完成并录入结论" />
-          <el-step title="查看报告" description="用户端查看体检建议" />
-        </el-steps>
+        <div class="todo-list">
+          <div v-for="item in todoItems" :key="item.title" class="todo-item">
+            <strong>{{ item.count }}</strong>
+            <div>
+              <h4>{{ item.title }}</h4>
+              <p>{{ item.description }}</p>
+            </div>
+          </div>
+          <el-empty v-if="todoItems.length === 0" description="暂无待处理事项" />
+        </div>
       </div>
 
       <div class="panel">
@@ -67,5 +71,28 @@
 import StatusTag from '../components/StatusTag.vue'
 import { useHealthData } from '../composables/useHealthData'
 
-const { packages, appointments, reports, bookedCount, reportedCount, pendingDoctorCount } = useHealthData()
+import { computed } from 'vue'
+
+const { packages, appointments, reports, bookedCount, reportedCount, pendingDoctorCount, pendingDoctors, isAdmin, isDoctor, isUser } = useHealthData()
+
+const todoItems = computed(() => {
+  if (isAdmin.value) {
+    return [
+      { title: '待审核医生', count: pendingDoctors.value.length, description: '医生注册后需要管理员审核启用' },
+    ].filter((item) => item.count > 0)
+  }
+  if (isDoctor.value) {
+    return [
+      { title: '待体检预约', count: appointments.value.filter((item) => item.status === 'booked').length, description: '需要确认客户到检并更新状态' },
+      { title: '待生成报告', count: appointments.value.filter((item) => item.status === 'checked').length, description: '已完成体检但尚未归档报告' },
+    ].filter((item) => item.count > 0)
+  }
+  if (isUser.value) {
+    return [
+      { title: '我的有效预约', count: appointments.value.filter((item) => item.status !== 'reported').length, description: '请按预约日期到检' },
+      { title: '可查看报告', count: reports.value.length, description: '体检报告由医生生成后展示' },
+    ].filter((item) => item.count > 0)
+  }
+  return []
+})
 </script>

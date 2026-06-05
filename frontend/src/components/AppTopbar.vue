@@ -5,31 +5,29 @@
       <h2>{{ route.meta.title || '工作台' }}</h2>
     </div>
     <div class="top-actions">
-      <el-segmented v-model="role" :options="roleOptions" @change="handleRoleChange" />
-      <el-input v-model="loginForm.phone" placeholder="手机号" class="login-input" />
-      <el-input v-model="loginForm.name" placeholder="姓名" class="login-input compact" />
-      <el-button type="primary" @click="login">切换身份</el-button>
-      <el-button :icon="Refresh" @click="loadAll">刷新</el-button>
+      <div class="account-chip">
+        <strong>{{ currentUser?.name }}</strong>
+        <span>{{ roleLabel }}</span>
+      </div>
+      <el-button :icon="Refresh" :loading="loading.load" @click="loadAll">刷新</el-button>
+      <el-button type="danger" plain :loading="loading.logout" @click="handleLogout">退出登录</el-button>
     </div>
   </header>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { useHealthData } from '../composables/useHealthData'
 
 const router = useRouter()
 const route = useRoute()
-const { role, loginForm, login, quickLogin, loadAll } = useHealthData()
-const roleOptions = [
-  { label: '用户端', value: 'user' },
-  { label: '医生端', value: 'doctor' },
-]
+const { currentUser, loading, loadAll, logout } = useHealthData()
+const roleLabel = computed(() => ({ user: '用户端', doctor: '医生端', admin: '管理端' }[currentUser.value?.role] || '-'))
 
-async function handleRoleChange(nextRole) {
-  await quickLogin(nextRole)
-  if (nextRole === 'doctor') router.push('/appointments')
-  if (nextRole === 'user' && route.path === '/appointments') router.push('/')
+async function handleLogout() {
+  await logout()
+  router.push('/login')
 }
 </script>

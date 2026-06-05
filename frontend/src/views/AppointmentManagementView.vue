@@ -15,7 +15,7 @@
           <el-input v-model="keyword" placeholder="搜索客户/套餐" />
         </div>
       </div>
-      <AppointmentTable :rows="filteredAppointments" :is-doctor="isDoctor" @mark-done="handleMarkDone" />
+      <AppointmentTable :rows="filteredAppointments" :is-doctor="isDoctor" :loading="loading.status" @mark-done="handleMarkDone" />
     </div>
   </section>
 </template>
@@ -24,18 +24,20 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppointmentTable from '../components/AppointmentTable.vue'
+import { useDebouncedRef } from '../composables/useDebouncedRef'
 import { useHealthData } from '../composables/useHealthData'
 
 const router = useRouter()
 const statusFilter = ref('')
 const keyword = ref('')
-const { appointments, isDoctor, markDone } = useHealthData()
+const debouncedKeyword = useDebouncedRef(keyword, 350)
+const { appointments, isDoctor, loading, markDone } = useHealthData()
 
 const filteredAppointments = computed(() => {
   return appointments.value.filter((item) => {
     const matchesStatus = !statusFilter.value || item.status === statusFilter.value
     const text = `${item.user?.name || ''}${item.package?.name || ''}${item.date || ''}`
-    const matchesKeyword = !keyword.value || text.includes(keyword.value)
+    const matchesKeyword = !debouncedKeyword.value || text.includes(debouncedKeyword.value)
     return matchesStatus && matchesKeyword
   })
 })

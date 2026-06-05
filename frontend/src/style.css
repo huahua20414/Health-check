@@ -148,6 +148,26 @@ textarea {
   gap: 10px;
 }
 
+.account-chip {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #dce5ee;
+  border-radius: 8px;
+  background: #f7fafc;
+}
+
+.account-chip strong {
+  color: #18324c;
+}
+
+.account-chip span {
+  color: #6a7b8f;
+  font-size: 0.82rem;
+}
+
 .login-input {
   width: 170px;
 }
@@ -262,6 +282,12 @@ textarea {
   gap: 16px;
 }
 
+.single-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
 .booking-layout {
   align-items: start;
 }
@@ -335,6 +361,42 @@ textarea {
   gap: 12px;
 }
 
+.todo-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.todo-item {
+  padding: 0.9rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.9rem;
+  border: 1px solid #dce5ee;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.todo-item > strong {
+  min-width: 2.4rem;
+  height: 2.4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #e7f4ef;
+  color: #0f766e;
+  font-size: 1.2rem;
+}
+
+.todo-item h4 {
+  margin: 0 0 0.25rem;
+  color: #18324c;
+}
+
+.todo-item p {
+  margin: 0;
+  color: #6a7b8f;
+}
+
 .report-card {
   padding: 14px;
   border: 1px solid #dce5ee;
@@ -391,6 +453,80 @@ code {
   color: #173b63;
 }
 
+.auth-page {
+  min-height: 100vh;
+  padding: clamp(1rem, 4vw, 3rem);
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(135deg, rgba(31, 120, 180, 0.14), rgba(33, 166, 122, 0.12)),
+    #eef3f8;
+}
+
+.auth-card {
+  width: min(58rem, 100%);
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.9fr) minmax(18rem, 1fr);
+  overflow: hidden;
+  border: 1px solid #dce5ee;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 22px 55px rgba(24, 50, 76, 0.14);
+}
+
+.auth-hero {
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #173b63;
+  color: #ffffff;
+}
+
+.auth-hero h1 {
+  margin: 1rem 0 0.6rem;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+}
+
+.auth-hero p {
+  margin: 0;
+  color: #c9d7e5;
+  line-height: 1.7;
+}
+
+.auth-form {
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  display: grid;
+  align-content: center;
+}
+
+.auth-form .el-button {
+  width: 100%;
+}
+
+.auth-links {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.auth-links a {
+  color: #1f78b4;
+  text-decoration: none;
+}
+
+.demo-accounts {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+  border-radius: 8px;
+  background: #f4f7fb;
+  color: #536579;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 1100px) {
   .admin-shell {
     grid-template-columns: 210px minmax(0, 1fr);
@@ -442,6 +578,10 @@ code {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-card {
     grid-template-columns: 1fr;
   }
 }
