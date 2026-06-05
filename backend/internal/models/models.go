@@ -25,6 +25,7 @@ type CheckupPackage struct {
 	Description string    `json:"description" gorm:"type:text"`
 	Price       float64   `json:"price" gorm:"not null"`
 	Items       string    `json:"items" gorm:"type:text"`
+	Status      string    `json:"status" gorm:"size:16;not null;default:'active'"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }

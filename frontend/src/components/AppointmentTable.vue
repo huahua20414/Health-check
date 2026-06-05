@@ -14,8 +14,11 @@
     </el-table-column>
     <el-table-column label="操作" width="170">
       <template #default="{ row }">
-        <el-button size="small" :loading="loading" :disabled="!isDoctor || row.status === 'reported'" @click="$emit('mark-done', row)">
+        <el-button v-if="isDoctor" size="small" :loading="loading" :disabled="row.status === 'reported' || row.status === 'canceled'" @click="$emit('mark-done', row)">
           完成体检
+        </el-button>
+        <el-button v-else-if="canCancel" size="small" type="danger" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('cancel', row)">
+          取消预约
         </el-button>
       </template>
     </el-table-column>
@@ -38,7 +41,11 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  canCancel: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['mark-done'])
+defineEmits(['mark-done', 'cancel'])
 </script>

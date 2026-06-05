@@ -19,6 +19,7 @@ const appointments = ref([])
 const reports = ref([])
 const users = ref([])
 const appointmentForm = reactive({ packageId: null, date: '2026-06-05', period: '上午', note: '' })
+const packageForm = reactive({ id: null, name: '', description: '', price: 0, items: '', status: 'active' })
 const reportForm = reactive({
   appointmentId: null,
   summary: '',
@@ -33,16 +34,17 @@ const loading = reactive({
   appointment: false,
   report: false,
   status: false,
+  package: false,
 })
 
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', active: '启用', pending: '待审核', disabled: '停用' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', active: '启用', pending: '待审核', disabled: '停用' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', active: 'success', pending: 'warning', disabled: 'danger' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', active: 'success', pending: 'warning', disabled: 'danger' }[status] || 'info'
 }
 
 export function formatDate(value) {
@@ -210,6 +212,18 @@ export function useHealthData() {
     }
   }
 
+  async function cancelAppointment(row) {
+    if (loading.status) return
+    loading.status = true
+    try {
+      await request(`/appointments/${row.id}/cancel`, { method: 'PATCH' })
+      ElMessage.success('预约已取消')
+      await loadAll()
+    } finally {
+      loading.status = false
+    }
+  }
+
   async function markDone(row) {
     if (loading.status) return
     loading.status = true
@@ -238,6 +252,38 @@ export function useHealthData() {
       await loadAll()
     } finally {
       loading.report = false
+    }
+  }
+
+  function editPackage(pkg) {
+    Object.assign(packageForm, {
+      id: pkg?.id || null,
+      name: pkg?.name || '',
+      description: pkg?.description || '',
+      price: Number(pkg?.price || 0),
+      items: pkg?.items || '',
+      status: pkg?.status || 'active',
+    })
+  }
+
+  async function savePackage() {
+    if (loading.package) return
+    loading.package = true
+    try {
+      const body = JSON.stringify({
+        name: packageForm.name,
+        description: packageForm.description,
+        price: Number(packageForm.price || 0),
+        items: packageForm.items,
+        status: packageForm.status,
+      })
+      if (packageForm.id) await request(`/packages/${packageForm.id}`, { method: 'PATCH', body })
+      else await request('/packages', { method: 'POST', body })
+      ElMessage.success('套餐已保存')
+      editPackage(null)
+      await loadAll()
+    } finally {
+      loading.package = false
     }
   }
 
@@ -270,6 +316,7 @@ export function useHealthData() {
     reports,
     users,
     appointmentForm,
+    packageForm,
     reportForm,
     loading,
     role,
@@ -290,9 +337,12 @@ export function useHealthData() {
     loadAll,
     ensureBootstrapped,
     createAppointment,
+    cancelAppointment,
     markDone,
     createReport,
     updateUserStatus,
+    editPackage,
+    savePackage,
     selectPackage,
   }
 }

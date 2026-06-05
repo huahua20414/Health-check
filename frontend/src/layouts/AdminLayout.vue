@@ -28,7 +28,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import { useHealthData } from '../composables/useHealthData'
-import { menuItems } from '../router'
+import { routeMenuItems } from '../router'
 
 const { currentUser, isDoctor, isAdmin, ensureBootstrapped } = useHealthData()
 const route = useRoute()
@@ -37,7 +37,7 @@ const router = useRouter()
 function enforceRouteAccess() {
   const role = currentUser.value?.role
   if (!role) return
-  const routeMenu = menuItems.find((item) => item.name === route.name)
+  const routeMenu = routeMenuItems.find((item) => item.name === route.name)
   if (routeMenu && !routeMenu.roles.includes(role)) {
     router.replace(role === 'doctor' ? '/doctor' : role === 'admin' ? '/admin' : '/')
   }

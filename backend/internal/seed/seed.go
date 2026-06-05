@@ -33,12 +33,12 @@ func Run(db *gorm.DB) error {
 	}
 
 	packages := []models.CheckupPackage{
-		{Name: "基础入职体检", Description: "适合入职、入学等基础健康筛查。", Price: 199, Items: "一般检查、血常规、尿常规、肝功能、胸片"},
-		{Name: "白领健康套餐", Description: "覆盖常见慢病风险和办公室人群重点指标。", Price: 399, Items: "一般检查、血常规、血脂、血糖、肝肾功能、心电图、腹部彩超"},
-		{Name: "全面深度体检", Description: "适合年度全面健康评估。", Price: 899, Items: "基础项目、肿瘤标志物、甲状腺彩超、颈动脉彩超、骨密度"},
+		{Name: "基础入职体检", Description: "适合入职、入学等基础健康筛查。", Price: 199, Items: "一般检查、血常规、尿常规、肝功能、胸片", Status: "active"},
+		{Name: "白领健康套餐", Description: "覆盖常见慢病风险和办公室人群重点指标。", Price: 399, Items: "一般检查、血常规、血脂、血糖、肝肾功能、心电图、腹部彩超", Status: "active"},
+		{Name: "全面深度体检", Description: "适合年度全面健康评估。", Price: 899, Items: "基础项目、肿瘤标志物、甲状腺彩超、颈动脉彩超、骨密度", Status: "active"},
 	}
 	for _, pkg := range packages {
-		if err := db.FirstOrCreate(&pkg, models.CheckupPackage{Name: pkg.Name}).Error; err != nil {
+		if err := db.Where(models.CheckupPackage{Name: pkg.Name}).Assign(pkg).FirstOrCreate(&pkg).Error; err != nil {
 			return err
 		}
 	}

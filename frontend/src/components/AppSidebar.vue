@@ -16,10 +16,22 @@
       text-color="#c9d7e5"
       active-text-color="#ffffff"
     >
-      <el-menu-item v-for="item in visibleMenuItems" :key="item.name" :index="item.path">
-        <el-icon><component :is="icons[item.icon]" /></el-icon>
-        <span>{{ item.label }}</span>
-      </el-menu-item>
+      <template v-for="item in visibleMenuItems" :key="item.name || item.label">
+        <el-sub-menu v-if="item.children" :index="item.label">
+          <template #title>
+            <el-icon><component :is="icons[item.icon]" /></el-icon>
+            <span>{{ item.label }}</span>
+          </template>
+          <el-menu-item v-for="child in item.children" :key="child.name" :index="child.path">
+            <el-icon><component :is="icons[child.icon]" /></el-icon>
+            <span>{{ child.label }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+        <el-menu-item v-else :index="item.path">
+          <el-icon><component :is="icons[item.icon]" /></el-icon>
+          <span>{{ item.label }}</span>
+        </el-menu-item>
+      </template>
     </el-menu>
 
     <div class="sidebar-footer">

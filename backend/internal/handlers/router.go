@@ -46,9 +46,12 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/auth/me", handler.me)
 	protected.GET("/appointments", handler.appointments)
 	protected.POST("/appointments", handler.requireRole("user"), handler.createAppointment)
+	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
 	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
 	protected.POST("/reports", handler.requireRole("doctor"), handler.createReport)
+	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
+	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
 	protected.PATCH("/users/:id/status", handler.requireRole("admin"), handler.updateUserStatus)
 	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
@@ -154,7 +157,11 @@ func (h *Handler) me(c *gin.Context) {
 
 func (h *Handler) packages(c *gin.Context) {
 	var packages []models.CheckupPackage
-	if err := h.db.Order("price asc").Find(&packages).Error; err != nil {
+	query := h.db.Order("price asc")
+	if c.GetHeader("Authorization") == "" {
+		query = query.Where("status = ?", "active")
+	}
+	if err := query.Find(&packages).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -186,6 +193,11 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
+	var pkg models.CheckupPackage
+	if err := h.db.First(&pkg, req.PackageID).Error; err != nil || pkg.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "package is unavailable"})
+		return
+	}
 	appointment := models.Appointment{
 		UserID:    current.ID,
 		PackageID: req.PackageID,
@@ -202,6 +214,29 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	c.JSON(http.StatusCreated, appointment)
 }
 
+func (h *Handler) cancelAppointment(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment id"})
+		return
+	}
+	current := currentUser(c)
+	var appointment models.Appointment
+	if err := h.db.Where("id = ? AND user_id = ?", id, current.ID).First(&appointment).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if appointment.Status != "booked" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only booked appointments can be canceled"})
+		return
+	}
+	if err := h.db.Model(&appointment).Update("status", "canceled").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "canceled"})
+}
+
 func (h *Handler) updateAppointmentStatus(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -212,7 +247,7 @@ func (h *Handler) updateAppointmentStatus(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
-	if req.Status != "booked" && req.Status != "checked" && req.Status != "reported" {
+	if req.Status != "booked" && req.Status != "checked" && req.Status != "reported" && req.Status != "canceled" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment status"})
 		return
 	}
@@ -250,6 +285,10 @@ func (h *Handler) createReport(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
 		return
 	}
+	if appointment.Status != "checked" && appointment.Status != "reported" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "report can only be created after checkup is completed"})
+		return
+	}
 	report := models.Report{
 		AppointmentID:  appointment.ID,
 		UserID:         appointment.UserID,
@@ -269,6 +308,50 @@ func (h *Handler) createReport(c *gin.Context) {
 	}
 	h.db.Preload("Appointment.Package").Preload("User").Preload("Doctor").First(&report, report.ID)
 	c.JSON(http.StatusCreated, report)
+}
+
+func (h *Handler) createPackage(c *gin.Context) {
+	var req packageRequest
+	if !bind(c, &req) {
+		return
+	}
+	pkg := models.CheckupPackage{
+		Name:        req.Name,
+		Description: req.Description,
+		Price:       req.Price,
+		Items:       req.Items,
+		Status:      normalizeStatus(req.Status, "active"),
+	}
+	if err := h.db.Create(&pkg).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, pkg)
+}
+
+func (h *Handler) updatePackage(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package id"})
+		return
+	}
+	var req packageRequest
+	if !bind(c, &req) {
+		return
+	}
+	updates := models.CheckupPackage{
+		Name:        req.Name,
+		Description: req.Description,
+		Price:       req.Price,
+		Items:       req.Items,
+		Status:      normalizeStatus(req.Status, "active"),
+	}
+	if err := h.db.Model(&models.CheckupPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.First(&updates, id)
+	c.JSON(http.StatusOK, updates)
 }
 
 func (h *Handler) users(c *gin.Context) {
@@ -416,6 +499,14 @@ type appointmentRequest struct {
 	Note      string `json:"note"`
 }
 
+type packageRequest struct {
+	Name        string  `json:"name" binding:"required"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price" binding:"required"`
+	Items       string  `json:"items" binding:"required"`
+	Status      string  `json:"status"`
+}
+
 type reportRequest struct {
 	AppointmentID  uint   `json:"appointmentId" binding:"required"`
 	Summary        string `json:"summary" binding:"required"`
@@ -425,4 +516,11 @@ type reportRequest struct {
 
 type statusRequest struct {
 	Status string `json:"status" binding:"required"`
+}
+
+func normalizeStatus(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
