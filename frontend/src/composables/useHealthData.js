@@ -31,6 +31,7 @@ const mailLogs = ref([])
 const paginations = reactive({
   appointments: { page: 1, pageSize: 10, total: 0 },
   users: { page: 1, pageSize: 10, total: 0 },
+  doctors: { page: 1, pageSize: 10, total: 0 },
   reports: { page: 1, pageSize: 6, total: 0 },
   waitlist: { page: 1, pageSize: 10, total: 0 },
   mailLogs: { page: 1, pageSize: 10, total: 0 },
@@ -325,8 +326,8 @@ export function useHealthData() {
     reports.value = await requestPage('/reports', paginations.reports, params)
   }
 
-  async function loadUsersPage(params = {}) {
-    users.value = await requestPage('/users', paginations.users, params)
+  async function loadUsersPage(params = {}, key = 'users') {
+    users.value = await requestPage('/users', paginations[key] || paginations.users, params)
   }
 
   async function loadWaitlistPage(params = {}) {

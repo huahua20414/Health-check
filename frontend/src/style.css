@@ -358,6 +358,33 @@ textarea {
   gap: 1rem;
 }
 
+.management-stack {
+  gap: 1.1rem;
+}
+
+.form-panel {
+  padding: 1.15rem 1.2rem;
+}
+
+.wide-table-panel {
+  padding: 1.15rem;
+}
+
+.wide-table-panel .el-table {
+  min-width: 100%;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.table-actions .el-button {
+  margin-left: 0;
+}
+
 .single-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -721,6 +748,18 @@ textarea {
 .form-grid {
   display: grid;
   gap: 0.2rem;
+}
+
+.spacious-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.15rem 1rem;
+  align-items: start;
+}
+
+.spacious-form .el-form-item:has(textarea),
+.spacious-form .actions,
+.spacious-form > .el-button {
+  grid-column: 1 / -1;
 }
 
 .form-grid .el-select,

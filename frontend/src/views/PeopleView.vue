@@ -1,6 +1,6 @@
 <template>
   <section class="view">
-    <div class="panel">
+    <div class="panel wide-table-panel">
       <div class="panel-head">
         <div>
           <h3>人员档案</h3>
@@ -13,23 +13,17 @@
         <el-table-column prop="email" label="邮箱" min-width="190" />
         <el-table-column label="科室" width="170">
           <template #default="{ row }">
-            <el-select v-if="isAdmin && row.role === 'doctor'" v-model="row.department" size="small" placeholder="选择科室">
-              <el-option v-for="department in doctorDepartments" :key="department" :label="department" :value="department" />
-            </el-select>
-            <span v-else>{{ row.department || '-' }}</span>
+            <span>{{ row.department || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="负责体检" min-width="260">
           <template #default="{ row }">
-            <el-select v-if="isAdmin && row.role === 'doctor'" v-model="row.specialtyValues" multiple collapse-tags collapse-tags-tooltip size="small" placeholder="选择负责分类">
-              <el-option v-for="specialty in specialtyOptions" :key="specialty" :label="specialty" :value="specialty" />
-            </el-select>
-            <span v-else>{{ row.specialties || '-' }}</span>
+            <span>{{ row.specialties || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="角色" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'doctor' ? 'warning' : 'success'">{{ row.role === 'doctor' ? '医生' : '用户' }}</el-tag>
+            <el-tag :type="roleTagType(row.role)">{{ roleLabel(row.role) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
@@ -38,17 +32,14 @@
         <el-table-column label="来源">
           <template #default="{ row }">{{ row.source }}</template>
         </el-table-column>
-        <el-table-column v-if="isAdmin" label="操作" width="280">
+        <el-table-column v-if="isAdmin" label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.role === 'doctor'" size="small" :loading="loading.doctorProfile" @click="saveDoctorProfile(row)">
-              保存资料
-            </el-button>
-            <el-button v-if="row.status === 'pending'" size="small" type="success" :loading="loading.status" @click="changeStatus(row, 'active')">
-              通过审核
-            </el-button>
-            <el-button v-if="row.status !== 'disabled'" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">
-              停用
-            </el-button>
+            <div class="table-actions">
+              <el-button v-if="row.status !== 'disabled'" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">
+                停用
+              </el-button>
+              <el-tag v-else type="info" effect="plain">已停用</el-tag>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -67,32 +58,23 @@
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from 'vue'
-import { doctorDepartments, specialtyOptions, useHealthData } from '../composables/useHealthData'
+import { onMounted, watch } from 'vue'
+import { useHealthData } from '../composables/useHealthData'
 import StatusTag from '../components/StatusTag.vue'
 
-const { peopleRows, isAdmin, loading, updateUserStatus, updateDoctorProfile, paginations, loadUsersPage } = useHealthData()
-const tableRows = computed(() => peopleRows.value.map((item) => ({
-  ...item,
-  specialtyValues: splitSpecialties(item.specialties),
-})))
-
-function splitSpecialties(value) {
-  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean)
-}
+const { peopleRows: tableRows, isAdmin, loading, updateUserStatus, paginations, loadUsersPage } = useHealthData()
 
 function loadPage() {
   if (isAdmin.value) return loadUsersPage()
   return Promise.resolve()
 }
 
-async function saveDoctorProfile(row) {
-  await updateDoctorProfile(row, {
-    department: row.department,
-    title: row.title,
-    specialties: row.specialtyValues,
-  })
-  await loadPage()
+function roleLabel(role) {
+  return { admin: '管理员', doctor: '医生', user: '用户' }[role] || role || '-'
+}
+
+function roleTagType(role) {
+  return { admin: 'danger', doctor: 'warning', user: 'success' }[role] || 'info'
 }
 
 async function changeStatus(row, status) {

@@ -1,6 +1,6 @@
 <template>
   <section class="view">
-    <div class="panel">
+    <div class="panel wide-table-panel">
       <div class="panel-head">
         <div>
           <h3>医生审核</h3>
@@ -29,11 +29,13 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="270">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" :loading="loading.doctorProfile" @click="saveDoctorProfile(row)">保存资料</el-button>
-            <el-button v-if="row.status === 'pending'" size="small" type="success" :loading="loading.status" @click="changeStatus(row, 'active')">通过</el-button>
-            <el-button v-if="row.status !== 'disabled'" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">停用</el-button>
+            <div class="table-actions">
+              <el-button size="small" :loading="loading.doctorProfile" @click="saveDoctorProfile(row)">保存资料</el-button>
+              <el-button v-if="row.status === 'pending'" size="small" type="success" :loading="loading.status" @click="changeStatus(row, 'active')">通过</el-button>
+              <el-button v-if="row.status !== 'disabled'" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">停用</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -41,9 +43,9 @@
         class="table-pagination"
         background
         layout="total, sizes, prev, pager, next"
-        :total="paginations.users.total"
-        v-model:current-page="paginations.users.page"
-        v-model:page-size="paginations.users.pageSize"
+        :total="paginations.doctors.total"
+        v-model:current-page="paginations.doctors.page"
+        v-model:page-size="paginations.doctors.pageSize"
         :page-sizes="[10, 20, 50]"
       />
     </div>
@@ -62,7 +64,7 @@ const doctorRows = computed(() => users.value.map((item) => ({
 })))
 
 function loadPage() {
-  return loadUsersPage({ role: 'doctor' })
+  return loadUsersPage({ role: 'doctor' }, 'doctors')
 }
 
 function splitSpecialties(value) {
@@ -83,6 +85,6 @@ async function changeStatus(row, status) {
   await loadPage()
 }
 
-watch(() => [paginations.users.page, paginations.users.pageSize], () => loadPage())
+watch(() => [paginations.doctors.page, paginations.doctors.pageSize], () => loadPage())
 onMounted(() => loadPage())
 </script>
