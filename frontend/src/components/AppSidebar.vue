@@ -13,8 +13,8 @@
       router
       :default-active="activePath"
       background-color="transparent"
-      text-color="#c9d7e5"
-      active-text-color="#ffffff"
+      text-color="#475569"
+      active-text-color="#0f766e"
     >
       <template v-for="item in visibleMenuItems" :key="item.name || item.label">
         <el-sub-menu v-if="item.children" :index="item.label">
