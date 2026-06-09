@@ -166,9 +166,9 @@ make down
 种子账号：
 
 - 用户：`huahua20414@foxmail.com / 123456`
-- 医生：`huahua20414@foxmail.com / doctor123`
+- 医生：`huahua20414@foxmail.com / 123456`
 - 待审核医生：`pendingdoctor@example.com / 123456`
-- 管理员：`huahua20414@foxmail.com / admin123`
+- 管理员：`huahua20414@foxmail.com / 123456`
 
 ## 交付前检查
 

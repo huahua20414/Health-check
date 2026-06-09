@@ -3,8 +3,9 @@ import { ElMessage } from 'element-plus'
 import { request, setAuthToken, getAuthToken } from '../api/client'
 
 export const appointmentTypes = ['个人体检', '入职体检', '年度体检', '复查体检']
+export const devAuthEnabled = import.meta.env.VITE_DEV_AUTH === 'true'
 
-const loginForm = reactive({ email: 'huahua20414@foxmail.com', password: '123456', code: '' })
+const loginForm = reactive({ email: 'huahua20414@foxmail.com', password: '123456', code: '', role: 'user' })
 const userRegisterForm = reactive({ name: '', email: '', code: '', password: '', confirmPassword: '', gender: '', age: null, idCard: '' })
 const doctorRegisterForm = reactive({
   name: '',

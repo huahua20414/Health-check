@@ -22,18 +22,14 @@ func Run(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	doctorDemoPassword, err := auth.HashPassword("doctor123")
-	if err != nil {
-		return err
-	}
-	adminPassword, err := auth.HashPassword("admin123")
+	adminPassword, err := auth.HashPassword("123456")
 	if err != nil {
 		return err
 	}
 
 	users := []models.User{
 		{Name: "张三", Phone: "U1001", Email: "huahua20414@foxmail.com", PasswordHash: userPassword, Role: "user", Status: "active", Gender: "男", Age: 30, EmailNotify: true, Bio: "关注年度体检和慢病风险管理。"},
-		{Name: "李医生", Phone: "D1001", Email: "huahua20414@foxmail.com", PasswordHash: doctorDemoPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", EmailNotify: true},
+		{Name: "李医生", Phone: "D1001", Email: "huahua20414@foxmail.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", EmailNotify: true},
 		{Name: "王医生", Phone: "D1002", Email: "wangdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1002", Department: "内科", Title: "副主任医师", EmailNotify: true},
 		{Name: "赵医生", Phone: "D1003", Email: "pendingdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1003", Department: "影像科", Title: "住院医师", EmailNotify: true},
 		{Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", PasswordHash: adminPassword, Role: "admin", Status: "active", EmailNotify: false},

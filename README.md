@@ -13,8 +13,7 @@
 ## 快速启动
 
 ```bash
-make up
-make seed
+make test
 ```
 
 访问前端：http://localhost:5173
@@ -24,7 +23,9 @@ make seed
 ## 常用命令
 
 ```bash
-make up       # 构建并启动 MySQL、后端、前端
+make test     # 测试模式：显示角色选择，同一邮箱/密码可进用户、医生、管理员
+make prod     # 正式模式：关闭调试登录，必须走邮箱验证码
+make up       # 默认构建并启动，按环境变量决定模式
 make seed     # 插入模拟数据
 make logs     # 查看服务日志
 make down     # 停止服务
@@ -34,10 +35,10 @@ make clean    # 停止并删除数据库卷
 ## 种子账号
 
 - 用户：`huahua20414@foxmail.com / 123456`
-- 医生：`huahua20414@foxmail.com / doctor123`
-- 管理员：`huahua20414@foxmail.com / admin123`
+- 医生：`huahua20414@foxmail.com / 123456`
+- 管理员：`huahua20414@foxmail.com / 123456`
 
-登录需要先向该邮箱发送验证码。
+`make test` 下登录页可直接选择身份进入三端；`make prod` 下登录需要先向该邮箱发送验证码。
 
 ## 认证与权限
 

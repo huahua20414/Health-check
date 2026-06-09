@@ -191,11 +191,15 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if !h.verifyAuthEmailCode(c, email, req.Code) {
+	if !h.config.DevAuthEnabled && !h.verifyAuthEmailCode(c, email, req.Code) {
 		return
 	}
 	var candidates []models.User
-	if err := h.db.Where("email = ?", email).Find(&candidates).Error; err != nil || len(candidates) == 0 {
+	query := h.db.Where("email = ?", email)
+	if h.config.DevAuthEnabled && req.Role != "" {
+		query = query.Where("role = ?", req.Role)
+	}
+	if err := query.Find(&candidates).Error; err != nil || len(candidates) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email, password or code"})
 		return
 	}
@@ -219,7 +223,9 @@ func (h *Handler) login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
 		return
 	}
-	h.redis.Del(c.Request.Context(), authEmailCodeKey(email))
+	if req.Code != "" {
+		h.redis.Del(c.Request.Context(), authEmailCodeKey(email))
+	}
 	c.JSON(http.StatusOK, gin.H{"accessToken": token, "user": user})
 }
 
@@ -836,7 +842,8 @@ func bind(c *gin.Context, target any) bool {
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
-	Code     string `json:"code" binding:"required"`
+	Code     string `json:"code"`
+	Role     string `json:"role"`
 }
 
 type registerUserRequest struct {

@@ -3,28 +3,30 @@ package config
 import "os"
 
 type Config struct {
-	Addr       string
-	DBDSN      string
-	RedisAddr  string
-	JWTSecret  string
-	TokenHours int
-	SMTPHost   string
-	SMTPPort   string
-	SMTPUser   string
-	SMTPPass   string
+	Addr           string
+	DBDSN          string
+	RedisAddr      string
+	JWTSecret      string
+	TokenHours     int
+	SMTPHost       string
+	SMTPPort       string
+	SMTPUser       string
+	SMTPPass       string
+	DevAuthEnabled bool
 }
 
 func Load() Config {
 	return Config{
-		Addr:       getEnv("APP_ADDR", ":8080"),
-		DBDSN:      getEnv("DB_DSN", "health:health123@tcp(127.0.0.1:3306)/health_checkup?charset=utf8mb4&parseTime=True&loc=Local"),
-		RedisAddr:  getEnv("REDIS_ADDR", "127.0.0.1:6379"),
-		JWTSecret:  getEnv("JWT_SECRET", "dev-health-checkup-secret"),
-		TokenHours: 12,
-		SMTPHost:   getEnv("SMTP_HOST", "smtp.qq.com"),
-		SMTPPort:   getEnv("SMTP_PORT", "587"),
-		SMTPUser:   getEnv("SMTP_USER", ""),
-		SMTPPass:   getEnv("SMTP_PASS", ""),
+		Addr:           getEnv("APP_ADDR", ":8080"),
+		DBDSN:          getEnv("DB_DSN", "health:health123@tcp(127.0.0.1:3306)/health_checkup?charset=utf8mb4&parseTime=True&loc=Local"),
+		RedisAddr:      getEnv("REDIS_ADDR", "127.0.0.1:6379"),
+		JWTSecret:      getEnv("JWT_SECRET", "dev-health-checkup-secret"),
+		TokenHours:     12,
+		SMTPHost:       getEnv("SMTP_HOST", "smtp.qq.com"),
+		SMTPPort:       getEnv("SMTP_PORT", "587"),
+		SMTPUser:       getEnv("SMTP_USER", ""),
+		SMTPPass:       getEnv("SMTP_PASS", ""),
+		DevAuthEnabled: getEnv("DEV_AUTH_ENABLED", "false") == "true",
 	}
 }
 
