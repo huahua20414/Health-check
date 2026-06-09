@@ -5,6 +5,7 @@
       <template #default="{ row }">{{ row.user?.name || '-' }}</template>
     </el-table-column>
     <el-table-column prop="appointmentType" label="类型" width="100" />
+    <el-table-column prop="category" label="分类" width="110" />
     <el-table-column label="机构" min-width="170">
       <template #default="{ row }">{{ row.institution?.name || '-' }}</template>
     </el-table-column>

@@ -19,6 +19,7 @@ type User struct {
 	EmployeeNo   string    `json:"employeeNo" gorm:"size:32"`
 	Department   string    `json:"department" gorm:"size:64"`
 	Title        string    `json:"title" gorm:"size:64"`
+	Specialties  string    `json:"specialties" gorm:"type:text"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
@@ -37,6 +38,7 @@ type CheckupInstitution struct {
 type CheckupPackage struct {
 	ID          uint      `json:"id" gorm:"primaryKey"`
 	Name        string    `json:"name" gorm:"size:128;not null"`
+	Category    string    `json:"category" gorm:"size:64;not null;default:'综合体检'"`
 	Description string    `json:"description" gorm:"type:text"`
 	Price       float64   `json:"price" gorm:"not null"`
 	Items       string    `json:"items" gorm:"type:text"`
@@ -54,6 +56,7 @@ type Appointment struct {
 	SlotID          uint               `json:"slotId" gorm:"index"`
 	PackageID       uint               `json:"packageId" gorm:"not null;index"`
 	AppointmentType string             `json:"appointmentType" gorm:"size:32;not null;default:'个人体检'"`
+	Category        string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
 	Date            string             `json:"date" gorm:"size:16;not null"`
 	Period          string             `json:"period" gorm:"size:32;not null"`
 	StartTime       string             `json:"startTime" gorm:"size:8"`
@@ -76,6 +79,7 @@ type ScheduleSlot struct {
 	InstitutionID uint               `json:"institutionId" gorm:"not null;index"`
 	Date          string             `json:"date" gorm:"size:16;not null;index"`
 	Period        string             `json:"period" gorm:"size:32;not null;index"`
+	Category      string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
 	StartTime     string             `json:"startTime" gorm:"size:8;not null"`
 	EndTime       string             `json:"endTime" gorm:"size:8;not null"`
 	Capacity      int                `json:"capacity" gorm:"not null;default:1"`
@@ -93,8 +97,11 @@ type WaitlistEntry struct {
 	PackageID       uint               `json:"packageId" gorm:"not null;index"`
 	InstitutionID   uint               `json:"institutionId" gorm:"not null;index"`
 	AppointmentType string             `json:"appointmentType" gorm:"size:32;not null;default:'个人体检'"`
+	Category        string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
 	Date            string             `json:"date" gorm:"size:16;not null;index"`
 	Period          string             `json:"period" gorm:"size:32;not null;index"`
+	StartTime       string             `json:"startTime" gorm:"size:8;index"`
+	EndTime         string             `json:"endTime" gorm:"size:8"`
 	Note            string             `json:"note" gorm:"type:text"`
 	Status          string             `json:"status" gorm:"size:24;not null;default:'waiting'"`
 	User            User               `json:"user"`

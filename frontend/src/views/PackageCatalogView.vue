@@ -17,6 +17,7 @@
         >
           <div>
             <h4>{{ pkg.name }}</h4>
+            <em>{{ pkg.category }}</em>
             <p>{{ pkg.description }}</p>
             <span>{{ pkg.items }}</span>
           </div>

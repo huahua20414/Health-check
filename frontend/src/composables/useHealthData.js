@@ -27,9 +27,10 @@ const slots = ref([])
 const waitlist = ref([])
 const mailLogs = ref([])
 const appointmentForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, slotId: null, date: '', period: '', note: '' })
+const waitlistForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, date: '', period: '', note: '' })
 const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true })
 const emailForm = reactive({ email: '', code: '' })
-const packageForm = reactive({ id: null, name: '', description: '', price: 0, items: '', status: 'active' })
+const packageForm = reactive({ id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' })
 const reportForm = reactive({
   appointmentId: null,
   summary: '',
@@ -82,6 +83,7 @@ export function appointmentDocumentHTML(appointment) {
     ['订单号', appointment.orderNo],
     ['客户', appointment.user?.name],
     ['预约类型', appointment.appointmentType],
+    ['体检分类', appointment.category],
     ['体检机构', appointment.institution?.name],
     ['机构地址', appointment.institution?.address],
     ['套餐', appointment.package?.name],
@@ -100,6 +102,7 @@ export function reportDocumentHTML(report) {
     ['订单号', report.appointment?.orderNo],
     ['客户', report.user?.name],
     ['体检机构', report.appointment?.institution?.name],
+    ['体检分类', report.appointment?.category],
     ['套餐', report.appointment?.package?.name],
     ['医生', `${report.doctor?.name || ''} ${report.doctor?.title || ''}`],
     ['检查摘要', report.summary],
@@ -316,6 +319,30 @@ export function useHealthData() {
     }
   }
 
+  async function joinWaitlist(slot) {
+    if (!currentUser.value || loading.appointment) return
+    loading.appointment = true
+    try {
+      Object.assign(waitlistForm, {
+        appointmentType: appointmentForm.appointmentType,
+        institutionId: appointmentForm.institutionId,
+        packageId: appointmentForm.packageId,
+        date: appointmentForm.date,
+        period: slot?.period || appointmentForm.period,
+        note: appointmentForm.note,
+      })
+      const result = await request('/appointments', {
+        method: 'POST',
+        body: JSON.stringify({ ...waitlistForm, slotId: slot?.id || 0 }),
+      })
+      if (result.type === 'waitlist') ElMessage.warning('已加入候补，系统会在有号源释放时自动递补')
+      else ElMessage.success('预约成功，医生和时间已分配')
+      await loadAll()
+    } finally {
+      loading.appointment = false
+    }
+  }
+
   async function saveProfile() {
     if (loading.profile) return
     loading.profile = true
@@ -419,6 +446,7 @@ export function useHealthData() {
     Object.assign(packageForm, {
       id: pkg?.id || null,
       name: pkg?.name || '',
+      category: pkg?.category || '年度综合',
       description: pkg?.description || '',
       price: Number(pkg?.price || 0),
       items: pkg?.items || '',
@@ -432,6 +460,7 @@ export function useHealthData() {
     try {
       const body = JSON.stringify({
         name: packageForm.name,
+        category: packageForm.category,
         description: packageForm.description,
         price: Number(packageForm.price || 0),
         items: packageForm.items,
@@ -480,6 +509,7 @@ export function useHealthData() {
     waitlist,
     mailLogs,
     appointmentForm,
+    waitlistForm,
     profileForm,
     emailForm,
     packageForm,
@@ -504,6 +534,7 @@ export function useHealthData() {
     loadAll,
     ensureBootstrapped,
     createAppointment,
+    joinWaitlist,
     cancelAppointment,
     saveProfile,
     sendEmailCode,

@@ -29,9 +29,10 @@ func Run(db *gorm.DB) error {
 
 	users := []models.User{
 		{Name: "张三", Phone: "U1001", Email: "huahua20414@foxmail.com", PasswordHash: userPassword, Role: "user", Status: "active", Gender: "男", Age: 30, EmailNotify: true, Bio: "关注年度体检和慢病风险管理。"},
-		{Name: "李医生", Phone: "D1001", Email: "huahua20414@foxmail.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", EmailNotify: true},
-		{Name: "王医生", Phone: "D1002", Email: "wangdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1002", Department: "内科", Title: "副主任医师", EmailNotify: true},
-		{Name: "赵医生", Phone: "D1003", Email: "pendingdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1003", Department: "影像科", Title: "住院医师", EmailNotify: true},
+		{Name: "李医生", Phone: "D1001", Email: "huahua20414@foxmail.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", Specialties: "入职体检,年度综合", EmailNotify: true},
+		{Name: "王医生", Phone: "D1002", Email: "wangdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1002", Department: "内科", Title: "副主任医师", Specialties: "慢病筛查,老年体检,年度综合", EmailNotify: true},
+		{Name: "赵医生", Phone: "D1003", Email: "zhaodoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1003", Department: "影像科", Title: "主治医师", Specialties: "影像专项,女性专项", EmailNotify: true},
+		{Name: "待审核医生", Phone: "D1004", Email: "pendingdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1004", Department: "心电科", Title: "住院医师", Specialties: "心电检查", EmailNotify: true},
 		{Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", PasswordHash: adminPassword, Role: "admin", Status: "active", EmailNotify: false},
 	}
 	for _, user := range users {
@@ -52,9 +53,12 @@ func Run(db *gorm.DB) error {
 	}
 
 	packages := []models.CheckupPackage{
-		{Name: "基础入职体检", Description: "适合入职、入学等基础健康筛查。", Price: 199, Items: "一般检查、血常规、尿常规、肝功能、胸片", Status: "active"},
-		{Name: "白领健康套餐", Description: "覆盖常见慢病风险和办公室人群重点指标。", Price: 399, Items: "一般检查、血常规、血脂、血糖、肝肾功能、心电图、腹部彩超", Status: "active"},
-		{Name: "全面深度体检", Description: "适合年度全面健康评估。", Price: 899, Items: "基础项目、肿瘤标志物、甲状腺彩超、颈动脉彩超、骨密度", Status: "active"},
+		{Name: "入职基础体检", Category: "入职体检", Description: "适合入职、入学、资格审查等基础健康筛查。", Price: 199, Items: "一般检查、血常规、尿常规、肝功能、胸片", Status: "active"},
+		{Name: "慢病风险筛查", Category: "慢病筛查", Description: "覆盖血糖、血脂、肝肾功能和心血管慢病风险。", Price: 399, Items: "一般检查、血常规、血脂、血糖、肝肾功能、心电图", Status: "active"},
+		{Name: "年度综合体检", Category: "年度综合", Description: "适合年度全面健康评估，多科室协同完成。", Price: 899, Items: "基础项目、肿瘤标志物、甲状腺彩超、颈动脉彩超、骨密度", Status: "active"},
+		{Name: "影像专项检查", Category: "影像专项", Description: "适合关注肺部、腹部、甲状腺、乳腺等影像检查人群。", Price: 499, Items: "胸部影像、腹部彩超、甲状腺彩超、乳腺彩超", Status: "active"},
+		{Name: "女性专项体检", Category: "女性专项", Description: "面向女性健康管理，覆盖乳腺、甲状腺和妇科基础筛查。", Price: 599, Items: "妇科基础检查、乳腺彩超、甲状腺彩超、血常规", Status: "active"},
+		{Name: "老年健康评估", Category: "老年体检", Description: "关注老年慢病、骨密度、心脑血管和生活方式风险。", Price: 699, Items: "血糖血脂、肝肾功能、心电图、骨密度、颈动脉彩超", Status: "active"},
 	}
 	for _, pkg := range packages {
 		if err := db.Create(&pkg).Error; err != nil {
@@ -62,12 +66,15 @@ func Run(db *gorm.DB) error {
 		}
 	}
 
-	var doctorLi, doctorWang models.User
+	var doctorLi, doctorWang, doctorZhao models.User
 	var mainInstitution, branchInstitution models.CheckupInstitution
 	if err := db.Where("phone = ?", "D1001").First(&doctorLi).Error; err != nil {
 		return err
 	}
-	if err := db.Where("email = ?", "wangdoctor@example.com").First(&doctorWang).Error; err != nil {
+	if err := db.Where("phone = ?", "D1002").First(&doctorWang).Error; err != nil {
+		return err
+	}
+	if err := db.Where("phone = ?", "D1003").First(&doctorZhao).Error; err != nil {
 		return err
 	}
 	if err := db.Where("name = ?", "熙心健康体检中心总院").First(&mainInstitution).Error; err != nil {
@@ -76,7 +83,7 @@ func Run(db *gorm.DB) error {
 	if err := db.Where("name = ?", "熙心健康高新区分院").First(&branchInstitution).Error; err != nil {
 		return err
 	}
-	if err := seedSlots(db, []models.User{doctorLi, doctorWang}, []models.CheckupInstitution{mainInstitution, branchInstitution}); err != nil {
+	if err := seedSlots(db, []models.User{doctorLi, doctorWang, doctorZhao}, []models.CheckupInstitution{mainInstitution, branchInstitution}); err != nil {
 		return err
 	}
 
@@ -111,7 +118,7 @@ func seedCompletedReport(db *gorm.DB) error {
 	if err := db.Where("phone = ?", "D1001").First(&doctor).Error; err != nil {
 		return err
 	}
-	if err := db.Where("name = ?", "白领健康套餐").First(&pkg).Error; err != nil {
+	if err := db.Where("name = ?", "年度综合体检").First(&pkg).Error; err != nil {
 		return err
 	}
 	if err := db.Where("doctor_id = ? AND date = ? AND start_time = ?", doctor.ID, "2026-06-05", "09:00").First(&slot).Error; err != nil {
@@ -125,6 +132,7 @@ func seedCompletedReport(db *gorm.DB) error {
 		SlotID:          slot.ID,
 		PackageID:       pkg.ID,
 		AppointmentType: "年度体检",
+		Category:        pkg.Category,
 		Date:            slot.Date,
 		Period:          slot.Period,
 		StartTime:       slot.StartTime,
@@ -153,30 +161,24 @@ func seedCompletedReport(db *gorm.DB) error {
 func seedSlots(db *gorm.DB, doctors []models.User, institutions []models.CheckupInstitution) error {
 	days := []string{"2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09"}
 	starts := []string{"08:30", "09:00", "09:30", "10:00", "10:30", "14:00", "14:30", "15:00", "15:30", "16:00"}
+	categoriesByDoctor := map[string][]string{
+		"D1001": {"入职体检", "年度综合"},
+		"D1002": {"慢病筛查", "老年体检", "年度综合"},
+		"D1003": {"影像专项", "女性专项"},
+	}
 	for _, institution := range institutions {
 		for _, doctor := range doctors {
+			categories := categoriesByDoctor[doctor.Phone]
+			if len(categories) == 0 {
+				continue
+			}
 			for _, day := range days {
-				for _, start := range starts {
-					end, err := addMinutes(start, 30)
-					if err != nil {
-						return err
+				for index, start := range starts {
+					category := categories[index%len(categories)]
+					if category == "" {
+						continue
 					}
-					period := "上午"
-					if start >= "12:00" {
-						period = "下午"
-					}
-					slot := models.ScheduleSlot{
-						DoctorID:      doctor.ID,
-						InstitutionID: institution.ID,
-						Date:          day,
-						Period:        period,
-						StartTime:     start,
-						EndTime:       end,
-						Capacity:      1,
-						BookedCount:   0,
-						Status:        "available",
-					}
-					if err := db.Create(&slot).Error; err != nil {
+					if err := createSlot(db, doctor, institution, day, start, category); err != nil {
 						return err
 					}
 				}
@@ -184,6 +186,30 @@ func seedSlots(db *gorm.DB, doctors []models.User, institutions []models.Checkup
 		}
 	}
 	return nil
+}
+
+func createSlot(db *gorm.DB, doctor models.User, institution models.CheckupInstitution, day, start, category string) error {
+	end, err := addMinutes(start, 30)
+	if err != nil {
+		return err
+	}
+	period := "上午"
+	if start >= "12:00" {
+		period = "下午"
+	}
+	slot := models.ScheduleSlot{
+		DoctorID:      doctor.ID,
+		InstitutionID: institution.ID,
+		Date:          day,
+		Period:        period,
+		Category:      category,
+		StartTime:     start,
+		EndTime:       end,
+		Capacity:      1,
+		BookedCount:   0,
+		Status:        "available",
+	}
+	return db.Create(&slot).Error
 }
 
 func addMinutes(value string, minutes int) (string, error) {

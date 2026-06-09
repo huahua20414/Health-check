@@ -529,6 +529,10 @@ textarea {
   font-size: 0.86rem;
 }
 
+.time-cell .el-button {
+  margin-top: 0.25rem;
+}
+
 .doctor-slots {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
@@ -620,6 +624,18 @@ textarea {
   margin: 0;
   color: #18324c;
   font-size: 15px;
+}
+
+.package-row em {
+  width: fit-content;
+  margin-top: 0.35rem;
+  padding: 0.18rem 0.45rem;
+  display: block;
+  border-radius: 4px;
+  background: #e7f4ef;
+  color: #0f766e;
+  font-size: 0.78rem;
+  font-style: normal;
 }
 
 .package-row p {

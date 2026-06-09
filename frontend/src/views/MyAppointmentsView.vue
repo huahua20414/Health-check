@@ -16,7 +16,8 @@
           <p>当同日期同时间段有人取消时，系统会按候补提交时间自动递补。</p>
         </div>
       </div>
-      <el-table :data="waitlist" stripe>
+      <el-table :data="waitlistRows" stripe>
+        <el-table-column prop="position" label="序号" width="80" />
         <el-table-column label="套餐">
           <template #default="{ row }">{{ row.package?.name }}</template>
         </el-table-column>
@@ -24,8 +25,13 @@
         <el-table-column label="机构">
           <template #default="{ row }">{{ row.institution?.name }}</template>
         </el-table-column>
+        <el-table-column prop="category" label="分类" width="110" />
         <el-table-column prop="appointmentType" label="类型" width="100" />
-        <el-table-column prop="period" label="时段" width="90" />
+        <el-table-column label="时段" width="150">
+          <template #default="{ row }">
+            {{ row.startTime ? `${row.startTime}-${row.endTime}` : row.period }}
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
@@ -51,6 +57,7 @@ const { myAppointments, waitlist, loading, cancelAppointment } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
+const waitlistRows = computed(() => waitlist.value.map((item, index) => ({ ...item, position: index + 1 })))
 
 function openOrder(row) {
   selectedOrder.value = row

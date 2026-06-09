@@ -21,7 +21,7 @@
           </button>
           <button type="button" class="selection-tile" @click="dialogs.package = true">
             <span>体检套餐</span>
-            <strong>{{ selectedPackage?.name || '请选择' }}</strong>
+            <strong>{{ selectedPackageText || '请选择' }}</strong>
           </button>
           <button type="button" class="selection-tile" :disabled="!appointmentForm.institutionId" @click="dialogs.date = true">
             <span>预约日期</span>
@@ -45,6 +45,7 @@
           <div><dt>类型</dt><dd>{{ appointmentForm.appointmentType || '-' }}</dd></div>
           <div><dt>机构</dt><dd>{{ selectedInstitution?.name || '-' }}</dd></div>
           <div><dt>套餐</dt><dd>{{ selectedPackage?.name || '-' }}</dd></div>
+          <div><dt>分类</dt><dd>{{ selectedCategory || '-' }}</dd></div>
           <div><dt>日期</dt><dd>{{ appointmentForm.date || '-' }}</dd></div>
           <div><dt>时间</dt><dd>{{ selectedSlot ? `${selectedSlot.startTime}-${selectedSlot.endTime}` : '-' }}</dd></div>
           <div><dt>医生</dt><dd>{{ selectedSlot?.doctor?.name || '-' }}</dd></div>
@@ -104,6 +105,7 @@
         >
           <div>
             <h4>{{ pkg.name }}</h4>
+            <em>{{ pkg.category }}</em>
             <p>{{ pkg.description }}</p>
             <span>{{ pkg.items }}</span>
           </div>
@@ -135,6 +137,9 @@
           <div class="time-cell">
             <strong>{{ group.time }}</strong>
             <span>{{ group.available > 0 ? `可约 ${group.available}` : '已满' }}</span>
+            <el-button v-if="group.available === 0" size="small" type="warning" plain :loading="loading.appointment" @click="joinFullGroup(group)">
+              加入候补
+            </el-button>
           </div>
           <div class="doctor-slots">
             <button
@@ -148,6 +153,7 @@
             >
               <strong>{{ slot.doctor?.name }}</strong>
               <span>{{ slot.doctor?.department }} · {{ slot.doctor?.title }}</span>
+              <span>{{ slot.category }}</span>
               <small>{{ hasStock(slot) ? `剩余 ${slot.capacity - slot.bookedCount}` : '满员' }}</small>
             </button>
           </div>
@@ -159,17 +165,20 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { appointmentTypes, useHealthData } from '../composables/useHealthData'
 
-const { packages, institutions, slots, appointmentForm, loading, loadAll, selectPackage, createAppointment } = useHealthData()
+const { packages, institutions, slots, appointmentForm, loading, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
 const dialogs = reactive({ type: false, institution: false, package: false, date: false, slot: false })
+let refreshTimer = 0
 const activePackages = computed(() => packages.value.filter((item) => item.status !== 'disabled'))
 const activeInstitutions = computed(() => institutions.value.filter((item) => item.status !== 'disabled'))
 const selectedInstitution = computed(() => activeInstitutions.value.find((item) => item.id === appointmentForm.institutionId))
 const selectedPackage = computed(() => activePackages.value.find((item) => item.id === appointmentForm.packageId))
-const institutionSlots = computed(() => slots.value.filter((slot) => slot.institutionId === appointmentForm.institutionId))
+const selectedCategory = computed(() => selectedPackage.value?.category || '')
+const selectedPackageText = computed(() => (selectedPackage.value ? `${selectedPackage.value.name} · ${selectedPackage.value.category}` : ''))
+const institutionSlots = computed(() => slots.value.filter((slot) => slot.institutionId === appointmentForm.institutionId && (!selectedCategory.value || slot.category === selectedCategory.value)))
 const dateStocks = computed(() => {
   const map = new Map()
   for (const slot of institutionSlots.value) {
@@ -219,6 +228,9 @@ function selectInstitution(institution) {
 
 function selectPackageAndClose(pkg) {
   selectPackage(pkg)
+  appointmentForm.date = ''
+  appointmentForm.period = ''
+  appointmentForm.slotId = null
   dialogs.package = false
 }
 
@@ -236,4 +248,27 @@ function selectSlot(slot) {
   appointmentForm.period = slot.period
   dialogs.slot = false
 }
+
+async function joinFullGroup(group) {
+  const first = group.slots[0]
+  if (!first) return
+  await joinWaitlist(first)
+  dialogs.slot = false
+}
+
+watch(() => dialogs.date, (open) => {
+  if (open) loadAll()
+})
+
+watch(() => dialogs.slot, (open) => {
+  if (open) loadAll()
+})
+
+onMounted(() => {
+  refreshTimer = window.setInterval(loadAll, 10000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+})
 </script>

@@ -393,7 +393,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		var slot models.ScheduleSlot
 		query := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("status = ? AND booked_count < capacity AND institution_id = ?", "available", req.InstitutionID)
+			Where("status = ? AND booked_count < capacity AND institution_id = ? AND category = ?", "available", req.InstitutionID, pkg.Category)
 		if req.SlotID != 0 {
 			query = query.Where("id = ?", req.SlotID)
 		} else {
@@ -403,12 +403,16 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		if err != nil {
 			waitDate := req.Date
 			waitPeriod := req.Period
+			waitStartTime := ""
+			waitEndTime := ""
 			waitInstitutionID := req.InstitutionID
 			if req.SlotID != 0 {
 				var requestedSlot models.ScheduleSlot
 				if lookupErr := tx.First(&requestedSlot, req.SlotID).Error; lookupErr == nil {
 					waitDate = requestedSlot.Date
 					waitPeriod = requestedSlot.Period
+					waitStartTime = requestedSlot.StartTime
+					waitEndTime = requestedSlot.EndTime
 					waitInstitutionID = requestedSlot.InstitutionID
 				}
 			}
@@ -417,10 +421,23 @@ func (h *Handler) createAppointment(c *gin.Context) {
 				PackageID:       req.PackageID,
 				InstitutionID:   waitInstitutionID,
 				AppointmentType: appointmentType,
+				Category:        pkg.Category,
 				Date:            waitDate,
 				Period:          waitPeriod,
+				StartTime:       waitStartTime,
+				EndTime:         waitEndTime,
 				Note:            req.Note,
 				Status:          "waiting",
+			}
+			var existingWait models.WaitlistEntry
+			duplicateQuery := tx.Preload("Institution").Preload("Package").
+				Where("user_id = ? AND package_id = ? AND institution_id = ? AND category = ? AND date = ? AND period = ? AND status = ?", current.ID, req.PackageID, waitInstitutionID, pkg.Category, waitDate, waitPeriod, "waiting")
+			if waitStartTime != "" {
+				duplicateQuery = duplicateQuery.Where("start_time = ?", waitStartTime)
+			}
+			if existingErr := duplicateQuery.First(&existingWait).Error; existingErr == nil {
+				result = gin.H{"type": "waitlist", "waitlist": existingWait}
+				return nil
 			}
 			if createErr := tx.Create(&wait).Error; createErr != nil {
 				return createErr
@@ -437,6 +454,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			SlotID:          slot.ID,
 			PackageID:       req.PackageID,
 			AppointmentType: appointmentType,
+			Category:        pkg.Category,
 			Date:            slot.Date,
 			Period:          slot.Period,
 			StartTime:       slot.StartTime,
@@ -580,6 +598,9 @@ func (h *Handler) scheduleSlots(c *gin.Context) {
 	if institutionID := c.Query("institutionId"); institutionID != "" {
 		query = query.Where("institution_id = ?", institutionID)
 	}
+	if category := c.Query("category"); category != "" {
+		query = query.Where("category = ?", category)
+	}
 	if date := c.Query("date"); date != "" {
 		query = query.Where("date = ?", date)
 	}
@@ -619,6 +640,7 @@ func (h *Handler) createPackage(c *gin.Context) {
 	}
 	pkg := models.CheckupPackage{
 		Name:        req.Name,
+		Category:    normalizeStatus(req.Category, "综合体检"),
 		Description: req.Description,
 		Price:       req.Price,
 		Items:       req.Items,
@@ -643,6 +665,7 @@ func (h *Handler) updatePackage(c *gin.Context) {
 	}
 	updates := map[string]any{
 		"name":        req.Name,
+		"category":    normalizeStatus(req.Category, "综合体检"),
 		"description": req.Description,
 		"price":       req.Price,
 		"items":       req.Items,
@@ -711,7 +734,10 @@ func (h *Handler) promoteWaitlist(tx *gorm.DB, slotID uint) error {
 		return nil
 	}
 	var wait models.WaitlistEntry
-	if err := tx.Where("date = ? AND period = ? AND institution_id = ? AND status = ?", slot.Date, slot.Period, slot.InstitutionID, "waiting").Order("created_at asc").First(&wait).Error; err != nil {
+	if err := tx.Where("date = ? AND period = ? AND institution_id = ? AND category = ? AND status = ?", slot.Date, slot.Period, slot.InstitutionID, slot.Category, "waiting").
+		Where("(start_time = ? OR start_time = '')", slot.StartTime).
+		Order("created_at asc").
+		First(&wait).Error; err != nil {
 		return nil
 	}
 	appointment := models.Appointment{
@@ -722,6 +748,7 @@ func (h *Handler) promoteWaitlist(tx *gorm.DB, slotID uint) error {
 		SlotID:          slot.ID,
 		PackageID:       wait.PackageID,
 		AppointmentType: wait.AppointmentType,
+		Category:        wait.Category,
 		Date:            slot.Date,
 		Period:          slot.Period,
 		StartTime:       slot.StartTime,
@@ -897,6 +924,7 @@ type updateEmailRequest struct {
 
 type packageRequest struct {
 	Name        string  `json:"name" binding:"required"`
+	Category    string  `json:"category" binding:"required"`
 	Description string  `json:"description"`
 	Price       float64 `json:"price" binding:"required"`
 	Items       string  `json:"items" binding:"required"`
@@ -998,6 +1026,7 @@ func renderAppointmentHTML(appointment models.Appointment) string {
 		{"订单号", appointment.OrderNo},
 		{"客户", appointment.User.Name},
 		{"预约类型", appointment.AppointmentType},
+		{"体检分类", appointment.Category},
 		{"体检机构", appointment.Institution.Name},
 		{"机构地址", appointment.Institution.Address},
 		{"套餐", appointment.Package.Name},

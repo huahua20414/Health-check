@@ -13,6 +13,7 @@
         <el-table-column prop="employeeNo" label="工号" width="120" />
         <el-table-column prop="department" label="科室" />
         <el-table-column prop="title" label="职称" width="120" />
+        <el-table-column prop="specialties" label="负责体检" min-width="180" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>

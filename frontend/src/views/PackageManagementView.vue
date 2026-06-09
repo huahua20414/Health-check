@@ -10,6 +10,11 @@
         </div>
         <el-form label-position="top" class="form-grid">
           <el-form-item label="套餐名称"><el-input v-model="packageForm.name" /></el-form-item>
+          <el-form-item label="体检分类">
+            <el-select v-model="packageForm.category" filterable allow-create default-first-option>
+              <el-option v-for="category in packageCategories" :key="category" :label="category" :value="category" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="套餐说明"><el-input v-model="packageForm.description" type="textarea" :rows="3" /></el-form-item>
           <el-form-item label="价格"><el-input-number v-model="packageForm.price" :min="0" :precision="2" /></el-form-item>
           <el-form-item label="检查项目"><el-input v-model="packageForm.items" type="textarea" :rows="4" /></el-form-item>
@@ -35,6 +40,7 @@
         </div>
         <el-table :data="packages" stripe>
           <el-table-column prop="name" label="套餐名称" width="150" />
+          <el-table-column prop="category" label="分类" width="120" />
           <el-table-column prop="description" label="说明" />
           <el-table-column label="价格" width="100">
             <template #default="{ row }">￥{{ row.price }}</template>
@@ -59,5 +65,6 @@ import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { useHealthData } from '../composables/useHealthData'
 
 const { packages, packageForm, loading, editPackage, savePackage } = useHealthData()
+const packageCategories = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
 const submit = useDebouncedFn(savePackage, 350)
 </script>
