@@ -39,7 +39,11 @@
             </div>
           </el-form-item>
           <el-form-item label="工号"><el-input v-model="doctorRegisterForm.employeeNo" /></el-form-item>
-          <el-form-item label="科室"><el-input v-model="doctorRegisterForm.department" /></el-form-item>
+          <el-form-item label="科室">
+            <el-select v-model="doctorRegisterForm.department" placeholder="请选择科室">
+              <el-option v-for="department in doctorDepartments" :key="department" :label="department" :value="department" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="职称"><el-input v-model="doctorRegisterForm.title" /></el-form-item>
           <el-form-item label="密码"><el-input v-model="doctorRegisterForm.password" type="password" show-password /></el-form-item>
           <el-form-item label="确认密码"><el-input v-model="doctorRegisterForm.confirmPassword" type="password" show-password /></el-form-item>
@@ -56,7 +60,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useHealthData } from '../composables/useHealthData'
+import { doctorDepartments, useHealthData } from '../composables/useHealthData'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 
 const route = useRoute()

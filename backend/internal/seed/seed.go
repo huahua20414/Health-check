@@ -2,6 +2,7 @@ package seed
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"health-checkup/backend/internal/auth"
@@ -9,6 +10,56 @@ import (
 
 	"gorm.io/gorm"
 )
+
+type doctorSeed struct {
+	Name        string
+	Email       string
+	EmployeeNo  string
+	Department  string
+	Title       string
+	Status      string
+	Specialties []string
+}
+
+func doctorSeeds() []doctorSeed {
+	return []doctorSeed{
+		{Name: "李医生", Email: "huahua20414@foxmail.com", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", Status: "active", Specialties: []string{"入职体检", "年度综合"}},
+		{Name: "王医生", Email: "wangdoctor@example.com", EmployeeNo: "D1002", Department: "内科", Title: "副主任医师", Status: "active", Specialties: []string{"慢病筛查", "老年体检", "年度综合"}},
+		{Name: "赵医生", Email: "zhaodoctor@example.com", EmployeeNo: "D1003", Department: "影像科", Title: "主治医师", Status: "active", Specialties: []string{"影像专项", "女性专项"}},
+		{Name: "陈医生", Email: "chendoctor@example.com", EmployeeNo: "D1004", Department: "健康管理科", Title: "副主任医师", Status: "active", Specialties: []string{"入职体检", "年度综合"}},
+		{Name: "刘医生", Email: "liudoctor@example.com", EmployeeNo: "D1005", Department: "健康管理科", Title: "主治医师", Status: "active", Specialties: []string{"入职体检"}},
+		{Name: "周医生", Email: "zhoudoctor@example.com", EmployeeNo: "D1006", Department: "检验科", Title: "主管检验师", Status: "active", Specialties: []string{"入职体检"}},
+		{Name: "吴医生", Email: "wudoctor@example.com", EmployeeNo: "D1007", Department: "心电科", Title: "主治医师", Status: "active", Specialties: []string{"入职体检"}},
+		{Name: "孙医生", Email: "sundoctor@example.com", EmployeeNo: "D1008", Department: "健康管理科", Title: "住院医师", Status: "active", Specialties: []string{"入职体检"}},
+		{Name: "郑医生", Email: "zhengdoctor@example.com", EmployeeNo: "D1009", Department: "内科", Title: "主任医师", Status: "active", Specialties: []string{"慢病筛查", "年度综合"}},
+		{Name: "钱医生", Email: "qiandoctor@example.com", EmployeeNo: "D1010", Department: "内科", Title: "副主任医师", Status: "active", Specialties: []string{"慢病筛查", "老年体检"}},
+		{Name: "冯医生", Email: "fengdoctor@example.com", EmployeeNo: "D1011", Department: "内科", Title: "主治医师", Status: "active", Specialties: []string{"慢病筛查"}},
+		{Name: "曹医生", Email: "caodoctor@example.com", EmployeeNo: "D1012", Department: "老年医学科", Title: "副主任医师", Status: "active", Specialties: []string{"慢病筛查", "老年体检"}},
+		{Name: "何医生", Email: "hedoctor@example.com", EmployeeNo: "D1013", Department: "内科", Title: "主治医师", Status: "active", Specialties: []string{"慢病筛查"}},
+		{Name: "高医生", Email: "gaodoctor@example.com", EmployeeNo: "D1014", Department: "老年医学科", Title: "主任医师", Status: "active", Specialties: []string{"慢病筛查", "老年体检"}},
+		{Name: "罗医生", Email: "luodoctor@example.com", EmployeeNo: "D1015", Department: "内科", Title: "副主任医师", Status: "active", Specialties: []string{"慢病筛查", "年度综合"}},
+		{Name: "梁医生", Email: "liangdoctor@example.com", EmployeeNo: "D1016", Department: "健康管理科", Title: "主任医师", Status: "active", Specialties: []string{"年度综合"}},
+		{Name: "宋医生", Email: "songdoctor@example.com", EmployeeNo: "D1017", Department: "检验科", Title: "主管检验师", Status: "active", Specialties: []string{"年度综合"}},
+		{Name: "唐医生", Email: "tangdoctor@example.com", EmployeeNo: "D1018", Department: "心电科", Title: "副主任医师", Status: "active", Specialties: []string{"年度综合"}},
+		{Name: "韩医生", Email: "handoctor@example.com", EmployeeNo: "D1019", Department: "健康管理科", Title: "主治医师", Status: "active", Specialties: []string{"年度综合"}},
+		{Name: "马医生", Email: "madoctor@example.com", EmployeeNo: "D1020", Department: "内科", Title: "主治医师", Status: "active", Specialties: []string{"年度综合"}},
+		{Name: "朱医生", Email: "zhudoctor@example.com", EmployeeNo: "D1021", Department: "影像科", Title: "副主任医师", Status: "active", Specialties: []string{"影像专项"}},
+		{Name: "胡医生", Email: "hudoctor@example.com", EmployeeNo: "D1022", Department: "影像科", Title: "主治医师", Status: "active", Specialties: []string{"影像专项"}},
+		{Name: "林医生", Email: "lindoctor@example.com", EmployeeNo: "D1023", Department: "影像科", Title: "主治医师", Status: "active", Specialties: []string{"影像专项"}},
+		{Name: "郭医生", Email: "guodoctor@example.com", EmployeeNo: "D1024", Department: "影像科", Title: "主任医师", Status: "active", Specialties: []string{"影像专项"}},
+		{Name: "蔡医生", Email: "caidoctor@example.com", EmployeeNo: "D1025", Department: "影像科", Title: "副主任医师", Status: "active", Specialties: []string{"影像专项"}},
+		{Name: "袁医生", Email: "yuandoctor@example.com", EmployeeNo: "D1026", Department: "影像科", Title: "主治医师", Status: "active", Specialties: []string{"影像专项", "女性专项"}},
+		{Name: "邓医生", Email: "dengdoctor@example.com", EmployeeNo: "D1027", Department: "妇科", Title: "主任医师", Status: "active", Specialties: []string{"女性专项"}},
+		{Name: "许医生", Email: "xudoctor@example.com", EmployeeNo: "D1028", Department: "妇科", Title: "副主任医师", Status: "active", Specialties: []string{"女性专项"}},
+		{Name: "姚医生", Email: "yaodoctor@example.com", EmployeeNo: "D1029", Department: "妇科", Title: "主治医师", Status: "active", Specialties: []string{"女性专项"}},
+		{Name: "潘医生", Email: "pandoctor@example.com", EmployeeNo: "D1030", Department: "老年医学科", Title: "副主任医师", Status: "active", Specialties: []string{"老年体检"}},
+		{Name: "蒋医生", Email: "jiangdoctor@example.com", EmployeeNo: "D1031", Department: "老年医学科", Title: "主治医师", Status: "active", Specialties: []string{"老年体检"}},
+		{Name: "汪医生", Email: "wang2doctor@example.com", EmployeeNo: "D1032", Department: "老年医学科", Title: "主治医师", Status: "active", Specialties: []string{"老年体检"}},
+		{Name: "丁医生", Email: "dingdoctor@example.com", EmployeeNo: "D1033", Department: "老年医学科", Title: "主任医师", Status: "active", Specialties: []string{"老年体检"}},
+		{Name: "叶医生", Email: "yedoctor@example.com", EmployeeNo: "D1034", Department: "老年医学科", Title: "副主任医师", Status: "active", Specialties: []string{"老年体检"}},
+		{Name: "待审核医生", Email: "pendingdoctor@example.com", EmployeeNo: "D1035", Department: "心电科", Title: "住院医师", Status: "pending", Specialties: []string{"年度综合"}},
+	}
+}
 
 func Run(db *gorm.DB) error {
 	if err := reset(db); err != nil {
@@ -29,12 +80,25 @@ func Run(db *gorm.DB) error {
 
 	users := []models.User{
 		{Name: "张三", Phone: "U1001", Email: "huahua20414@foxmail.com", PasswordHash: userPassword, Role: "user", Status: "active", Gender: "男", Age: 30, EmailNotify: true, Bio: "关注年度体检和慢病风险管理。"},
-		{Name: "李医生", Phone: "D1001", Email: "huahua20414@foxmail.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1001", Department: "健康管理科", Title: "主治医师", Specialties: "入职体检,年度综合", EmailNotify: true},
-		{Name: "王医生", Phone: "D1002", Email: "wangdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1002", Department: "内科", Title: "副主任医师", Specialties: "慢病筛查,老年体检,年度综合", EmailNotify: true},
-		{Name: "赵医生", Phone: "D1003", Email: "zhaodoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "active", EmployeeNo: "D1003", Department: "影像科", Title: "主治医师", Specialties: "影像专项,女性专项", EmailNotify: true},
-		{Name: "待审核医生", Phone: "D1004", Email: "pendingdoctor@example.com", PasswordHash: doctorPassword, Role: "doctor", Status: "pending", EmployeeNo: "D1004", Department: "心电科", Title: "住院医师", Specialties: "心电检查", EmailNotify: true},
-		{Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", PasswordHash: adminPassword, Role: "admin", Status: "active", EmailNotify: false},
 	}
+	for _, doctor := range doctorSeeds() {
+		users = append(users, models.User{
+			Name:         doctor.Name,
+			Phone:        doctor.EmployeeNo,
+			Email:        doctor.Email,
+			PasswordHash: doctorPassword,
+			Role:         "doctor",
+			Status:       doctor.Status,
+			EmployeeNo:   doctor.EmployeeNo,
+			Department:   doctor.Department,
+			Title:        doctor.Title,
+			Specialties:  strings.Join(doctor.Specialties, ","),
+			EmailNotify:  true,
+		})
+	}
+	users = append(users, models.User{
+		Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", PasswordHash: adminPassword, Role: "admin", Status: "active", EmailNotify: false,
+	})
 	for _, user := range users {
 		if err := db.Create(&user).Error; err != nil {
 			return err
@@ -66,15 +130,9 @@ func Run(db *gorm.DB) error {
 		}
 	}
 
-	var doctorLi, doctorWang, doctorZhao models.User
+	var activeDoctors []models.User
 	var mainInstitution, branchInstitution models.CheckupInstitution
-	if err := db.Where("phone = ?", "D1001").First(&doctorLi).Error; err != nil {
-		return err
-	}
-	if err := db.Where("phone = ?", "D1002").First(&doctorWang).Error; err != nil {
-		return err
-	}
-	if err := db.Where("phone = ?", "D1003").First(&doctorZhao).Error; err != nil {
+	if err := db.Where("role = ? AND status = ?", "doctor", "active").Order("employee_no asc").Find(&activeDoctors).Error; err != nil {
 		return err
 	}
 	if err := db.Where("name = ?", "熙心健康体检中心总院").First(&mainInstitution).Error; err != nil {
@@ -83,7 +141,7 @@ func Run(db *gorm.DB) error {
 	if err := db.Where("name = ?", "熙心健康高新区分院").First(&branchInstitution).Error; err != nil {
 		return err
 	}
-	if err := seedSlots(db, []models.User{doctorLi, doctorWang, doctorZhao}, []models.CheckupInstitution{mainInstitution, branchInstitution}); err != nil {
+	if err := seedSlots(db, activeDoctors, []models.CheckupInstitution{mainInstitution, branchInstitution}); err != nil {
 		return err
 	}
 
@@ -161,14 +219,9 @@ func seedCompletedReport(db *gorm.DB) error {
 func seedSlots(db *gorm.DB, doctors []models.User, institutions []models.CheckupInstitution) error {
 	days := []string{"2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09"}
 	starts := []string{"08:30", "09:00", "09:30", "10:00", "10:30", "14:00", "14:30", "15:00", "15:30", "16:00"}
-	categoriesByDoctor := map[string][]string{
-		"D1001": {"入职体检", "年度综合"},
-		"D1002": {"慢病筛查", "老年体检", "年度综合"},
-		"D1003": {"影像专项", "女性专项"},
-	}
 	for _, institution := range institutions {
 		for _, doctor := range doctors {
-			categories := categoriesByDoctor[doctor.Phone]
+			categories := splitSpecialties(doctor.Specialties)
 			if len(categories) == 0 {
 				continue
 			}
@@ -210,6 +263,17 @@ func createSlot(db *gorm.DB, doctor models.User, institution models.CheckupInsti
 		Status:        "available",
 	}
 	return db.Create(&slot).Error
+}
+
+func splitSpecialties(value string) []string {
+	var result []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func addMinutes(value string, minutes int) (string, error) {

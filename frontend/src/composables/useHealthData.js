@@ -4,6 +4,8 @@ import { request, setAuthToken, getAuthToken } from '../api/client'
 
 export const appointmentTypes = ['个人体检', '入职体检', '年度体检', '复查体检']
 export const devAuthEnabled = import.meta.env.VITE_DEV_AUTH === 'true'
+export const doctorDepartments = ['健康管理科', '内科', '影像科', '妇科', '老年医学科', '检验科', '心电科']
+export const specialtyOptions = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
 
 const loginForm = reactive({ email: 'huahua20414@foxmail.com', password: '123456', code: '', role: 'user' })
 const userRegisterForm = reactive({ name: '', email: '', code: '', password: '', confirmPassword: '', gender: '', age: null, idCard: '' })
@@ -46,6 +48,7 @@ const loading = reactive({
   report: false,
   status: false,
   package: false,
+  doctorProfile: false,
   profile: false,
   emailCode: false,
   emailUpdate: false,
@@ -491,6 +494,28 @@ export function useHealthData() {
     }
   }
 
+  async function updateDoctorProfile(user, payload) {
+    if (loading.doctorProfile) return
+    loading.doctorProfile = true
+    try {
+      const specialties = Array.isArray(payload.specialties) ? payload.specialties.join(',') : payload.specialties
+      const updated = await request(`/users/${user.id}/doctor-profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          department: payload.department,
+          title: payload.title || user.title,
+          specialties,
+        }),
+      })
+      const index = users.value.findIndex((item) => item.id === updated.id)
+      if (index >= 0) users.value[index] = updated
+      ElMessage.success('医生资料已更新')
+      await loadAll()
+    } finally {
+      loading.doctorProfile = false
+    }
+  }
+
   function selectPackage(pkg) {
     appointmentForm.packageId = pkg.id
   }
@@ -542,6 +567,7 @@ export function useHealthData() {
     markDone,
     createReport,
     updateUserStatus,
+    updateDoctorProfile,
     editPackage,
     savePackage,
     selectPackage,

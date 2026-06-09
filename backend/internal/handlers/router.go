@@ -69,6 +69,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
 	protected.PATCH("/users/:id/status", handler.requireRole("admin"), handler.updateUserStatus)
+	protected.PATCH("/users/:id/doctor-profile", handler.requireRole("admin"), handler.updateDoctorProfile)
 	protected.GET("/mail-logs", handler.requireRole("admin"), handler.mailLogs)
 	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
 
@@ -717,6 +718,59 @@ func (h *Handler) updateUserStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": req.Status})
 }
 
+func (h *Handler) updateDoctorProfile(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	var req doctorProfileRequest
+	if !bind(c, &req) {
+		return
+	}
+	department := strings.TrimSpace(req.Department)
+	specialties := strings.TrimSpace(req.Specialties)
+	if department == "" || specialties == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "department and specialties are required"})
+		return
+	}
+	updates := map[string]any{
+		"department":  department,
+		"specialties": specialties,
+	}
+	if strings.TrimSpace(req.Title) != "" {
+		updates["title"] = strings.TrimSpace(req.Title)
+	}
+	categories := splitCSV(specialties)
+	if len(categories) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "specialties are required"})
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.User{}).Where("id = ? AND role = ?", id, "doctor").Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return syncDoctorAvailableSlots(tx, uint(id), categories)
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var user models.User
+	if err := h.db.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
 func (h *Handler) seed(c *gin.Context) {
 	if err := seed.Run(h.db); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -942,11 +996,47 @@ type statusRequest struct {
 	Status string `json:"status" binding:"required"`
 }
 
+type doctorProfileRequest struct {
+	Department  string `json:"department" binding:"required"`
+	Title       string `json:"title"`
+	Specialties string `json:"specialties" binding:"required"`
+}
+
 func normalizeStatus(value, fallback string) string {
 	if value == "" {
 		return fallback
 	}
 	return value
+}
+
+func splitCSV(value string) []string {
+	var result []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func syncDoctorAvailableSlots(tx *gorm.DB, doctorID uint, categories []string) error {
+	var slots []models.ScheduleSlot
+	if err := tx.Where("doctor_id = ? AND status = ? AND booked_count = 0", doctorID, "available").
+		Order("date asc, start_time asc, id asc").
+		Find(&slots).Error; err != nil {
+		return err
+	}
+	for index, slot := range slots {
+		category := categories[index%len(categories)]
+		if slot.Category == category {
+			continue
+		}
+		if err := tx.Model(&models.ScheduleSlot{}).Where("id = ?", slot.ID).Update("category", category).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *Handler) verifyAuthEmailCode(c *gin.Context, email, code string) bool {
