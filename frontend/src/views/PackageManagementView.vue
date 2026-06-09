@@ -54,17 +54,33 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          class="table-pagination"
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="paginations.packages.total"
+          v-model:current-page="paginations.packages.page"
+          v-model:page-size="paginations.packages.pageSize"
+          :page-sizes="[10, 20, 50]"
+        />
       </div>
     </div>
   </section>
 </template>
 
 <script setup>
+import { onMounted, watch } from 'vue'
 import StatusTag from '../components/StatusTag.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { useHealthData } from '../composables/useHealthData'
 
-const { packages, packageForm, loading, editPackage, savePackage } = useHealthData()
+const { packages, packageForm, loading, editPackage, savePackage, paginations, loadPackagesPage } = useHealthData()
 const packageCategories = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
-const submit = useDebouncedFn(savePackage, 350)
+const submit = useDebouncedFn(async () => {
+  await savePackage()
+  await loadPackagesPage()
+}, 350)
+
+watch(() => [paginations.packages.page, paginations.packages.pageSize], () => loadPackagesPage())
+onMounted(() => loadPackagesPage())
 </script>

@@ -8,6 +8,15 @@
         </div>
       </div>
       <AppointmentTable :rows="myAppointments" :is-doctor="false" :can-cancel="true" :loading="loading.status" @cancel="cancelAppointment" @view-order="openOrder" />
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.appointments.total"
+        v-model:current-page="paginations.appointments.page"
+        v-model:page-size="paginations.appointments.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
     <div class="panel">
       <div class="panel-head">
@@ -36,6 +45,15 @@
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.waitlist.total"
+        v-model:current-page="paginations.waitlist.page"
+        v-model:page-size="paginations.waitlist.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
 
     <el-dialog v-model="orderVisible" title="体检预约订单" width="920px" class="document-dialog">
@@ -48,16 +66,19 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, loading, cancelAppointment } = useHealthData()
+const { myAppointments, waitlist, loading, cancelAppointment, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
-const waitlistRows = computed(() => waitlist.value.map((item, index) => ({ ...item, position: index + 1 })))
+const waitlistRows = computed(() => waitlist.value.map((item, index) => ({
+  ...item,
+  position: (paginations.waitlist.page - 1) * paginations.waitlist.pageSize + index + 1,
+})))
 
 function openOrder(row) {
   selectedOrder.value = row
@@ -68,4 +89,11 @@ function downloadOrder() {
   if (!selectedOrder.value) return
   downloadHTML(`${selectedOrder.value.orderNo || 'appointment-order'}.html`, orderHTML.value)
 }
+
+watch(() => [paginations.appointments.page, paginations.appointments.pageSize], () => loadAppointmentsPage())
+watch(() => [paginations.waitlist.page, paginations.waitlist.pageSize], () => loadWaitlistPage())
+onMounted(() => {
+  loadAppointmentsPage()
+  loadWaitlistPage()
+})
 </script>

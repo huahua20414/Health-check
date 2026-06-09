@@ -272,6 +272,12 @@ textarea {
   width: 100%;
 }
 
+.table-pagination {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .panel-head {
   margin-bottom: 14px;
   display: flex;

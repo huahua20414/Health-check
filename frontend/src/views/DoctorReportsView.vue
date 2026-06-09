@@ -34,6 +34,15 @@
           </div>
         </div>
         <ReportList :reports="reports" @view-report="openReport" />
+        <el-pagination
+          class="table-pagination"
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="paginations.reports.total"
+          v-model:current-page="paginations.reports.page"
+          v-model:page-size="paginations.reports.pageSize"
+          :page-sizes="[6, 12, 24]"
+        />
       </div>
     </div>
 
@@ -47,12 +56,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ReportList from '../components/ReportList.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { downloadHTML, reportDocumentHTML, useHealthData } from '../composables/useHealthData'
 
-const { appointments, reports, reportForm, loading, createReport } = useHealthData()
+const { appointments, reports, reportForm, loading, createReport, paginations, loadReportsPage } = useHealthData()
 const reportableAppointments = computed(() => appointments.value.filter((item) => item.status === 'checked' || item.status === 'reported'))
 const submit = useDebouncedFn(createReport, 400)
 const selectedReport = ref(null)
@@ -68,4 +77,7 @@ function downloadReport() {
   if (!selectedReport.value) return
   downloadHTML(`${selectedReport.value.reportNo || 'checkup-report'}.html`, reportHTML.value)
 }
+
+watch(() => [paginations.reports.page, paginations.reports.pageSize], () => loadReportsPage())
+onMounted(() => loadReportsPage())
 </script>

@@ -328,9 +328,13 @@ func (h *Handler) updateEmail(c *gin.Context) {
 
 func (h *Handler) packages(c *gin.Context) {
 	var packages []models.CheckupPackage
-	query := h.db.Order("price asc")
+	query := h.db.Model(&models.CheckupPackage{}).Order("price asc")
 	if c.GetHeader("Authorization") == "" {
 		query = query.Where("status = ?", "active")
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &packages)
+		return
 	}
 	if err := query.Find(&packages).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -355,7 +359,7 @@ func (h *Handler) institutions(c *gin.Context) {
 func (h *Handler) appointments(c *gin.Context) {
 	current := currentUser(c)
 	var appointments []models.Appointment
-	query := h.db.Preload("User").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").Order("created_at desc")
+	query := h.db.Model(&models.Appointment{}).Preload("User").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").Order("created_at desc")
 	if current.Role == "user" {
 		query = query.Where("user_id = ?", current.ID)
 	} else if current.Role == "doctor" {
@@ -365,6 +369,16 @@ func (h *Handler) appointments(c *gin.Context) {
 	}
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Joins("LEFT JOIN users appointment_users ON appointment_users.id = appointments.user_id").
+			Joins("LEFT JOIN checkup_packages appointment_packages ON appointment_packages.id = appointments.package_id").
+			Where("appointment_users.name LIKE ? OR appointment_packages.name LIKE ? OR appointments.order_no LIKE ? OR appointments.date LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &appointments)
+		return
 	}
 	if err := query.Find(&appointments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -542,11 +556,15 @@ func (h *Handler) updateAppointmentStatus(c *gin.Context) {
 func (h *Handler) reports(c *gin.Context) {
 	current := currentUser(c)
 	var reports []models.Report
-	query := h.db.Preload("Appointment.Institution").Preload("Appointment.Package").Preload("User").Preload("Doctor").Order("created_at desc")
+	query := h.db.Model(&models.Report{}).Preload("Appointment.Institution").Preload("Appointment.Package").Preload("User").Preload("Doctor").Order("created_at desc")
 	if current.Role == "user" {
 		query = query.Where("user_id = ?", current.ID)
 	} else if userID := c.Query("userId"); userID != "" {
 		query = query.Where("user_id = ?", userID)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &reports)
+		return
 	}
 	if err := query.Find(&reports).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -618,7 +636,12 @@ func (h *Handler) scheduleSlots(c *gin.Context) {
 func (h *Handler) waitlist(c *gin.Context) {
 	current := currentUser(c)
 	var entries []models.WaitlistEntry
-	if err := h.db.Preload("Institution").Preload("Package").Where("user_id = ?", current.ID).Order("created_at desc").Find(&entries).Error; err != nil {
+	query := h.db.Model(&models.WaitlistEntry{}).Preload("Institution").Preload("Package").Where("user_id = ?", current.ID).Order("created_at desc")
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &entries)
+		return
+	}
+	if err := query.Find(&entries).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -627,7 +650,12 @@ func (h *Handler) waitlist(c *gin.Context) {
 
 func (h *Handler) mailLogs(c *gin.Context) {
 	var logs []models.MailLog
-	if err := h.db.Order("created_at desc").Limit(100).Find(&logs).Error; err != nil {
+	query := h.db.Model(&models.MailLog{}).Order("created_at desc")
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &logs)
+		return
+	}
+	if err := query.Limit(100).Find(&logs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -683,12 +711,20 @@ func (h *Handler) updatePackage(c *gin.Context) {
 
 func (h *Handler) users(c *gin.Context) {
 	var users []models.User
-	query := h.db.Order("created_at desc")
+	query := h.db.Model(&models.User{}).Order("created_at desc")
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", role)
 	}
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("name LIKE ? OR email LIKE ? OR employee_no LIKE ? OR department LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &users)
+		return
 	}
 	if err := query.Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1037,6 +1073,42 @@ func syncDoctorAvailableSlots(tx *gorm.DB, doctorID uint, categories []string) e
 		}
 	}
 	return nil
+}
+
+func paginationParams(c *gin.Context) (int, int, bool) {
+	if c.Query("page") == "" && c.Query("pageSize") == "" {
+		return 0, 0, false
+	}
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	pageSize, err := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize, true
+}
+
+func respondPaginated[T any](c *gin.Context, query *gorm.DB, page, pageSize int, dest *[]T) {
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(dest).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":    *dest,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
 }
 
 func (h *Handler) verifyAuthEmailCode(c *gin.Context, email, code string) bool {

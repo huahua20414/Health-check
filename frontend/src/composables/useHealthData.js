@@ -28,6 +28,14 @@ const institutions = ref([])
 const slots = ref([])
 const waitlist = ref([])
 const mailLogs = ref([])
+const paginations = reactive({
+  appointments: { page: 1, pageSize: 10, total: 0 },
+  users: { page: 1, pageSize: 10, total: 0 },
+  reports: { page: 1, pageSize: 6, total: 0 },
+  waitlist: { page: 1, pageSize: 10, total: 0 },
+  mailLogs: { page: 1, pageSize: 10, total: 0 },
+  packages: { page: 1, pageSize: 10, total: 0 },
+})
 const appointmentForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, slotId: null, date: '', period: '', note: '' })
 const waitlistForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, date: '', period: '', note: '' })
 const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true })
@@ -148,6 +156,23 @@ function assertPasswordsMatch(form) {
   if (form.password !== form.confirmPassword) {
     throw new Error('两次输入的密码不一致')
   }
+}
+
+function toQuery(params) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value)
+  }
+  return query.toString()
+}
+
+async function requestPage(path, state, params = {}) {
+  const query = toQuery({ page: state.page, pageSize: state.pageSize, ...params })
+  const result = await request(`${path}?${query}`)
+  state.total = Number(result.total || 0)
+  state.page = Number(result.page || state.page)
+  state.pageSize = Number(result.pageSize || state.pageSize)
+  return result.items || []
 }
 
 export function useHealthData() {
@@ -290,6 +315,30 @@ export function useHealthData() {
     } finally {
       loading.load = false
     }
+  }
+
+  async function loadAppointmentsPage(params = {}) {
+    appointments.value = await requestPage('/appointments', paginations.appointments, params)
+  }
+
+  async function loadReportsPage(params = {}) {
+    reports.value = await requestPage('/reports', paginations.reports, params)
+  }
+
+  async function loadUsersPage(params = {}) {
+    users.value = await requestPage('/users', paginations.users, params)
+  }
+
+  async function loadWaitlistPage(params = {}) {
+    waitlist.value = await requestPage('/waitlist', paginations.waitlist, params)
+  }
+
+  async function loadMailLogsPage(params = {}) {
+    mailLogs.value = await requestPage('/mail-logs', paginations.mailLogs, params)
+  }
+
+  async function loadPackagesPage(params = {}) {
+    packages.value = await requestPage('/packages', paginations.packages, params)
   }
 
   async function ensureBootstrapped() {
@@ -533,6 +582,7 @@ export function useHealthData() {
     slots,
     waitlist,
     mailLogs,
+    paginations,
     appointmentForm,
     waitlistForm,
     profileForm,
@@ -557,6 +607,12 @@ export function useHealthData() {
     registerDoctor,
     logout,
     loadAll,
+    loadAppointmentsPage,
+    loadReportsPage,
+    loadUsersPage,
+    loadWaitlistPage,
+    loadMailLogsPage,
+    loadPackagesPage,
     ensureBootstrapped,
     createAppointment,
     joinWaitlist,

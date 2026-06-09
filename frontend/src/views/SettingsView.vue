@@ -34,13 +34,31 @@
         </el-table-column>
         <el-table-column prop="error" label="错误信息" />
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.mailLogs.total"
+        v-model:current-page="paginations.mailLogs.page"
+        v-model:page-size="paginations.mailLogs.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
   </section>
 </template>
 
 <script setup>
+import { onMounted, watch } from 'vue'
 import { Connection, DataAnalysis, Lock } from '@element-plus/icons-vue'
 import { useHealthData } from '../composables/useHealthData'
 
-const { isAdmin, mailLogs } = useHealthData()
+const { isAdmin, mailLogs, paginations, loadMailLogsPage } = useHealthData()
+
+watch(() => [paginations.mailLogs.page, paginations.mailLogs.pageSize], () => {
+  if (isAdmin.value) loadMailLogsPage()
+})
+
+onMounted(() => {
+  if (isAdmin.value) loadMailLogsPage()
+})
 </script>

@@ -8,6 +8,15 @@
         </div>
       </div>
       <ReportList :reports="reports" user-title @view-report="openReport" />
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.reports.total"
+        v-model:current-page="paginations.reports.page"
+        v-model:page-size="paginations.reports.pageSize"
+        :page-sizes="[6, 12, 24]"
+      />
     </div>
 
     <el-dialog v-model="reportVisible" title="体检报告详情" width="920px" class="document-dialog">
@@ -20,11 +29,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ReportList from '../components/ReportList.vue'
 import { downloadHTML, reportDocumentHTML, useHealthData } from '../composables/useHealthData'
 
-const { reports } = useHealthData()
+const { reports, paginations, loadReportsPage } = useHealthData()
 const selectedReport = ref(null)
 const reportVisible = ref(false)
 const reportHTML = computed(() => (selectedReport.value ? reportDocumentHTML(selectedReport.value) : ''))
@@ -38,4 +47,7 @@ function downloadReport() {
   if (!selectedReport.value) return
   downloadHTML(`${selectedReport.value.reportNo || 'checkup-report'}.html`, reportHTML.value)
 }
+
+watch(() => [paginations.reports.page, paginations.reports.pageSize], () => loadReportsPage())
+onMounted(() => loadReportsPage())
 </script>
