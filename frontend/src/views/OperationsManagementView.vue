@@ -271,6 +271,14 @@
             <el-option label="已关闭" value="closed" />
           </el-select>
           <el-input v-model="supportTicketKeyword" placeholder="搜索主题/内容/用户" clearable />
+          <el-button
+            plain
+            :loading="loading.exportSupportTickets"
+            :disabled="!can('admin:data:exchange')"
+            @click="handleSupportTicketExport"
+          >
+            导出工单 CSV
+          </el-button>
         </div>
       </div>
       <el-table :data="adminSupportTickets" stripe>
@@ -333,6 +341,7 @@ const {
   loadAdminNotificationsPage,
   loadAdminSupportTicketsPage,
   exportAppointments,
+  exportSupportTickets,
   editCoupon,
   saveCoupon,
   archiveCoupon,
@@ -374,6 +383,13 @@ function handleAppointmentExport() {
   return exportAppointments({
     status: appointmentExportStatus.value,
     keyword: debouncedAppointmentExportKeyword.value,
+  })
+}
+
+function handleSupportTicketExport() {
+  return exportSupportTickets({
+    status: supportTicketStatusFilter.value,
+    keyword: debouncedSupportTicketKeyword.value,
   })
 }
 

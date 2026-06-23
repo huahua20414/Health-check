@@ -138,6 +138,7 @@ const loading = reactive({
   importPackages: false,
   exportPackages: false,
   exportAppointments: false,
+  exportSupportTickets: false,
   permission: false,
   systemSetting: false,
 })
@@ -1351,6 +1352,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportSupportTickets(params = {}) {
+    if (loading.exportSupportTickets) return
+    loading.exportSupportTickets = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/admin/support-tickets/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'support-tickets.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('客服工单 CSV 已导出')
+    } finally {
+      loading.exportSupportTickets = false
+    }
+  }
+
   async function importPackages(file) {
     if (!file || loading.importPackages) return
     loading.importPackages = true
@@ -1601,6 +1620,7 @@ export function useHealthData() {
     archivePackage,
     exportPackages,
     exportAppointments,
+    exportSupportTickets,
     importPackages,
     updateRolePermission,
     updateSystemSetting,

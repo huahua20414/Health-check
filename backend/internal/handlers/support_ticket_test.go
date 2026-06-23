@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"health-checkup/backend/internal/models"
@@ -82,6 +84,22 @@ func TestAdminSupportTicketsFilterAndReply(t *testing.T) {
 	assertSupportTicketOperationLog(t, db, fixture.admin.ID, fixture.openTicket.ID, "reply", "replied")
 }
 
+func TestAdminExportSupportTicketsUsesFiltersAndAudits(t *testing.T) {
+	handler, db, fixture := newSupportTicketFixture(t)
+	router := newSupportTicketRouter(handler, fixture.admin)
+
+	response := performSupportTicketRequest(t, router, http.MethodGet, "/admin/support-tickets/export?status=open&keyword=改期", nil)
+
+	records := decodeSupportTicketCSV(t, response)
+	if len(records) != 2 {
+		t.Fatalf("expected header plus one ticket, got %#v", records)
+	}
+	if records[1][0] != strconv.Itoa(int(fixture.openTicket.ID)) || records[1][1] != fixture.user.Name || records[1][3] != fixture.openTicket.Subject {
+		t.Fatalf("export returned wrong ticket row: %#v", records[1])
+	}
+	assertSupportTicketOperationLogCount(t, db, fixture.admin.ID, "export", "support_ticket", 1)
+}
+
 func TestReplySupportTicketRejectsMissingReplyForResolvedStatus(t *testing.T) {
 	handler, _, fixture := newSupportTicketFixture(t)
 	router := newSupportTicketRouter(handler, fixture.admin)
@@ -139,6 +157,7 @@ func newSupportTicketRouter(handler *Handler, current models.User) *gin.Engine {
 	router.GET("/support-tickets", handler.mySupportTickets)
 	router.POST("/support-tickets", handler.createSupportTicket)
 	router.GET("/admin/support-tickets", handler.supportTickets)
+	router.GET("/admin/support-tickets/export", handler.exportSupportTickets)
 	router.PATCH("/admin/support-tickets/:id/reply", handler.replySupportTicket)
 	return router
 }
@@ -182,6 +201,19 @@ func decodeSupportTicketPage(t *testing.T, response *httptest.ResponseRecorder) 
 	return payload
 }
 
+func decodeSupportTicketCSV(t *testing.T, response *httptest.ResponseRecorder) [][]string {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	reader := csv.NewReader(strings.NewReader(response.Body.String()))
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("decode support ticket csv: %v", err)
+	}
+	return records
+}
+
 func assertSupportTicketNotification(t *testing.T, db *gorm.DB, userID uint) {
 	t.Helper()
 	var count int64
@@ -190,6 +222,19 @@ func assertSupportTicketNotification(t *testing.T, db *gorm.DB, userID uint) {
 	}
 	if count != 1 {
 		t.Fatalf("expected one support ticket reply notification, got %d", count)
+	}
+}
+
+func assertSupportTicketOperationLogCount(t *testing.T, db *gorm.DB, userID uint, action, resource string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).
+		Where("user_id = ? AND action = ? AND resource = ?", userID, action, resource).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count support ticket operation log: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected %d %s/%s operation logs, got %d", want, action, resource, count)
 	}
 }
 

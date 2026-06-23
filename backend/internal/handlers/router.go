@@ -100,6 +100,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/support-tickets", handler.requireRole("user"), handler.mySupportTickets)
 	protected.POST("/support-tickets", handler.requireRole("user"), handler.createSupportTicket)
 	protected.GET("/admin/support-tickets", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.supportTickets)
+	protected.GET("/admin/support-tickets/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportSupportTickets)
 	protected.PATCH("/admin/support-tickets/:id/reply", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.replySupportTicket)
 	protected.GET("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.adminNotifications)
 	protected.POST("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.createAdminNotification)
@@ -1525,9 +1526,8 @@ func (h *Handler) createSupportTicket(c *gin.Context) {
 	c.JSON(http.StatusCreated, ticket)
 }
 
-func (h *Handler) supportTickets(c *gin.Context) {
-	var tickets []models.SupportTicket
-	query := h.db.Model(&models.SupportTicket{}).Preload("User").Order("support_tickets.created_at desc")
+func (h *Handler) supportTicketQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.SupportTicket{}).Preload("User")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("support_tickets.status = ?", status)
 	}
@@ -1536,6 +1536,12 @@ func (h *Handler) supportTickets(c *gin.Context) {
 		query = query.Joins("LEFT JOIN users support_users ON support_users.id = support_tickets.user_id").
 			Where("support_tickets.subject LIKE ? OR support_tickets.content LIKE ? OR support_users.name LIKE ? OR support_users.email LIKE ?", pattern, pattern, pattern, pattern)
 	}
+	return query
+}
+
+func (h *Handler) supportTickets(c *gin.Context) {
+	var tickets []models.SupportTicket
+	query := h.supportTicketQuery(c).Order("support_tickets.created_at desc")
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &tickets)
 		return
@@ -1545,6 +1551,33 @@ func (h *Handler) supportTickets(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, tickets)
+}
+
+func (h *Handler) exportSupportTickets(c *gin.Context) {
+	var tickets []models.SupportTicket
+	if err := h.supportTicketQuery(c).Order("support_tickets.created_at desc").Find(&tickets).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="support-tickets.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "user_name", "user_email", "subject", "content", "reply", "status", "created_at", "updated_at"})
+	for _, ticket := range tickets {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(ticket.ID)),
+			ticket.User.Name,
+			ticket.User.Email,
+			ticket.Subject,
+			ticket.Content,
+			ticket.Reply,
+			ticket.Status,
+			ticket.CreatedAt.Format(time.RFC3339),
+			ticket.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "support_ticket", "", "success", fmt.Sprintf("%d tickets", len(tickets)))
 }
 
 func (h *Handler) replySupportTicket(c *gin.Context) {
