@@ -141,6 +141,8 @@ func defaultSystemSettings() []models.SystemSetting {
 		{Key: "notification.sms_mock_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "短信模拟通知", Description: "用站内信记录模拟短信触达结果。", Status: "active"},
 		{Key: "security.login_code_required", Value: "true", ValueType: "boolean", Group: "security", Label: "登录验证码", Description: "正式环境登录是否要求邮箱验证码。", Status: "active"},
 		{Key: "service.customer_service_url", Value: "https://example.com/support", ValueType: "string", Group: "service", Label: "在线客服入口", Description: "用户端客服入口跳转地址。", Status: "active"},
+		{Key: "service.customer_service_hours", Value: "08:30-18:00", ValueType: "string", Group: "service", Label: "客服服务时间", Description: "用户端展示的在线客服服务时间。", Status: "active"},
+		{Key: "service.faq", Value: `[{"question":"体检前需要注意什么？","answer":"前一天清淡饮食，部分抽血项目建议空腹；请携带有效证件并提前 15 分钟到达。"},{"question":"可以为家人预约吗？","answer":"可以。先在家庭成员中维护家人档案，提交预约时选择对应成员。"},{"question":"预约成功后会有什么提醒？","answer":"系统会生成站内信，并模拟短信通知；邮件通知按 SMTP 配置实际发送。"}]`, ValueType: "json", Group: "service", Label: "常见问题 FAQ", Description: "用户端 FAQ 列表，JSON 数组格式，字段为 question 和 answer。", Status: "active"},
 	}
 }
 

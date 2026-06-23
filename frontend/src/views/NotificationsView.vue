@@ -30,20 +30,14 @@
           </div>
         </div>
         <el-collapse>
-          <el-collapse-item title="体检前需要注意什么？" name="1">
-            前一天清淡饮食，部分抽血项目建议空腹；请携带有效证件并提前 15 分钟到达。
-          </el-collapse-item>
-          <el-collapse-item title="可以为家人预约吗？" name="2">
-            可以。先在家庭成员中维护家人档案，提交预约时选择对应成员。
-          </el-collapse-item>
-          <el-collapse-item title="预约成功后会有什么提醒？" name="3">
-            系统会生成站内信，并模拟短信通知；邮件通知按 SMTP 配置实际发送。
+          <el-collapse-item v-for="(item, index) in supportInfo.faq" :key="item.question" :title="item.question" :name="String(index + 1)">
+            {{ item.answer }}
           </el-collapse-item>
         </el-collapse>
         <div class="support-box">
           <strong>在线客服</strong>
-          <p>服务时间 08:30-18:00，当前为模拟入口。</p>
-          <el-button type="primary" @click="openSupport">进入客服</el-button>
+          <p>服务时间 {{ supportInfo.customerServiceHours || '工作日 08:30-18:00' }}</p>
+          <el-button type="primary" :disabled="!supportInfo.customerServiceUrl" @click="openSupport">进入客服</el-button>
         </div>
       </div>
     </div>
@@ -75,10 +69,14 @@ import { onMounted } from 'vue'
 import StatusTag from '../components/StatusTag.vue'
 import { formatDate, useHealthData } from '../composables/useHealthData'
 
-const { notifications, activeAnnouncements, loading, loadAll, markNotificationRead } = useHealthData()
+const { notifications, activeAnnouncements, supportInfo, loading, loadAll, markNotificationRead } = useHealthData()
 
 function openSupport() {
-  ElMessage.info('客服入口已记录，真实环境可接入企业 IM 或工单系统')
+  if (!supportInfo.value.customerServiceUrl) {
+    ElMessage.warning('客服入口暂未配置')
+    return
+  }
+  window.open(supportInfo.value.customerServiceUrl, '_blank', 'noopener,noreferrer')
 }
 
 onMounted(loadAll)

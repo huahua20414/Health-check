@@ -44,6 +44,7 @@ const activeCoupons = ref([])
 const reviews = ref([])
 const announcements = ref([])
 const activeAnnouncements = ref([])
+const supportInfo = ref({ customerServiceUrl: '', customerServiceHours: '', faq: [] })
 const adminDashboard = ref({ summary: {}, appointmentTrend: [], packageSales: [], userGrowth: [] })
 const checkupItems = ref([])
 const packageItems = ref([])
@@ -379,6 +380,7 @@ export function useHealthData() {
       recommendedPackages.value = await request('/packages/recommended')
       activeCoupons.value = await request('/coupons/active')
       activeAnnouncements.value = await request('/announcements/active')
+      supportInfo.value = await request('/support')
       institutions.value = await request('/institutions')
       if (!getAuthToken()) return
       appointments.value = await request('/appointments')
@@ -449,6 +451,10 @@ export function useHealthData() {
   async function loadSystemSettings() {
     if (!isAdmin.value) return
     systemSettings.value = await request('/system-settings')
+  }
+
+  async function loadSupportInfo() {
+    supportInfo.value = await request('/support')
   }
 
   async function loadPackagesPage(params = {}) {
@@ -1209,6 +1215,7 @@ export function useHealthData() {
     reviews,
     announcements,
     activeAnnouncements,
+    supportInfo,
     adminDashboard,
     checkupItems,
     packageItems,
@@ -1257,6 +1264,7 @@ export function useHealthData() {
     loadMyPermissions,
     loadRolePermissions,
     loadSystemSettings,
+    loadSupportInfo,
     loadPackagesPage,
     loadNotificationsPage,
     loadCouponsPage,

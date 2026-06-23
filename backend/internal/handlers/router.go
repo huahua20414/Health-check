@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -49,6 +50,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	api.GET("/coupons/active", handler.activeCoupons)
 	api.GET("/announcements/active", handler.activeAnnouncements)
 	api.GET("/institutions", handler.institutions)
+	api.GET("/support", handler.supportInfo)
 
 	authGroup := api.Group("/auth")
 	authGroup.Use(middleware.IPRateLimit(20, time.Minute))
@@ -479,6 +481,19 @@ func (h *Handler) activeAnnouncements(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, announcements)
+}
+
+func (h *Handler) supportInfo(c *gin.Context) {
+	settings, err := h.settingsByKeys("service.customer_service_url", "service.customer_service_hours", "service.faq")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"customerServiceUrl":   settings["service.customer_service_url"],
+		"customerServiceHours": settings["service.customer_service_hours"],
+		"faq":                  parseFAQItems(settings["service.faq"]),
+	})
 }
 
 func (h *Handler) appointments(c *gin.Context) {
@@ -2514,6 +2529,54 @@ func csvValue(record []string, index map[string]int, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(record[i])
+}
+
+func (h *Handler) settingsByKeys(keys ...string) (map[string]string, error) {
+	settings := make(map[string]string, len(keys))
+	for _, key := range keys {
+		settings[key] = ""
+	}
+	var rows []models.SystemSetting
+	if err := h.db.Where("`key` IN ? AND status = ?", keys, "active").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		settings[row.Key] = row.Value
+	}
+	return settings, nil
+}
+
+type faqItem struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+func parseFAQItems(value string) []faqItem {
+	var items []faqItem
+	if err := json.Unmarshal([]byte(value), &items); err != nil || len(items) == 0 {
+		return defaultFAQItems()
+	}
+	result := make([]faqItem, 0, len(items))
+	for _, item := range items {
+		question := strings.TrimSpace(item.Question)
+		answer := strings.TrimSpace(item.Answer)
+		if question == "" || answer == "" {
+			continue
+		}
+		result = append(result, faqItem{Question: question, Answer: answer})
+	}
+	if len(result) == 0 {
+		return defaultFAQItems()
+	}
+	return result
+}
+
+func defaultFAQItems() []faqItem {
+	return []faqItem{
+		{Question: "体检前需要注意什么？", Answer: "前一天清淡饮食，部分抽血项目建议空腹；请携带有效证件并提前 15 分钟到达。"},
+		{Question: "可以为家人预约吗？", Answer: "可以。先在家庭成员中维护家人档案，提交预约时选择对应成员。"},
+		{Question: "预约成功后会有什么提醒？", Answer: "系统会生成站内信，并模拟短信通知；邮件通知按 SMTP 配置实际发送。"},
+	}
 }
 
 func trimForLog(value string, limit int) string {
