@@ -128,6 +128,22 @@ func TestReviewsAreScopedByRole(t *testing.T) {
 	assertReviewListLength(t, adminResponse, 2)
 }
 
+func TestAdminReviewsSupportFiltersAndPagination(t *testing.T) {
+	handler, _, fixture := newReviewFixture(t)
+	createSeedReview(t, handler.db, fixture)
+	router := newReviewRouter(handler, fixture.admin)
+
+	response := performReviewRequest(t, router, http.MethodGet, "/reviews?rating=4&keyword=已有&page=1&pageSize=1", nil)
+	page := decodeReviewPage(t, response)
+
+	if page.Total != 1 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Content != "已有评价" || page.Items[0].User.Name != fixture.user.Name {
+		t.Fatalf("unexpected paginated reviews: %#v", page.Items)
+	}
+}
+
 func TestAdminCanReplyReviewAndHideIt(t *testing.T) {
 	handler, db, fixture := newReviewFixture(t)
 	review := createSeedReview(t, db, fixture)
@@ -333,4 +349,23 @@ func assertReviewListLength(t *testing.T, response *httptest.ResponseRecorder, w
 	if len(reviews) != want {
 		t.Fatalf("expected %d reviews, got %d: %#v", want, len(reviews), reviews)
 	}
+}
+
+type reviewPageResponse struct {
+	Items    []models.ServiceReview `json:"items"`
+	Total    int64                  `json:"total"`
+	Page     int                    `json:"page"`
+	PageSize int                    `json:"pageSize"`
+}
+
+func decodeReviewPage(t *testing.T, response *httptest.ResponseRecorder) reviewPageResponse {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page reviewPageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode review page: %v", err)
+	}
+	return page
 }

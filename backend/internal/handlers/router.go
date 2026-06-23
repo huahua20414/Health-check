@@ -1616,14 +1616,28 @@ func (h *Handler) reviews(c *gin.Context) {
 	var reviews []models.ServiceReview
 	query := h.db.Model(&models.ServiceReview{}).
 		Preload("User").Preload("Appointment").Preload("Package").Preload("Institution").Preload("Doctor").
-		Order("created_at desc")
+		Joins("LEFT JOIN users review_users ON review_users.id = service_reviews.user_id").
+		Joins("LEFT JOIN users review_doctors ON review_doctors.id = service_reviews.doctor_id").
+		Joins("LEFT JOIN checkup_packages review_packages ON review_packages.id = service_reviews.package_id").
+		Joins("LEFT JOIN checkup_institutions review_institutions ON review_institutions.id = service_reviews.institution_id").
+		Order("service_reviews.created_at desc")
 	if current.Role == "user" {
-		query = query.Where("user_id = ?", current.ID)
+		query = query.Where("service_reviews.user_id = ?", current.ID)
 	} else if current.Role != "admin" {
-		query = query.Where("doctor_id = ?", current.ID)
+		query = query.Where("service_reviews.doctor_id = ?", current.ID)
 	}
 	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
+		query = query.Where("service_reviews.status = ?", status)
+	}
+	if rating := c.Query("rating"); rating != "" {
+		query = query.Where("service_reviews.rating = ?", rating)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where(
+			"service_reviews.content LIKE ? OR service_reviews.reply LIKE ? OR review_users.name LIKE ? OR review_users.email LIKE ? OR review_doctors.name LIKE ? OR review_packages.name LIKE ? OR review_institutions.name LIKE ?",
+			pattern, pattern, pattern, pattern, pattern, pattern, pattern,
+		)
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &reviews)

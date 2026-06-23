@@ -114,6 +114,16 @@
           <p>查看用户体检评价并维护回复或隐藏状态。</p>
         </div>
       </div>
+      <div class="filter-bar operation-filter-bar">
+        <el-select v-model="reviewStatusFilter" placeholder="评价状态" clearable>
+          <el-option label="展示" value="published" />
+          <el-option label="隐藏" value="hidden" />
+        </el-select>
+        <el-select v-model="reviewRatingFilter" placeholder="评分" clearable>
+          <el-option v-for="score in [5, 4, 3, 2, 1]" :key="score" :label="`${score} 分`" :value="score" />
+        </el-select>
+        <el-input v-model="reviewKeyword" placeholder="搜索用户/医生/套餐/机构/评价" clearable />
+      </div>
       <el-table :data="reviews" stripe>
         <el-table-column label="用户" width="120"><template #default="{ row }">{{ row.user?.name || '-' }}</template></el-table-column>
         <el-table-column label="套餐"><template #default="{ row }">{{ row.package?.name || '-' }}</template></el-table-column>
@@ -129,8 +139,17 @@
           <el-option label="展示" value="published" />
           <el-option label="隐藏" value="hidden" />
         </el-select>
-        <el-button type="primary" :disabled="!reviewReplyForm.id || !can('admin:operation:manage')" :loading="loading.review" @click="saveReviewReply">保存处理</el-button>
+        <el-button type="primary" :disabled="!reviewReplyForm.id || !can('admin:operation:manage')" :loading="loading.review" @click="handleSaveReviewReply">保存处理</el-button>
       </div>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.reviews.total"
+        v-model:current-page="paginations.reviews.page"
+        v-model:page-size="paginations.reviews.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
 
     <div class="panel">
@@ -395,10 +414,14 @@ const supportTicketStatusFilter = ref('')
 const supportTicketKeyword = ref('')
 const couponStatusFilter = ref('')
 const couponKeyword = ref('')
+const reviewStatusFilter = ref('')
+const reviewRatingFilter = ref(null)
+const reviewKeyword = ref('')
 const debouncedNotificationKeyword = useDebouncedRef(notificationKeyword, 350)
 const debouncedAppointmentExportKeyword = useDebouncedRef(appointmentExportKeyword, 350)
 const debouncedSupportTicketKeyword = useDebouncedRef(supportTicketKeyword, 350)
 const debouncedCouponKeyword = useDebouncedRef(couponKeyword, 350)
+const debouncedReviewKeyword = useDebouncedRef(reviewKeyword, 350)
 
 function loadNotificationPage(reset = false) {
   if (reset) paginations.adminNotifications.page = 1
@@ -447,6 +470,23 @@ async function handleCouponImport(file) {
   await loadCouponPage()
 }
 
+function reviewFilters() {
+  return {
+    status: reviewStatusFilter.value,
+    rating: reviewRatingFilter.value,
+    keyword: debouncedReviewKeyword.value,
+  }
+}
+
+function loadReviewPage(reset = false) {
+  if (reset) paginations.reviews.page = 1
+  return loadReviewsPage(reviewFilters())
+}
+
+async function handleSaveReviewReply() {
+  await saveReviewReply(reviewFilters())
+}
+
 function handleSupportTicketExport() {
   return exportSupportTickets({
     status: supportTicketStatusFilter.value,
@@ -468,12 +508,14 @@ watch([supportTicketStatusFilter, debouncedSupportTicketKeyword], () => loadSupp
 watch(() => [paginations.adminSupportTickets.page, paginations.adminSupportTickets.pageSize], () => loadSupportTicketPage())
 watch([couponStatusFilter, debouncedCouponKeyword], () => loadCouponPage(true))
 watch(() => [paginations.coupons.page, paginations.coupons.pageSize], () => loadCouponPage())
+watch([reviewStatusFilter, reviewRatingFilter, debouncedReviewKeyword], () => loadReviewPage(true))
+watch(() => [paginations.reviews.page, paginations.reviews.pageSize], () => loadReviewPage())
 
 onMounted(() => {
   loadPackagesPage()
   loadUsersPage({ role: 'user', status: 'active' })
   loadCouponPage()
-  loadReviewsPage()
+  loadReviewPage()
   loadAnnouncementsPage()
   loadNotificationPage()
   loadSupportTicketPage()

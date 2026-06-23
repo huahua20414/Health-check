@@ -880,7 +880,7 @@ export function useHealthData() {
     Object.assign(reviewReplyForm, { id: review?.id || null, reply: review?.reply || '', status: review?.status || 'published' })
   }
 
-  async function saveReviewReply() {
+  async function saveReviewReply(params = {}) {
     if (!reviewReplyForm.id || loading.review) return
     loading.review = true
     try {
@@ -890,7 +890,7 @@ export function useHealthData() {
       })
       ElMessage.success('评价处理已保存')
       editReviewReply(null)
-      await loadReviewsPage()
+      await loadReviewsPage(params)
     } finally {
       loading.review = false
     }
