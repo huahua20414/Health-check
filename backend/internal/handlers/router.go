@@ -2320,11 +2320,29 @@ func (h *Handler) updateUserStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user status"})
 		return
 	}
+	var user models.User
+	if err := h.db.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	current := currentUser(c)
+	if req.Status == "disabled" && user.Role == "admin" {
+		if user.ID == current.ID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "admin cannot disable own account"})
+			return
+		}
+		var activeAdminCount int64
+		h.db.Model(&models.User{}).Where("role = ? AND status = ?", "admin", "active").Count(&activeAdminCount)
+		if activeAdminCount <= 1 && user.Status == "active" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at least one active admin is required"})
+			return
+		}
+	}
 	if err := h.db.Model(&models.User{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.recordOperation(c, "update_status", "user", strconv.Itoa(id), "success", req.Status)
+	h.recordOperation(c, "update_status", "user", strconv.Itoa(id), "success", user.Status+"->"+req.Status)
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": req.Status})
 }
 

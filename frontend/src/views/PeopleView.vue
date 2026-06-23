@@ -48,10 +48,12 @@
         <el-table-column v-if="isAdmin" label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
+              <el-button v-if="row.status === 'disabled' && can('admin:user:manage')" size="small" type="success" plain :loading="loading.status" @click="changeStatus(row, 'active')">
+                启用
+              </el-button>
               <el-button v-if="row.status !== 'disabled' && can('admin:user:manage')" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">
                 停用
               </el-button>
-              <el-tag v-else type="info" effect="plain">已停用</el-tag>
             </div>
           </template>
         </el-table-column>
