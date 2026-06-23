@@ -37,7 +37,7 @@ type Handler struct {
 func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.Engine {
 	handler := &Handler{db: db, redis: redisClient, config: cfg, mailer: mail.NewSender(cfg)}
 	router := gin.New()
-	router.Use(gin.Logger(), middleware.RequestID(), middleware.Recovery(), middleware.UnifiedJSONResponse())
+	router.Use(gin.Logger(), middleware.RequestID(), middleware.UnifiedJSONResponse(), middleware.Recovery())
 	router.Use(cors.Default())
 	router.Use(middleware.IPRateLimit(120, time.Minute))
 
