@@ -26,19 +26,17 @@ make test
 make test     # 测试模式：显示角色选择，同一邮箱/密码可进用户、医生、管理员
 make prod     # 正式模式：关闭调试登录，必须走邮箱验证码
 make up       # 默认构建并启动，按环境变量决定模式
-make seed     # 插入模拟数据
+make seed     # 初始化管理员账号和基础配置
 make logs     # 查看服务日志
 make down     # 停止服务
 make clean    # 停止并删除数据库卷
 ```
 
-## 种子账号
+## 初始化账号
 
-- 用户：`huahua20414@foxmail.com / 123456`
-- 医生：`huahua20414@foxmail.com / 123456`
 - 管理员：`huahua20414@foxmail.com / 123456`
 
-`make test` 下登录页可直接选择身份进入三端；`make prod` 下登录需要先向该邮箱发送验证码。
+`make seed` 只初始化管理员账号、体检机构和套餐配置，不再创建用户、医生、预约、报告等模拟业务数据。
 
 ## 认证与权限
 
