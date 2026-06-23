@@ -47,6 +47,31 @@ type CheckupPackage struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+type CheckupItem struct {
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	Name        string    `json:"name" gorm:"size:128;not null"`
+	Category    string    `json:"category" gorm:"size:64;not null"`
+	Department  string    `json:"department" gorm:"size:64"`
+	Price       float64   `json:"price" gorm:"not null;default:0"`
+	DurationMin int       `json:"durationMin" gorm:"not null;default:10"`
+	Description string    `json:"description" gorm:"type:text"`
+	Status      string    `json:"status" gorm:"size:24;not null;default:'active';index"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type PackageItem struct {
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	PackageID uint           `json:"packageId" gorm:"not null;uniqueIndex:idx_package_item"`
+	ItemID    uint           `json:"itemId" gorm:"not null;uniqueIndex:idx_package_item"`
+	SortOrder int            `json:"sortOrder" gorm:"not null;default:0"`
+	Required  bool           `json:"required" gorm:"not null;default:true"`
+	Package   CheckupPackage `json:"package"`
+	Item      CheckupItem    `json:"item"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
 type Coupon struct {
 	ID          uint      `json:"id" gorm:"primaryKey"`
 	Name        string    `json:"name" gorm:"size:128;not null"`

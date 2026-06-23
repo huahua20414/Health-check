@@ -51,6 +51,20 @@ func Run(db *gorm.DB) error {
 		}
 	}
 
+	items := []models.CheckupItem{
+		{Name: "一般检查", Category: "基础检查", Department: "健康管理科", Price: 20, DurationMin: 10, Description: "身高、体重、血压、内外科基础问诊。", Status: "active"},
+		{Name: "血常规", Category: "检验", Department: "检验科", Price: 35, DurationMin: 10, Description: "血液细胞基础指标检查。", Status: "active"},
+		{Name: "尿常规", Category: "检验", Department: "检验科", Price: 20, DurationMin: 10, Description: "尿液基础指标检查。", Status: "active"},
+		{Name: "肝肾功能", Category: "检验", Department: "检验科", Price: 80, DurationMin: 15, Description: "肝功能、肾功能相关指标。", Status: "active"},
+		{Name: "心电图", Category: "功能检查", Department: "心电科", Price: 45, DurationMin: 15, Description: "静息心电图检查。", Status: "active"},
+		{Name: "腹部彩超", Category: "影像检查", Department: "影像科", Price: 120, DurationMin: 20, Description: "肝胆胰脾肾影像检查。", Status: "active"},
+	}
+	for _, item := range items {
+		if err := db.Create(&item).Error; err != nil {
+			return err
+		}
+	}
+
 	coupons := []models.Coupon{
 		{Name: "新客体检立减", Code: "NEW50", Type: "amount", Value: 50, MinAmount: 199, Status: "active", Description: "新用户预约体检可用，结算页展示活动价。"},
 		{Name: "年度综合九折", Code: "YEAR10", Type: "percent", Value: 10, MinAmount: 500, Status: "active", Description: "年度综合类套餐活动优惠。"},
@@ -83,6 +97,8 @@ func reset(db *gorm.DB) error {
 		&models.ServiceReview{},
 		&models.PackageBrowseHistory{},
 		&models.PackageFavorite{},
+		&models.PackageItem{},
+		&models.CheckupItem{},
 		&models.Coupon{},
 		&models.MailLog{},
 		&models.Report{},

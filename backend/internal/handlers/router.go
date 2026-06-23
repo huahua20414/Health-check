@@ -66,6 +66,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
 	protected.PATCH("/appointments/:id/reschedule", handler.requireRole("user"), handler.rescheduleAppointment)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
+	protected.POST("/schedule/slots", handler.requireRole("admin"), handler.createScheduleSlot)
+	protected.PATCH("/schedule/slots/:id", handler.requireRole("admin"), handler.updateScheduleSlot)
 	protected.GET("/waitlist", handler.requireRole("user"), handler.waitlist)
 	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
@@ -93,6 +95,12 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/announcements/:id", handler.requireRole("admin"), handler.updateAnnouncement)
 	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
+	protected.GET("/checkup-items", handler.requireRole("admin"), handler.checkupItems)
+	protected.POST("/checkup-items", handler.requireRole("admin"), handler.createCheckupItem)
+	protected.PATCH("/checkup-items/:id", handler.requireRole("admin"), handler.updateCheckupItem)
+	protected.GET("/package-items", handler.requireRole("admin"), handler.packageItems)
+	protected.POST("/package-items", handler.requireRole("admin"), handler.upsertPackageItem)
+	protected.DELETE("/package-items/:id", handler.requireRole("admin"), handler.deletePackageItem)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
 	protected.PATCH("/users/:id/status", handler.requireRole("admin"), handler.updateUserStatus)
 	protected.PATCH("/users/:id/doctor-profile", handler.requireRole("admin"), handler.updateDoctorProfile)
@@ -808,11 +816,72 @@ func (h *Handler) scheduleSlots(c *gin.Context) {
 	if period := c.Query("period"); period != "" {
 		query = query.Where("period = ?", period)
 	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &slots)
+		return
+	}
 	if err := query.Find(&slots).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, slots)
+}
+
+func (h *Handler) createScheduleSlot(c *gin.Context) {
+	var req scheduleSlotRequest
+	if !bind(c, &req) {
+		return
+	}
+	slot, ok := h.buildScheduleSlot(c, req, 0)
+	if !ok {
+		return
+	}
+	if err := h.db.Create(&slot).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.Preload("Doctor").Preload("Institution").First(&slot, slot.ID)
+	c.JSON(http.StatusCreated, slot)
+}
+
+func (h *Handler) updateScheduleSlot(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid schedule slot id"})
+		return
+	}
+	var existing models.ScheduleSlot
+	if err := h.db.First(&existing, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "schedule slot not found"})
+		return
+	}
+	var req scheduleSlotRequest
+	if !bind(c, &req) {
+		return
+	}
+	slot, ok := h.buildScheduleSlot(c, req, existing.BookedCount)
+	if !ok {
+		return
+	}
+	updates := map[string]any{
+		"doctor_id":      slot.DoctorID,
+		"institution_id": slot.InstitutionID,
+		"date":           slot.Date,
+		"period":         slot.Period,
+		"category":       slot.Category,
+		"start_time":     slot.StartTime,
+		"end_time":       slot.EndTime,
+		"capacity":       slot.Capacity,
+		"booked_count":   slot.BookedCount,
+		"status":         slot.Status,
+	}
+	if err := h.db.Model(&models.ScheduleSlot{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var updated models.ScheduleSlot
+	h.db.Preload("Doctor").Preload("Institution").First(&updated, id)
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *Handler) waitlist(c *gin.Context) {
@@ -1382,6 +1451,137 @@ func (h *Handler) updatePackage(c *gin.Context) {
 	c.JSON(http.StatusOK, pkg)
 }
 
+func (h *Handler) checkupItems(c *gin.Context) {
+	var items []models.CheckupItem
+	query := h.db.Model(&models.CheckupItem{}).Order("category asc, name asc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("name LIKE ? OR category LIKE ? OR department LIKE ?", pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &items)
+		return
+	}
+	if err := query.Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) createCheckupItem(c *gin.Context) {
+	var req checkupItemRequest
+	if !bind(c, &req) {
+		return
+	}
+	item := models.CheckupItem{
+		Name:        strings.TrimSpace(req.Name),
+		Category:    strings.TrimSpace(req.Category),
+		Department:  strings.TrimSpace(req.Department),
+		Price:       req.Price,
+		DurationMin: req.DurationMin,
+		Description: req.Description,
+		Status:      normalizeStatus(req.Status, "active"),
+	}
+	if item.DurationMin <= 0 {
+		item.DurationMin = 10
+	}
+	if err := h.db.Create(&item).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, item)
+}
+
+func (h *Handler) updateCheckupItem(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid checkup item id"})
+		return
+	}
+	var req checkupItemRequest
+	if !bind(c, &req) {
+		return
+	}
+	duration := req.DurationMin
+	if duration <= 0 {
+		duration = 10
+	}
+	updates := map[string]any{
+		"name":         strings.TrimSpace(req.Name),
+		"category":     strings.TrimSpace(req.Category),
+		"department":   strings.TrimSpace(req.Department),
+		"price":        req.Price,
+		"duration_min": duration,
+		"description":  req.Description,
+		"status":       normalizeStatus(req.Status, "active"),
+	}
+	if err := h.db.Model(&models.CheckupItem{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var item models.CheckupItem
+	h.db.First(&item, id)
+	c.JSON(http.StatusOK, item)
+}
+
+func (h *Handler) packageItems(c *gin.Context) {
+	var items []models.PackageItem
+	query := h.db.Model(&models.PackageItem{}).Preload("Package").Preload("Item").Order("package_id asc, sort_order asc, id asc")
+	if packageID := c.Query("packageId"); packageID != "" {
+		query = query.Where("package_id = ?", packageID)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &items)
+		return
+	}
+	if err := query.Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) upsertPackageItem(c *gin.Context) {
+	var req packageItemRequest
+	if !bind(c, &req) {
+		return
+	}
+	link := models.PackageItem{
+		PackageID: req.PackageID,
+		ItemID:    req.ItemID,
+		SortOrder: req.SortOrder,
+		Required:  req.Required,
+	}
+	if err := h.db.Where("package_id = ? AND item_id = ?", req.PackageID, req.ItemID).Assign(link).FirstOrCreate(&link).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.Preload("Package").Preload("Item").First(&link, link.ID)
+	c.JSON(http.StatusOK, link)
+}
+
+func (h *Handler) deletePackageItem(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package item id"})
+		return
+	}
+	result := h.db.Delete(&models.PackageItem{}, id)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "package item not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
 func (h *Handler) users(c *gin.Context) {
 	var users []models.User
 	query := h.db.Model(&models.User{}).Order("created_at desc")
@@ -1580,6 +1780,55 @@ func (h *Handler) createAppointmentNotifications(appointment models.Appointment,
 	}
 }
 
+func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, bookedCount int) (models.ScheduleSlot, bool) {
+	var doctor models.User
+	if err := h.db.Where("id = ? AND role = ? AND status = ?", req.DoctorID, "doctor", "active").First(&doctor).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "active doctor not found"})
+		return models.ScheduleSlot{}, false
+	}
+	var institution models.CheckupInstitution
+	if err := h.db.Where("id = ? AND status = ?", req.InstitutionID, "active").First(&institution).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "active institution not found"})
+		return models.ScheduleSlot{}, false
+	}
+	capacity := req.Capacity
+	if capacity <= 0 {
+		capacity = 1
+	}
+	if capacity < bookedCount {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "capacity cannot be lower than booked count"})
+		return models.ScheduleSlot{}, false
+	}
+	endTime := strings.TrimSpace(req.EndTime)
+	if endTime == "" {
+		var err error
+		endTime, err = addMinutes(req.StartTime, 30)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start time"})
+			return models.ScheduleSlot{}, false
+		}
+	}
+	period := strings.TrimSpace(req.Period)
+	if period == "" {
+		period = "上午"
+		if req.StartTime >= "12:00" {
+			period = "下午"
+		}
+	}
+	return models.ScheduleSlot{
+		DoctorID:      req.DoctorID,
+		InstitutionID: req.InstitutionID,
+		Date:          req.Date,
+		Period:        period,
+		Category:      strings.TrimSpace(req.Category),
+		StartTime:     req.StartTime,
+		EndTime:       endTime,
+		Capacity:      capacity,
+		BookedCount:   bookedCount,
+		Status:        normalizeStatus(req.Status, "available"),
+	}, true
+}
+
 func (h *Handler) authRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenText := bearerToken(c.GetHeader("Authorization"))
@@ -1727,6 +1976,35 @@ type packageRequest struct {
 	Status      string  `json:"status"`
 }
 
+type checkupItemRequest struct {
+	Name        string  `json:"name" binding:"required"`
+	Category    string  `json:"category" binding:"required"`
+	Department  string  `json:"department"`
+	Price       float64 `json:"price"`
+	DurationMin int     `json:"durationMin"`
+	Description string  `json:"description"`
+	Status      string  `json:"status"`
+}
+
+type packageItemRequest struct {
+	PackageID uint `json:"packageId" binding:"required"`
+	ItemID    uint `json:"itemId" binding:"required"`
+	SortOrder int  `json:"sortOrder"`
+	Required  bool `json:"required"`
+}
+
+type scheduleSlotRequest struct {
+	DoctorID      uint   `json:"doctorId" binding:"required"`
+	InstitutionID uint   `json:"institutionId" binding:"required"`
+	Date          string `json:"date" binding:"required"`
+	Period        string `json:"period"`
+	Category      string `json:"category" binding:"required"`
+	StartTime     string `json:"startTime" binding:"required"`
+	EndTime       string `json:"endTime"`
+	Capacity      int    `json:"capacity"`
+	Status        string `json:"status"`
+}
+
 type reportRequest struct {
 	AppointmentID  uint   `json:"appointmentId" binding:"required"`
 	Summary        string `json:"summary" binding:"required"`
@@ -1800,6 +2078,15 @@ func splitCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func addMinutes(value string, minutes int) (string, error) {
+	parsed, err := time.Parse("15:04", value)
+	if err != nil {
+		return "", err
+	}
+	end := parsed.Add(time.Duration(minutes) * time.Minute)
+	return fmt.Sprintf("%02d:%02d", end.Hour(), end.Minute()), nil
 }
 
 func syncDoctorAvailableSlots(tx *gorm.DB, doctorID uint, categories []string) error {

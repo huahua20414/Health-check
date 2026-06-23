@@ -18,6 +18,7 @@ import DoctorReviewView from '../views/DoctorReviewView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import AdminDashboardView from '../views/AdminDashboardView.vue'
 import OperationsManagementView from '../views/OperationsManagementView.vue'
+import ServiceResourceManagementView from '../views/ServiceResourceManagementView.vue'
 import { useHealthData } from '../composables/useHealthData'
 
 export const menuItems = [
@@ -80,7 +81,10 @@ export const menuItems = [
     label: '体检服务管理',
     icon: 'DataAnalysis',
     roles: ['admin'],
-    children: [{ path: '/admin/packages', name: 'adminPackages', label: '套餐管理', icon: 'DataAnalysis', roles: ['admin'] }],
+    children: [
+      { path: '/admin/packages', name: 'adminPackages', label: '套餐管理', icon: 'DataAnalysis', roles: ['admin'] },
+      { path: '/admin/service-resources', name: 'serviceResources', label: '项目与排班', icon: 'Calendar', roles: ['admin'] },
+    ],
   },
   {
     label: '系统管理',
@@ -120,6 +124,7 @@ const router = createRouter({
         { path: 'admin/users', name: 'adminUsers', component: PeopleView, meta: { title: '用户管理', roles: ['admin'] } },
         { path: 'admin/doctors', name: 'doctorReview', component: DoctorReviewView, meta: { title: '医生审核', roles: ['admin'] } },
         { path: 'admin/packages', name: 'adminPackages', component: PackageManagementView, meta: { title: '套餐管理', roles: ['admin'] } },
+        { path: 'admin/service-resources', name: 'serviceResources', component: ServiceResourceManagementView, meta: { title: '项目与排班', roles: ['admin'] } },
         { path: 'admin/operations', name: 'adminOperations', component: OperationsManagementView, meta: { title: '运营管理', roles: ['admin'] } },
         { path: 'admin/settings', name: 'adminSettings', component: SettingsView, meta: { title: '系统设置', roles: ['admin'] } },
       ],

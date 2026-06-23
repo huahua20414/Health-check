@@ -40,6 +40,8 @@ const reviews = ref([])
 const announcements = ref([])
 const activeAnnouncements = ref([])
 const adminDashboard = ref({ summary: {}, appointmentTrend: [], packageSales: [], userGrowth: [] })
+const checkupItems = ref([])
+const packageItems = ref([])
 const paginations = reactive({
   appointments: { page: 1, pageSize: 10, total: 0 },
   users: { page: 1, pageSize: 10, total: 0 },
@@ -52,6 +54,9 @@ const paginations = reactive({
   coupons: { page: 1, pageSize: 10, total: 0 },
   reviews: { page: 1, pageSize: 10, total: 0 },
   announcements: { page: 1, pageSize: 10, total: 0 },
+  checkupItems: { page: 1, pageSize: 10, total: 0 },
+  packageItems: { page: 1, pageSize: 10, total: 0 },
+  slots: { page: 1, pageSize: 10, total: 0 },
 })
 const appointmentForm = reactive({
   appointmentType: '个人体检',
@@ -76,6 +81,9 @@ const couponForm = reactive({ id: null, name: '', code: '', type: 'amount', valu
 const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
 const reviewReplyForm = reactive({ id: null, reply: '', status: 'published' })
 const announcementForm = reactive({ id: null, title: '', content: '', audience: 'all', status: 'draft' })
+const checkupItemForm = reactive({ id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' })
+const packageItemForm = reactive({ packageId: null, itemId: null, sortOrder: 0, required: true })
+const scheduleForm = reactive({ id: null, doctorId: null, institutionId: null, date: '', period: '上午', category: '', startTime: '08:30', endTime: '', capacity: 1, status: 'available' })
 const reportForm = reactive({
   appointmentId: null,
   summary: '',
@@ -102,16 +110,19 @@ const loading = reactive({
   coupon: false,
   review: false,
   announcement: false,
+  checkupItem: false,
+  packageItem: false,
+  schedule: false,
 })
 
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', available: '可预约', unread: '未读', read: '已读' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', available: 'success', unread: 'warning', read: 'info' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info' }[status] || 'info'
 }
 
 export function formatDate(value) {
@@ -369,6 +380,10 @@ export function useHealthData() {
       else users.value = currentUser.value ? [currentUser.value] : []
       if (isAdmin.value) mailLogs.value = await request('/mail-logs')
       if (isAdmin.value) adminDashboard.value = await request('/admin/dashboard')
+      if (isAdmin.value) {
+        checkupItems.value = await request('/checkup-items')
+        packageItems.value = await request('/package-items')
+      }
       if (!appointmentForm.institutionId && institutions.value[0]) appointmentForm.institutionId = institutions.value[0].id
       if (!appointmentForm.packageId && packages.value[0]) appointmentForm.packageId = packages.value[0].id
       if (!reportForm.appointmentId && appointments.value[0]) reportForm.appointmentId = appointments.value[0].id
@@ -420,6 +435,18 @@ export function useHealthData() {
   async function loadAdminDashboard() {
     if (!isAdmin.value) return
     adminDashboard.value = await request('/admin/dashboard')
+  }
+
+  async function loadCheckupItemsPage(params = {}) {
+    checkupItems.value = await requestPage('/checkup-items', paginations.checkupItems, params)
+  }
+
+  async function loadPackageItemsPage(params = {}) {
+    packageItems.value = await requestPage('/package-items', paginations.packageItems, params)
+  }
+
+  async function loadSlotsPage(params = {}) {
+    slots.value = await requestPage('/schedule/slots', paginations.slots, params)
   }
 
   async function ensureBootstrapped() {
@@ -675,6 +702,114 @@ export function useHealthData() {
     }
   }
 
+  function editCheckupItem(item) {
+    Object.assign(checkupItemForm, {
+      id: item?.id || null,
+      name: item?.name || '',
+      category: item?.category || '',
+      department: item?.department || '',
+      price: Number(item?.price || 0),
+      durationMin: Number(item?.durationMin || 10),
+      description: item?.description || '',
+      status: item?.status || 'active',
+    })
+  }
+
+  async function saveCheckupItem() {
+    if (loading.checkupItem) return
+    loading.checkupItem = true
+    try {
+      const body = JSON.stringify({
+        name: checkupItemForm.name,
+        category: checkupItemForm.category,
+        department: checkupItemForm.department,
+        price: Number(checkupItemForm.price || 0),
+        durationMin: Number(checkupItemForm.durationMin || 10),
+        description: checkupItemForm.description,
+        status: checkupItemForm.status,
+      })
+      if (checkupItemForm.id) await request(`/checkup-items/${checkupItemForm.id}`, { method: 'PATCH', body })
+      else await request('/checkup-items', { method: 'POST', body })
+      ElMessage.success('体检项目已保存')
+      editCheckupItem(null)
+      await loadCheckupItemsPage()
+    } finally {
+      loading.checkupItem = false
+    }
+  }
+
+  async function savePackageItem() {
+    if (loading.packageItem) return
+    loading.packageItem = true
+    try {
+      await request('/package-items', {
+        method: 'POST',
+        body: JSON.stringify({
+          packageId: packageItemForm.packageId,
+          itemId: packageItemForm.itemId,
+          sortOrder: Number(packageItemForm.sortOrder || 0),
+          required: packageItemForm.required,
+        }),
+      })
+      ElMessage.success('套餐项目组合已保存')
+      await loadPackageItemsPage({ packageId: packageItemForm.packageId })
+    } finally {
+      loading.packageItem = false
+    }
+  }
+
+  async function deletePackageItem(row) {
+    if (loading.packageItem) return
+    loading.packageItem = true
+    try {
+      await request(`/package-items/${row.id}`, { method: 'DELETE' })
+      ElMessage.success('套餐项目已移除')
+      await loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {})
+    } finally {
+      loading.packageItem = false
+    }
+  }
+
+  function editScheduleSlot(slot) {
+    Object.assign(scheduleForm, {
+      id: slot?.id || null,
+      doctorId: slot?.doctorId || null,
+      institutionId: slot?.institutionId || null,
+      date: slot?.date || '',
+      period: slot?.period || '上午',
+      category: slot?.category || '',
+      startTime: slot?.startTime || '08:30',
+      endTime: slot?.endTime || '',
+      capacity: Number(slot?.capacity || 1),
+      status: slot?.status || 'available',
+    })
+  }
+
+  async function saveScheduleSlot() {
+    if (loading.schedule) return
+    loading.schedule = true
+    try {
+      const body = JSON.stringify({
+        doctorId: scheduleForm.doctorId,
+        institutionId: scheduleForm.institutionId,
+        date: scheduleForm.date,
+        period: scheduleForm.period,
+        category: scheduleForm.category,
+        startTime: scheduleForm.startTime,
+        endTime: scheduleForm.endTime,
+        capacity: Number(scheduleForm.capacity || 1),
+        status: scheduleForm.status,
+      })
+      if (scheduleForm.id) await request(`/schedule/slots/${scheduleForm.id}`, { method: 'PATCH', body })
+      else await request('/schedule/slots', { method: 'POST', body })
+      ElMessage.success('排班号源已保存')
+      editScheduleSlot(null)
+      await loadSlotsPage()
+    } finally {
+      loading.schedule = false
+    }
+  }
+
   async function joinWaitlist(slot) {
     if (!currentUser.value || loading.appointment) return
     loading.appointment = true
@@ -898,6 +1033,8 @@ export function useHealthData() {
     announcements,
     activeAnnouncements,
     adminDashboard,
+    checkupItems,
+    packageItems,
     paginations,
     appointmentForm,
     waitlistForm,
@@ -910,6 +1047,9 @@ export function useHealthData() {
     reviewForm,
     reviewReplyForm,
     announcementForm,
+    checkupItemForm,
+    packageItemForm,
+    scheduleForm,
     reportForm,
     loading,
     role,
@@ -940,6 +1080,9 @@ export function useHealthData() {
     loadReviewsPage,
     loadAnnouncementsPage,
     loadAdminDashboard,
+    loadCheckupItemsPage,
+    loadPackageItemsPage,
+    loadSlotsPage,
     ensureBootstrapped,
     createAppointment,
     joinWaitlist,
@@ -959,6 +1102,12 @@ export function useHealthData() {
     saveReviewReply,
     editAnnouncement,
     saveAnnouncement,
+    editCheckupItem,
+    saveCheckupItem,
+    savePackageItem,
+    deletePackageItem,
+    editScheduleSlot,
+    saveScheduleSlot,
     saveProfile,
     sendEmailCode,
     updateEmail,
