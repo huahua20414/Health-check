@@ -28,6 +28,12 @@ const institutions = ref([])
 const slots = ref([])
 const waitlist = ref([])
 const mailLogs = ref([])
+const familyMembers = ref([])
+const favorites = ref([])
+const browseHistories = ref([])
+const popularPackages = ref([])
+const recommendedPackages = ref([])
+const notifications = ref([])
 const paginations = reactive({
   appointments: { page: 1, pageSize: 10, total: 0 },
   users: { page: 1, pageSize: 10, total: 0 },
@@ -36,11 +42,26 @@ const paginations = reactive({
   waitlist: { page: 1, pageSize: 10, total: 0 },
   mailLogs: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
+  notifications: { page: 1, pageSize: 10, total: 0 },
 })
-const appointmentForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, slotId: null, date: '', period: '', note: '' })
+const appointmentForm = reactive({
+  appointmentType: '个人体检',
+  institutionId: null,
+  packageId: null,
+  familyMemberId: null,
+  slotId: null,
+  date: '',
+  period: '',
+  note: '',
+  paymentStatus: 'unpaid',
+  invoiceTitle: '',
+  invoiceTaxNo: '',
+})
 const waitlistForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, date: '', period: '', note: '' })
 const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true })
 const emailForm = reactive({ email: '', code: '' })
+const familyMemberForm = reactive({ id: null, name: '', relation: '', gender: '', age: null, idCard: '', phone: '' })
+const rescheduleForm = reactive({ appointmentId: null, institutionId: null, slotId: null, date: '', period: '', note: '' })
 const packageForm = reactive({ id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' })
 const reportForm = reactive({
   appointmentId: null,
@@ -62,16 +83,19 @@ const loading = reactive({
   emailCode: false,
   emailUpdate: false,
   authCode: false,
+  familyMember: false,
+  favorite: false,
+  notification: false,
 })
 
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', available: '可预约' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', available: '可预约', unread: '未读', read: '已读' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', available: 'success' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', available: 'success', unread: 'warning', read: 'info' }[status] || 'info'
 }
 
 export function formatDate(value) {
@@ -94,6 +118,7 @@ export function appointmentDocumentHTML(appointment) {
   return documentHTML('体检预约订单', [
     ['订单号', appointment.orderNo],
     ['客户', appointment.user?.name],
+    ['体检人', appointment.familyMember?.name ? `${appointment.familyMember.name}（${appointment.familyMember.relation || '家庭成员'}）` : '本人'],
     ['预约类型', appointment.appointmentType],
     ['体检分类', appointment.category],
     ['体检机构', appointment.institution?.name],
@@ -103,6 +128,9 @@ export function appointmentDocumentHTML(appointment) {
     ['医生', `${appointment.doctor?.name || ''} ${appointment.doctor?.title || ''}`],
     ['日期', appointment.date],
     ['时间', `${appointment.startTime}-${appointment.endTime}`],
+    ['支付状态', appointment.paymentStatus === 'paid' ? '已支付' : '未支付'],
+    ['发票抬头', appointment.invoiceTitle],
+    ['纳税人识别号', appointment.invoiceTaxNo],
     ['备注', appointment.note],
     ['状态', statusText(appointment.status)],
   ], '请按预约时间携带有效证件到检。')
@@ -291,6 +319,10 @@ export function useHealthData() {
       users.value = []
       slots.value = []
       waitlist.value = []
+      familyMembers.value = []
+      favorites.value = []
+      browseHistories.value = []
+      notifications.value = []
     } finally {
       loading.logout = false
     }
@@ -301,12 +333,20 @@ export function useHealthData() {
     loading.load = true
     try {
       packages.value = await request('/packages')
+      popularPackages.value = await request('/packages/popular')
+      recommendedPackages.value = await request('/packages/recommended')
       institutions.value = await request('/institutions')
       if (!getAuthToken()) return
       appointments.value = await request('/appointments')
       reports.value = await request('/reports')
       slots.value = await request('/schedule/slots')
-      if (isUser.value) waitlist.value = await request('/waitlist')
+      if (isUser.value) {
+        waitlist.value = await request('/waitlist')
+        familyMembers.value = await request('/family-members')
+        favorites.value = await request('/package-favorites')
+        browseHistories.value = await request('/package-browses')
+      }
+      notifications.value = await request('/notifications')
       if (isDoctor.value || isAdmin.value) users.value = await request('/users')
       else users.value = currentUser.value ? [currentUser.value] : []
       if (isAdmin.value) mailLogs.value = await request('/mail-logs')
@@ -342,6 +382,10 @@ export function useHealthData() {
     packages.value = await requestPage('/packages', paginations.packages, params)
   }
 
+  async function loadNotificationsPage(params = {}) {
+    notifications.value = await requestPage('/notifications', paginations.notifications, params)
+  }
+
   async function ensureBootstrapped() {
     if (bootstrapped) return
     bootstrapped = true
@@ -369,6 +413,115 @@ export function useHealthData() {
       await loadAll()
     } finally {
       loading.appointment = false
+    }
+  }
+
+  function editFamilyMember(member) {
+    Object.assign(familyMemberForm, {
+      id: member?.id || null,
+      name: member?.name || '',
+      relation: member?.relation || '',
+      gender: member?.gender || '',
+      age: member?.age || null,
+      idCard: member?.idCard || '',
+      phone: member?.phone || '',
+    })
+  }
+
+  async function saveFamilyMember() {
+    if (loading.familyMember) return
+    loading.familyMember = true
+    try {
+      const body = JSON.stringify({
+        name: familyMemberForm.name,
+        relation: familyMemberForm.relation,
+        gender: familyMemberForm.gender,
+        age: Number(familyMemberForm.age || 0),
+        idCard: familyMemberForm.idCard,
+        phone: familyMemberForm.phone,
+      })
+      if (familyMemberForm.id) await request(`/family-members/${familyMemberForm.id}`, { method: 'PATCH', body })
+      else await request('/family-members', { method: 'POST', body })
+      ElMessage.success('家庭成员已保存')
+      editFamilyMember(null)
+      await loadAll()
+    } finally {
+      loading.familyMember = false
+    }
+  }
+
+  async function deleteFamilyMember(member) {
+    if (loading.familyMember) return
+    loading.familyMember = true
+    try {
+      await request(`/family-members/${member.id}`, { method: 'DELETE' })
+      ElMessage.success('家庭成员已删除')
+      await loadAll()
+    } finally {
+      loading.familyMember = false
+    }
+  }
+
+  async function toggleFavorite(pkg) {
+    if (loading.favorite) return
+    loading.favorite = true
+    try {
+      const exists = favorites.value.some((item) => item.packageId === pkg.id)
+      await request(`/package-favorites/${pkg.id}`, { method: exists ? 'DELETE' : 'POST' })
+      ElMessage.success(exists ? '已取消收藏' : '已收藏套餐')
+      await loadAll()
+    } finally {
+      loading.favorite = false
+    }
+  }
+
+  async function recordPackageBrowse(pkg) {
+    if (!getAuthToken() || !isUser.value || !pkg?.id) return
+    await request(`/packages/${pkg.id}/browse`, { method: 'POST' }).catch(() => null)
+    browseHistories.value = await request('/package-browses').catch(() => browseHistories.value)
+  }
+
+  function editReschedule(appointment) {
+    Object.assign(rescheduleForm, {
+      appointmentId: appointment?.id || null,
+      institutionId: appointment?.institutionId || null,
+      slotId: null,
+      date: appointment?.date || '',
+      period: appointment?.period || '',
+      note: appointment?.note || '',
+    })
+  }
+
+  async function rescheduleAppointment() {
+    if (!rescheduleForm.appointmentId || loading.appointment) return
+    loading.appointment = true
+    try {
+      await request(`/appointments/${rescheduleForm.appointmentId}/reschedule`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          appointmentType: '个人体检',
+          institutionId: rescheduleForm.institutionId,
+          slotId: rescheduleForm.slotId,
+          date: rescheduleForm.date,
+          period: rescheduleForm.period,
+          note: rescheduleForm.note,
+        }),
+      })
+      ElMessage.success('预约已改期')
+      await loadAll()
+    } finally {
+      loading.appointment = false
+    }
+  }
+
+  async function markNotificationRead(notification) {
+    if (loading.notification) return
+    loading.notification = true
+    try {
+      await request(`/notifications/${notification.id}/read`, { method: 'PATCH' })
+      notification.status = 'read'
+    } finally {
+      loading.notification = false
     }
   }
 
@@ -583,11 +736,19 @@ export function useHealthData() {
     slots,
     waitlist,
     mailLogs,
+    familyMembers,
+    favorites,
+    browseHistories,
+    popularPackages,
+    recommendedPackages,
+    notifications,
     paginations,
     appointmentForm,
     waitlistForm,
     profileForm,
     emailForm,
+    familyMemberForm,
+    rescheduleForm,
     packageForm,
     reportForm,
     loading,
@@ -614,10 +775,19 @@ export function useHealthData() {
     loadWaitlistPage,
     loadMailLogsPage,
     loadPackagesPage,
+    loadNotificationsPage,
     ensureBootstrapped,
     createAppointment,
     joinWaitlist,
     cancelAppointment,
+    editFamilyMember,
+    saveFamilyMember,
+    deleteFamilyMember,
+    toggleFavorite,
+    recordPackageBrowse,
+    editReschedule,
+    rescheduleAppointment,
+    markNotificationRead,
     saveProfile,
     sendEmailCode,
     updateEmail,

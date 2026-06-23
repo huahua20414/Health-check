@@ -12,6 +12,8 @@ import PackageCatalogView from '../views/PackageCatalogView.vue'
 import PackageManagementView from '../views/PackageManagementView.vue'
 import PeopleView from '../views/PeopleView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import FamilyMembersView from '../views/FamilyMembersView.vue'
+import NotificationsView from '../views/NotificationsView.vue'
 import DoctorReviewView from '../views/DoctorReviewView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import { useHealthData } from '../composables/useHealthData'
@@ -40,7 +42,11 @@ export const menuItems = [
     label: '个人中心',
     icon: 'User',
     roles: ['user'],
-    children: [{ path: '/profile', name: 'profile', label: '个人资料', icon: 'User', roles: ['user'] }],
+    children: [
+      { path: '/profile', name: 'profile', label: '个人资料', icon: 'User', roles: ['user'] },
+      { path: '/family-members', name: 'familyMembers', label: '家庭成员', icon: 'UserFilled', roles: ['user'] },
+      { path: '/notifications', name: 'notifications', label: '消息与客服', icon: 'Bell', roles: ['user'] },
+    ],
   },
   { path: '/doctor', name: 'doctorDashboard', label: '医生工作台', icon: 'House', roles: ['doctor'] },
   {
@@ -99,6 +105,8 @@ const router = createRouter({
         { path: 'my-appointments', name: 'myAppointments', component: MyAppointmentsView, meta: { title: '我的预约', roles: ['user'] } },
         { path: 'my-reports', name: 'myReports', component: MyReportsView, meta: { title: '我的报告', roles: ['user'] } },
         { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人资料', roles: ['user'] } },
+        { path: 'family-members', name: 'familyMembers', component: FamilyMembersView, meta: { title: '家庭成员', roles: ['user'] } },
+        { path: 'notifications', name: 'notifications', component: NotificationsView, meta: { title: '消息与客服', roles: ['user'] } },
         { path: 'doctor', name: 'doctorDashboard', component: DashboardView, meta: { title: '医生工作台', roles: ['doctor'] } },
         { path: 'appointments', name: 'appointments', component: DoctorAppointmentsView, meta: { title: '预约处理', roles: ['doctor'] } },
         { path: 'reports', name: 'reports', component: DoctorReportsView, meta: { title: '报告录入', roles: ['doctor'] } },

@@ -4,6 +4,9 @@
     <el-table-column label="客户" width="100">
       <template #default="{ row }">{{ row.user?.name || '-' }}</template>
     </el-table-column>
+    <el-table-column label="体检人" width="100">
+      <template #default="{ row }">{{ row.familyMember?.name || '本人' }}</template>
+    </el-table-column>
     <el-table-column prop="appointmentType" label="类型" width="100" />
     <el-table-column prop="category" label="分类" width="110" />
     <el-table-column label="机构" min-width="170">
@@ -19,15 +22,23 @@
     <el-table-column label="状态" width="110">
       <template #default="{ row }"><StatusTag :status="row.status" /></template>
     </el-table-column>
+    <el-table-column label="支付" width="90">
+      <template #default="{ row }">{{ row.paymentStatus === 'paid' ? '已支付' : '未支付' }}</template>
+    </el-table-column>
     <el-table-column label="操作" width="250">
       <template #default="{ row }">
         <el-button size="small" @click="$emit('view-order', row)">查看订单</el-button>
         <el-button v-if="isDoctor" size="small" :loading="loading" :disabled="row.status === 'reported' || row.status === 'canceled'" @click="$emit('mark-done', row)">
           完成体检
         </el-button>
-        <el-button v-else-if="canCancel" size="small" type="danger" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('cancel', row)">
-          取消预约
-        </el-button>
+        <template v-else>
+          <el-button v-if="canReschedule" size="small" :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('reschedule', row)">
+            改期
+          </el-button>
+          <el-button v-if="canCancel" size="small" type="danger" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('cancel', row)">
+            取消预约
+          </el-button>
+        </template>
       </template>
     </el-table-column>
   </el-table>
@@ -53,7 +64,11 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  canReschedule: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['mark-done', 'cancel', 'view-order'])
+defineEmits(['mark-done', 'cancel', 'reschedule', 'view-order'])
 </script>

@@ -7,7 +7,16 @@
           <p>只能查看和取消自己的未体检预约。</p>
         </div>
       </div>
-      <AppointmentTable :rows="myAppointments" :is-doctor="false" :can-cancel="true" :loading="loading.status" @cancel="cancelAppointment" @view-order="openOrder" />
+      <AppointmentTable
+        :rows="myAppointments"
+        :is-doctor="false"
+        :can-cancel="true"
+        :can-reschedule="true"
+        :loading="loading.status || loading.appointment"
+        @cancel="cancelAppointment"
+        @reschedule="openReschedule"
+        @view-order="openOrder"
+      />
       <el-pagination
         class="table-pagination"
         background
@@ -62,6 +71,33 @@
       </div>
       <div class="document-preview" v-html="orderHTML" />
     </el-dialog>
+
+    <el-dialog v-model="rescheduleVisible" title="预约改期" width="860px" class="choice-dialog">
+      <el-form label-position="top">
+        <el-form-item label="新日期">
+          <el-select v-model="rescheduleForm.date" filterable placeholder="选择有库存日期" @change="rescheduleForm.slotId = null">
+            <el-option v-for="date in availableDates" :key="date" :label="date" :value="date" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="新号源">
+          <el-select v-model="rescheduleForm.slotId" filterable placeholder="选择新号源" @change="syncSelectedSlot">
+            <el-option
+              v-for="slot in availableSlots"
+              :key="slot.id"
+              :label="`${slot.date} ${slot.startTime}-${slot.endTime} ${slot.doctor?.name || ''}`"
+              :value="slot.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="改期备注">
+          <el-input v-model="rescheduleForm.note" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rescheduleVisible = false">取消</el-button>
+        <el-button type="primary" :loading="loading.appointment" :disabled="!rescheduleForm.slotId" @click="submitReschedule">确认改期</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
@@ -71,10 +107,20 @@ import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, loading, cancelAppointment, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
+const { myAppointments, waitlist, slots, rescheduleForm, loading, cancelAppointment, editReschedule, rescheduleAppointment, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
+const rescheduleVisible = ref(false)
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
+const activeRescheduleAppointment = computed(() => myAppointments.value.find((item) => item.id === rescheduleForm.appointmentId))
+const compatibleSlots = computed(() => slots.value.filter((slot) => (
+  slot.institutionId === rescheduleForm.institutionId &&
+  slot.category === activeRescheduleAppointment.value?.category &&
+  slot.status === 'available' &&
+  slot.capacity > slot.bookedCount
+)))
+const availableDates = computed(() => Array.from(new Set(compatibleSlots.value.map((slot) => slot.date))).sort())
+const availableSlots = computed(() => compatibleSlots.value.filter((slot) => !rescheduleForm.date || slot.date === rescheduleForm.date))
 const waitlistRows = computed(() => waitlist.value.map((item, index) => ({
   ...item,
   position: (paginations.waitlist.page - 1) * paginations.waitlist.pageSize + index + 1,
@@ -88,6 +134,23 @@ function openOrder(row) {
 function downloadOrder() {
   if (!selectedOrder.value) return
   downloadHTML(`${selectedOrder.value.orderNo || 'appointment-order'}.html`, orderHTML.value)
+}
+
+function openReschedule(row) {
+  editReschedule(row)
+  rescheduleVisible.value = true
+}
+
+function syncSelectedSlot(slotId) {
+  const slot = slots.value.find((item) => item.id === slotId)
+  if (!slot) return
+  rescheduleForm.date = slot.date
+  rescheduleForm.period = slot.period
+}
+
+async function submitReschedule() {
+  await rescheduleAppointment()
+  rescheduleVisible.value = false
 }
 
 watch(() => [paginations.appointments.page, paginations.appointments.pageSize], () => loadAppointmentsPage())

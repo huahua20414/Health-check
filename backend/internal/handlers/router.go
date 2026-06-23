@@ -41,6 +41,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	api := router.Group("/api")
 	api.GET("/health", handler.health)
 	api.GET("/packages", handler.packages)
+	api.GET("/packages/popular", handler.popularPackages)
+	api.GET("/packages/recommended", handler.recommendedPackages)
 	api.GET("/institutions", handler.institutions)
 
 	authGroup := api.Group("/auth")
@@ -60,11 +62,23 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/appointments", handler.appointments)
 	protected.POST("/appointments", handler.requireRole("user"), handler.createAppointment)
 	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
+	protected.PATCH("/appointments/:id/reschedule", handler.requireRole("user"), handler.rescheduleAppointment)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.GET("/waitlist", handler.requireRole("user"), handler.waitlist)
 	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
 	protected.POST("/reports", handler.requireRole("doctor"), handler.createReport)
+	protected.GET("/family-members", handler.requireRole("user"), handler.familyMembers)
+	protected.POST("/family-members", handler.requireRole("user"), handler.createFamilyMember)
+	protected.PATCH("/family-members/:id", handler.requireRole("user"), handler.updateFamilyMember)
+	protected.DELETE("/family-members/:id", handler.requireRole("user"), handler.deleteFamilyMember)
+	protected.GET("/package-favorites", handler.requireRole("user"), handler.packageFavorites)
+	protected.POST("/package-favorites/:id", handler.requireRole("user"), handler.favoritePackage)
+	protected.DELETE("/package-favorites/:id", handler.requireRole("user"), handler.unfavoritePackage)
+	protected.POST("/packages/:id/browse", handler.requireRole("user"), handler.recordPackageBrowse)
+	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
+	protected.GET("/notifications", handler.notifications)
+	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
 	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
@@ -343,6 +357,41 @@ func (h *Handler) packages(c *gin.Context) {
 	c.JSON(http.StatusOK, packages)
 }
 
+func (h *Handler) popularPackages(c *gin.Context) {
+	var packages []models.CheckupPackage
+	query := h.db.Model(&models.CheckupPackage{}).
+		Select("checkup_packages.*, COUNT(appointments.id) AS booking_count").
+		Joins("LEFT JOIN appointments ON appointments.package_id = checkup_packages.id AND appointments.status <> ?", "canceled").
+		Where("checkup_packages.status = ?", "active").
+		Group("checkup_packages.id").
+		Order("booking_count DESC, checkup_packages.price ASC").
+		Limit(6)
+	if err := query.Find(&packages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, packages)
+}
+
+func (h *Handler) recommendedPackages(c *gin.Context) {
+	var packages []models.CheckupPackage
+	query := h.db.Model(&models.CheckupPackage{}).Where("status = ?", "active").Order("price asc").Limit(6)
+	if user, ok := c.Get("user"); ok {
+		current, _ := user.(models.User)
+		if current.ID != 0 && current.Age >= 55 {
+			query = h.db.Model(&models.CheckupPackage{}).
+				Where("status = ? AND (category = ? OR name LIKE ?)", "active", "老年体检", "%老年%").
+				Order("price asc").
+				Limit(6)
+		}
+	}
+	if err := query.Find(&packages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, packages)
+}
+
 func (h *Handler) institutions(c *gin.Context) {
 	var institutions []models.CheckupInstitution
 	query := h.db.Order("id asc")
@@ -359,7 +408,7 @@ func (h *Handler) institutions(c *gin.Context) {
 func (h *Handler) appointments(c *gin.Context) {
 	current := currentUser(c)
 	var appointments []models.Appointment
-	query := h.db.Model(&models.Appointment{}).Preload("User").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").Order("created_at desc")
+	query := h.db.Model(&models.Appointment{}).Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").Order("created_at desc")
 	if current.Role == "user" {
 		query = query.Where("user_id = ?", current.ID)
 	} else if current.Role == "doctor" {
@@ -401,6 +450,10 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	var institution models.CheckupInstitution
 	if err := h.db.First(&institution, req.InstitutionID).Error; err != nil || institution.Status != "active" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "institution is unavailable"})
+		return
+	}
+	if req.FamilyMemberID != 0 && !h.familyMemberBelongsTo(current.ID, req.FamilyMemberID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "family member not found"})
 		return
 	}
 	appointmentType := normalizeStatus(req.AppointmentType, "个人体检")
@@ -464,6 +517,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		appointment := models.Appointment{
 			OrderNo:         generateOrderNo(),
 			UserID:          current.ID,
+			FamilyMemberID:  req.FamilyMemberID,
 			DoctorID:        slot.DoctorID,
 			InstitutionID:   slot.InstitutionID,
 			SlotID:          slot.ID,
@@ -476,6 +530,9 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			EndTime:         slot.EndTime,
 			Status:          "booked",
 			Note:            req.Note,
+			PaymentStatus:   normalizeStatus(req.PaymentStatus, "unpaid"),
+			InvoiceTitle:    req.InvoiceTitle,
+			InvoiceTaxNo:    req.InvoiceTaxNo,
 		}
 		if err := tx.Create(&appointment).Error; err != nil {
 			return err
@@ -483,7 +540,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		if err := tx.Model(&slot).Update("booked_count", slot.BookedCount+1).Error; err != nil {
 			return err
 		}
-		tx.Preload("User").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").First(&appointment, appointment.ID)
+		tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").First(&appointment, appointment.ID)
 		result = gin.H{"type": "appointment", "appointment": appointment}
 		return nil
 	}); err != nil {
@@ -493,6 +550,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	if payload, ok := result.(gin.H); ok && payload["type"] == "appointment" {
 		if appointment, ok := payload["appointment"].(models.Appointment); ok {
 			h.sendAppointmentMail(appointment, "体检预约成功")
+			h.createAppointmentNotifications(appointment, "appointment_success", "预约成功", "您的体检预约已成功，系统已模拟发送短信提醒。")
 		}
 	}
 	c.JSON(http.StatusCreated, result)
@@ -530,6 +588,88 @@ func (h *Handler) cancelAppointment(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "canceled"})
+}
+
+func (h *Handler) rescheduleAppointment(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment id"})
+		return
+	}
+	var req rescheduleRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	var appointment models.Appointment
+	if err := h.db.Where("id = ? AND user_id = ?", id, current.ID).First(&appointment).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if appointment.Status != "booked" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only booked appointments can be rescheduled"})
+		return
+	}
+	var pkg models.CheckupPackage
+	if err := h.db.First(&pkg, appointment.PackageID).Error; err != nil || pkg.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "package is unavailable"})
+		return
+	}
+	var institution models.CheckupInstitution
+	if err := h.db.First(&institution, req.InstitutionID).Error; err != nil || institution.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "institution is unavailable"})
+		return
+	}
+	var updated models.Appointment
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var slot models.ScheduleSlot
+		query := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("status = ? AND booked_count < capacity AND institution_id = ? AND category = ?", "available", req.InstitutionID, pkg.Category)
+		if req.SlotID != 0 {
+			query = query.Where("id = ?", req.SlotID)
+		} else {
+			query = query.Where("date = ? AND period = ?", req.Date, req.Period).Order("start_time asc")
+		}
+		if err := query.First(&slot).Error; err != nil {
+			return err
+		}
+		if appointment.SlotID == slot.ID {
+			return tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").First(&updated, appointment.ID).Error
+		}
+		if appointment.SlotID != 0 {
+			if err := tx.Model(&models.ScheduleSlot{}).Where("id = ? AND booked_count > 0", appointment.SlotID).Update("booked_count", gorm.Expr("booked_count - 1")).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&models.ScheduleSlot{}).Where("id = ?", slot.ID).Update("booked_count", slot.BookedCount+1).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{
+			"doctor_id":      slot.DoctorID,
+			"institution_id": slot.InstitutionID,
+			"slot_id":        slot.ID,
+			"date":           slot.Date,
+			"period":         slot.Period,
+			"start_time":     slot.StartTime,
+			"end_time":       slot.EndTime,
+		}
+		if strings.TrimSpace(req.Note) != "" {
+			updates["note"] = req.Note
+		}
+		if err := tx.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").First(&updated, appointment.ID).Error
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no available slot for reschedule"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.createAppointmentNotifications(updated, "appointment_rescheduled", "预约已改期", "您的体检预约时间已更新，请按新的时间到检。")
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *Handler) updateAppointmentStatus(c *gin.Context) {
@@ -646,6 +786,211 @@ func (h *Handler) waitlist(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, entries)
+}
+
+func (h *Handler) familyMembers(c *gin.Context) {
+	current := currentUser(c)
+	var members []models.FamilyMember
+	if err := h.db.Where("user_id = ?", current.ID).Order("created_at desc").Find(&members).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, members)
+}
+
+func (h *Handler) createFamilyMember(c *gin.Context) {
+	var req familyMemberRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	member := models.FamilyMember{
+		UserID:   current.ID,
+		Name:     strings.TrimSpace(req.Name),
+		Relation: strings.TrimSpace(req.Relation),
+		Gender:   req.Gender,
+		Age:      req.Age,
+		IDCard:   req.IDCard,
+		Phone:    req.Phone,
+	}
+	if err := h.db.Create(&member).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, member)
+}
+
+func (h *Handler) updateFamilyMember(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid family member id"})
+		return
+	}
+	var req familyMemberRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	updates := map[string]any{
+		"name":     strings.TrimSpace(req.Name),
+		"relation": strings.TrimSpace(req.Relation),
+		"gender":   req.Gender,
+		"age":      req.Age,
+		"id_card":  req.IDCard,
+		"phone":    req.Phone,
+	}
+	result := h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ?", id, current.ID).Updates(updates)
+	if result.Error != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "family member not found"})
+		return
+	}
+	var member models.FamilyMember
+	h.db.First(&member, id)
+	c.JSON(http.StatusOK, member)
+}
+
+func (h *Handler) deleteFamilyMember(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid family member id"})
+		return
+	}
+	current := currentUser(c)
+	result := h.db.Where("id = ? AND user_id = ?", id, current.ID).Delete(&models.FamilyMember{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "family member not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
+func (h *Handler) packageFavorites(c *gin.Context) {
+	current := currentUser(c)
+	var favorites []models.PackageFavorite
+	if err := h.db.Preload("Package").Where("user_id = ?", current.ID).Order("created_at desc").Find(&favorites).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, favorites)
+}
+
+func (h *Handler) favoritePackage(c *gin.Context) {
+	packageID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package id"})
+		return
+	}
+	current := currentUser(c)
+	var pkg models.CheckupPackage
+	if err := h.db.Where("id = ? AND status = ?", packageID, "active").First(&pkg).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
+		return
+	}
+	favorite := models.PackageFavorite{UserID: current.ID, PackageID: uint(packageID)}
+	if err := h.db.Where(favorite).FirstOrCreate(&favorite).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.Preload("Package").First(&favorite, favorite.ID)
+	c.JSON(http.StatusOK, favorite)
+}
+
+func (h *Handler) unfavoritePackage(c *gin.Context) {
+	packageID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package id"})
+		return
+	}
+	current := currentUser(c)
+	if err := h.db.Where("user_id = ? AND package_id = ?", current.ID, packageID).Delete(&models.PackageFavorite{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"packageId": packageID, "status": "deleted"})
+}
+
+func (h *Handler) recordPackageBrowse(c *gin.Context) {
+	packageID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package id"})
+		return
+	}
+	current := currentUser(c)
+	var pkg models.CheckupPackage
+	if err := h.db.Where("id = ? AND status = ?", packageID, "active").First(&pkg).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
+		return
+	}
+	now := time.Now()
+	var history models.PackageBrowseHistory
+	if err := h.db.Where("user_id = ? AND package_id = ?", current.ID, packageID).First(&history).Error; err != nil {
+		history = models.PackageBrowseHistory{UserID: current.ID, PackageID: uint(packageID), ViewCount: 1, ViewedAt: now}
+		if err := h.db.Create(&history).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	} else if err := h.db.Model(&history).Updates(map[string]any{"view_count": gorm.Expr("view_count + 1"), "viewed_at": now}).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.Preload("Package").First(&history, history.ID)
+	c.JSON(http.StatusOK, history)
+}
+
+func (h *Handler) packageBrowses(c *gin.Context) {
+	current := currentUser(c)
+	var histories []models.PackageBrowseHistory
+	if err := h.db.Preload("Package").Where("user_id = ?", current.ID).Order("viewed_at desc").Limit(10).Find(&histories).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, histories)
+}
+
+func (h *Handler) notifications(c *gin.Context) {
+	current := currentUser(c)
+	var notifications []models.Notification
+	query := h.db.Where("user_id = ?", current.ID).Order("created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &notifications)
+		return
+	}
+	if err := query.Limit(50).Find(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, notifications)
+}
+
+func (h *Handler) markNotificationRead(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid notification id"})
+		return
+	}
+	current := currentUser(c)
+	now := time.Now()
+	result := h.db.Model(&models.Notification{}).Where("id = ? AND user_id = ?", id, current.ID).Updates(map[string]any{"status": "read", "read_at": &now})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "read"})
 }
 
 func (h *Handler) mailLogs(c *gin.Context) {
@@ -886,6 +1231,27 @@ func (h *Handler) recordMail(userID uint, to, subject, body string, err error) {
 	h.db.Create(&models.MailLog{UserID: userID, To: to, Subject: subject, Body: body, Status: status, Error: errText})
 }
 
+func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
+	var count int64
+	h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ?", familyMemberID, userID).Count(&count)
+	return count > 0
+}
+
+func (h *Handler) createAppointmentNotifications(appointment models.Appointment, kind, title, content string) {
+	if appointment.UserID == 0 {
+		return
+	}
+	body := content
+	if appointment.Date != "" {
+		body = fmt.Sprintf("%s 时间：%s %s-%s，机构：%s，套餐：%s。", content, appointment.Date, appointment.StartTime, appointment.EndTime, appointment.Institution.Name, appointment.Package.Name)
+	}
+	h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: kind, Title: title, Content: body, Status: "unread"})
+	h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: kind, Title: "短信模拟：" + title, Content: body, Status: "unread"})
+	if appointment.Status == "booked" {
+		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: "请携带有效证件，按预约时间到达体检机构。体检前一天建议清淡饮食，部分项目需空腹。", Status: "unread"})
+	}
+}
+
 func (h *Handler) authRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenText := bearerToken(c.GetHeader("Authorization"))
@@ -986,11 +1352,23 @@ type registerDoctorRequest struct {
 type appointmentRequest struct {
 	PackageID       uint   `json:"packageId" binding:"required"`
 	InstitutionID   uint   `json:"institutionId" binding:"required"`
+	FamilyMemberID  uint   `json:"familyMemberId"`
 	SlotID          uint   `json:"slotId"`
 	AppointmentType string `json:"appointmentType" binding:"required"`
 	Date            string `json:"date" binding:"required"`
 	Period          string `json:"period" binding:"required"`
 	Note            string `json:"note"`
+	PaymentStatus   string `json:"paymentStatus"`
+	InvoiceTitle    string `json:"invoiceTitle"`
+	InvoiceTaxNo    string `json:"invoiceTaxNo"`
+}
+
+type rescheduleRequest struct {
+	InstitutionID uint   `json:"institutionId" binding:"required"`
+	SlotID        uint   `json:"slotId"`
+	Date          string `json:"date" binding:"required"`
+	Period        string `json:"period" binding:"required"`
+	Note          string `json:"note"`
 }
 
 type profileRequest struct {
@@ -1036,6 +1414,15 @@ type doctorProfileRequest struct {
 	Department  string `json:"department" binding:"required"`
 	Title       string `json:"title"`
 	Specialties string `json:"specialties" binding:"required"`
+}
+
+type familyMemberRequest struct {
+	Name     string `json:"name" binding:"required"`
+	Relation string `json:"relation" binding:"required"`
+	Gender   string `json:"gender"`
+	Age      int    `json:"age"`
+	IDCard   string `json:"idCard"`
+	Phone    string `json:"phone"`
 }
 
 func normalizeStatus(value, fallback string) string {

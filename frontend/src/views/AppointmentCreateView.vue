@@ -31,6 +31,10 @@
             <span>医生号源</span>
             <strong>{{ selectedSlotText || '请选择具体半小时号源' }}</strong>
           </button>
+          <button type="button" class="selection-tile" @click="dialogs.member = true">
+            <span>体检人</span>
+            <strong>{{ selectedMember?.name || '本人' }}</strong>
+          </button>
         </div>
       </div>
 
@@ -49,8 +53,19 @@
           <div><dt>日期</dt><dd>{{ appointmentForm.date || '-' }}</dd></div>
           <div><dt>时间</dt><dd>{{ selectedSlot ? `${selectedSlot.startTime}-${selectedSlot.endTime}` : '-' }}</dd></div>
           <div><dt>医生</dt><dd>{{ selectedSlot?.doctor?.name || '-' }}</dd></div>
+          <div><dt>体检人</dt><dd>{{ selectedMember?.name || '本人' }}</dd></div>
+          <div><dt>支付</dt><dd>{{ appointmentForm.paymentStatus === 'paid' ? '已支付' : '未支付' }}</dd></div>
         </dl>
         <el-form label-position="top">
+          <el-form-item label="支付状态模拟">
+            <el-segmented v-model="appointmentForm.paymentStatus" :options="paymentOptions" />
+          </el-form-item>
+          <el-form-item label="发票抬头">
+            <el-input v-model="appointmentForm.invoiceTitle" placeholder="个人或企业名称" />
+          </el-form-item>
+          <el-form-item label="纳税人识别号">
+            <el-input v-model="appointmentForm.invoiceTaxNo" placeholder="企业发票可填写" />
+          </el-form-item>
           <el-form-item label="备注说明">
             <el-input v-model="appointmentForm.note" type="textarea" :rows="3" placeholder="例如既往病史、特殊检查需求" />
           </el-form-item>
@@ -114,6 +129,23 @@
       </div>
     </el-dialog>
 
+    <el-dialog v-model="dialogs.member" title="选择体检人" width="760px" class="choice-dialog">
+      <div class="segmented-grid">
+        <button type="button" class="segment-item" :class="{ selected: !appointmentForm.familyMemberId }" @click="selectMember(null)">本人</button>
+        <button
+          v-for="member in familyMembers"
+          :key="member.id"
+          type="button"
+          class="segment-item"
+          :class="{ selected: appointmentForm.familyMemberId === member.id }"
+          @click="selectMember(member)"
+        >
+          {{ member.name }} · {{ member.relation }}
+        </button>
+      </div>
+      <el-empty v-if="familyMembers.length === 0" description="暂无家庭成员，可在个人中心维护" />
+    </el-dialog>
+
     <el-dialog v-model="dialogs.date" title="选择预约日期" width="760px" class="choice-dialog">
       <div class="date-stock-grid">
         <button
@@ -169,13 +201,18 @@ import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { appointmentTypes, useHealthData } from '../composables/useHealthData'
 
-const { packages, institutions, slots, appointmentForm, loading, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
-const dialogs = reactive({ type: false, institution: false, package: false, date: false, slot: false })
+const { packages, institutions, slots, familyMembers, appointmentForm, loading, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
+const dialogs = reactive({ type: false, institution: false, package: false, date: false, slot: false, member: false })
 let refreshTimer = 0
+const paymentOptions = [
+  { label: '未支付', value: 'unpaid' },
+  { label: '已支付', value: 'paid' },
+]
 const activePackages = computed(() => packages.value.filter((item) => item.status !== 'disabled'))
 const activeInstitutions = computed(() => institutions.value.filter((item) => item.status !== 'disabled'))
 const selectedInstitution = computed(() => activeInstitutions.value.find((item) => item.id === appointmentForm.institutionId))
 const selectedPackage = computed(() => activePackages.value.find((item) => item.id === appointmentForm.packageId))
+const selectedMember = computed(() => familyMembers.value.find((item) => item.id === appointmentForm.familyMemberId))
 const selectedCategory = computed(() => selectedPackage.value?.category || '')
 const selectedPackageText = computed(() => (selectedPackage.value ? `${selectedPackage.value.name} · ${selectedPackage.value.category}` : ''))
 const institutionSlots = computed(() => slots.value.filter((slot) => slot.institutionId === appointmentForm.institutionId && (!selectedCategory.value || slot.category === selectedCategory.value)))
@@ -247,6 +284,11 @@ function selectSlot(slot) {
   appointmentForm.date = slot.date
   appointmentForm.period = slot.period
   dialogs.slot = false
+}
+
+function selectMember(member) {
+  appointmentForm.familyMemberId = member?.id || null
+  dialogs.member = false
 }
 
 async function joinFullGroup(group) {

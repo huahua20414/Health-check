@@ -54,11 +54,15 @@ func Run(db *gorm.DB) error {
 
 func reset(db *gorm.DB) error {
 	for _, model := range []any{
+		&models.Notification{},
+		&models.PackageBrowseHistory{},
+		&models.PackageFavorite{},
 		&models.MailLog{},
 		&models.Report{},
 		&models.Appointment{},
 		&models.WaitlistEntry{},
 		&models.ScheduleSlot{},
+		&models.FamilyMember{},
 		&models.CheckupPackage{},
 		&models.CheckupInstitution{},
 		&models.User{},

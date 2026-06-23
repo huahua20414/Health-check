@@ -51,6 +51,7 @@ type Appointment struct {
 	ID              uint               `json:"id" gorm:"primaryKey"`
 	OrderNo         string             `json:"orderNo" gorm:"size:32;uniqueIndex"`
 	UserID          uint               `json:"userId" gorm:"not null;index"`
+	FamilyMemberID  uint               `json:"familyMemberId" gorm:"index"`
 	DoctorID        uint               `json:"doctorId" gorm:"index"`
 	InstitutionID   uint               `json:"institutionId" gorm:"not null;index"`
 	SlotID          uint               `json:"slotId" gorm:"index"`
@@ -63,7 +64,11 @@ type Appointment struct {
 	EndTime         string             `json:"endTime" gorm:"size:8"`
 	Status          string             `json:"status" gorm:"size:24;not null;default:'booked'"`
 	Note            string             `json:"note" gorm:"type:text"`
+	PaymentStatus   string             `json:"paymentStatus" gorm:"size:24;not null;default:'unpaid'"`
+	InvoiceTitle    string             `json:"invoiceTitle" gorm:"size:128"`
+	InvoiceTaxNo    string             `json:"invoiceTaxNo" gorm:"size:64"`
 	User            User               `json:"user"`
+	FamilyMember    FamilyMember       `json:"familyMember"`
 	Doctor          User               `json:"doctor"`
 	Institution     CheckupInstitution `json:"institution"`
 	Package         CheckupPackage     `json:"package"`
@@ -71,6 +76,50 @@ type Appointment struct {
 	Report          *Report            `json:"report,omitempty"`
 	CreatedAt       time.Time          `json:"createdAt"`
 	UpdatedAt       time.Time          `json:"updatedAt"`
+}
+
+type FamilyMember struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	UserID    uint      `json:"userId" gorm:"not null;index"`
+	Name      string    `json:"name" gorm:"size:64;not null"`
+	Relation  string    `json:"relation" gorm:"size:32;not null"`
+	Gender    string    `json:"gender" gorm:"size:16"`
+	Age       int       `json:"age"`
+	IDCard    string    `json:"idCard" gorm:"size:32"`
+	Phone     string    `json:"phone" gorm:"size:32"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type PackageFavorite struct {
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	UserID    uint           `json:"userId" gorm:"not null;uniqueIndex:idx_user_package_favorite"`
+	PackageID uint           `json:"packageId" gorm:"not null;uniqueIndex:idx_user_package_favorite"`
+	Package   CheckupPackage `json:"package"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+type PackageBrowseHistory struct {
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	UserID    uint           `json:"userId" gorm:"not null;uniqueIndex:idx_user_package_browse"`
+	PackageID uint           `json:"packageId" gorm:"not null;uniqueIndex:idx_user_package_browse"`
+	Package   CheckupPackage `json:"package"`
+	ViewCount int            `json:"viewCount" gorm:"not null;default:1"`
+	ViewedAt  time.Time      `json:"viewedAt" gorm:"index"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
+type Notification struct {
+	ID        uint       `json:"id" gorm:"primaryKey"`
+	UserID    uint       `json:"userId" gorm:"not null;index"`
+	Channel   string     `json:"channel" gorm:"size:24;not null;default:'in_app'"`
+	Type      string     `json:"type" gorm:"size:32;not null"`
+	Title     string     `json:"title" gorm:"size:128;not null"`
+	Content   string     `json:"content" gorm:"type:text"`
+	Status    string     `json:"status" gorm:"size:24;not null;default:'unread';index"`
+	CreatedAt time.Time  `json:"createdAt"`
+	ReadAt    *time.Time `json:"readAt"`
 }
 
 type ScheduleSlot struct {

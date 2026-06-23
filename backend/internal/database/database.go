@@ -30,10 +30,14 @@ func Migrate(db *gorm.DB) error {
 		&models.User{},
 		&models.CheckupInstitution{},
 		&models.CheckupPackage{},
+		&models.FamilyMember{},
+		&models.PackageFavorite{},
+		&models.PackageBrowseHistory{},
 		&models.ScheduleSlot{},
 		&models.Appointment{},
 		&models.WaitlistEntry{},
 		&models.Report{},
 		&models.MailLog{},
+		&models.Notification{},
 	)
 }
