@@ -866,6 +866,11 @@ textarea {
   gap: 10px;
 }
 
+.people-filter-bar {
+  min-width: 32rem;
+  grid-template-columns: 120px 120px minmax(180px, 1fr);
+}
+
 .notification-toolbar {
   margin-bottom: 1rem;
   display: flex;
@@ -1521,6 +1526,11 @@ code {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .people-filter-bar {
+    min-width: 0;
     grid-template-columns: 1fr;
   }
 

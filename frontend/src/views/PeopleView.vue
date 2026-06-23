@@ -6,6 +6,19 @@
           <h3>人员档案</h3>
           <p>展示客户与医生基础档案，便于后续扩展权限管理</p>
         </div>
+        <div v-if="isAdmin" class="filter-bar people-filter-bar">
+          <el-select v-model="roleFilter" placeholder="角色" clearable>
+            <el-option label="用户" value="user" />
+            <el-option label="医生" value="doctor" />
+            <el-option label="管理员" value="admin" />
+          </el-select>
+          <el-select v-model="statusFilter" placeholder="状态" clearable>
+            <el-option label="启用" value="active" />
+            <el-option label="待审核" value="pending" />
+            <el-option label="停用" value="disabled" />
+          </el-select>
+          <el-input v-model="keyword" placeholder="搜索姓名/邮箱/工号/科室" clearable />
+        </div>
       </div>
       <el-table :data="tableRows" stripe>
         <el-table-column prop="id" label="编号" width="80" />
@@ -58,14 +71,26 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useHealthData } from '../composables/useHealthData'
+import { useDebouncedRef } from '../composables/useDebouncedRef'
 import StatusTag from '../components/StatusTag.vue'
 
 const { peopleRows: tableRows, isAdmin, loading, can, updateUserStatus, paginations, loadUsersPage } = useHealthData()
+const roleFilter = ref('')
+const statusFilter = ref('')
+const keyword = ref('')
+const debouncedKeyword = useDebouncedRef(keyword, 350)
 
-function loadPage() {
-  if (isAdmin.value) return loadUsersPage()
+function loadPage(reset = false) {
+  if (isAdmin.value) {
+    if (reset) paginations.users.page = 1
+    return loadUsersPage({
+      role: roleFilter.value,
+      status: statusFilter.value,
+      keyword: debouncedKeyword.value,
+    })
+  }
   return Promise.resolve()
 }
 
@@ -82,6 +107,7 @@ async function changeStatus(row, status) {
   await loadPage()
 }
 
+watch([roleFilter, statusFilter, debouncedKeyword], () => loadPage(true))
 watch(() => [paginations.users.page, paginations.users.pageSize], () => loadPage())
 onMounted(() => loadPage())
 </script>
