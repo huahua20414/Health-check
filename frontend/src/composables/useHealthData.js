@@ -146,6 +146,10 @@ export function statusType(status) {
   return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', deleted: 'info', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info' }[status] || 'info'
 }
 
+export function paymentStatusText(status) {
+  return { paid: '已支付', unpaid: '未支付', refunded: '已退款' }[status] || status || '-'
+}
+
 export function formatDate(value) {
   if (!value) return '-'
   return new Date(value).toLocaleDateString('zh-CN')
@@ -182,7 +186,7 @@ export function appointmentDocumentHTML(appointment) {
     ['医生', `${appointment.doctor?.name || ''} ${appointment.doctor?.title || ''}`],
     ['日期', appointment.date],
     ['时间', `${appointment.startTime}-${appointment.endTime}`],
-    ['支付状态', appointment.paymentStatus === 'paid' ? '已支付' : '未支付'],
+    ['支付状态', paymentStatusText(appointment.paymentStatus)],
     ['发票抬头', appointment.invoiceTitle],
     ['纳税人识别号', appointment.invoiceTaxNo],
     ['备注', appointment.note],
@@ -1106,8 +1110,8 @@ export function useHealthData() {
     if (loading.status) return
     loading.status = true
     try {
-      await request(`/appointments/${row.id}/cancel`, { method: 'PATCH' })
-      ElMessage.success('预约已取消')
+      const result = await request(`/appointments/${row.id}/cancel`, { method: 'PATCH' })
+      ElMessage.success(result.paymentStatus === 'refunded' ? '预约已取消，支付状态已模拟退款' : '预约已取消')
       await loadAll()
     } finally {
       loading.status = false

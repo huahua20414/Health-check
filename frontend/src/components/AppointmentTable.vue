@@ -23,7 +23,7 @@
       <template #default="{ row }"><StatusTag :status="row.status" /></template>
     </el-table-column>
     <el-table-column label="支付" width="90">
-      <template #default="{ row }">{{ row.paymentStatus === 'paid' ? '已支付' : '未支付' }}</template>
+      <template #default="{ row }">{{ paymentStatusText(row.paymentStatus) }}</template>
     </el-table-column>
     <el-table-column label="操作" width="250">
       <template #default="{ row }">
@@ -58,6 +58,10 @@
 
 <script setup>
 import StatusTag from './StatusTag.vue'
+
+function paymentStatusText(status) {
+  return { paid: '已支付', unpaid: '未支付', refunded: '已退款' }[status] || status || '-'
+}
 
 defineProps({
   rows: {

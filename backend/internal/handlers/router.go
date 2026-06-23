@@ -707,7 +707,11 @@ func (h *Handler) cancelAppointment(c *gin.Context) {
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&appointment).Update("status", "canceled").Error; err != nil {
+		updates := map[string]any{"status": "canceled"}
+		if appointment.PaymentStatus == "paid" {
+			updates["payment_status"] = "refunded"
+		}
+		if err := tx.Model(&appointment).Updates(updates).Error; err != nil {
 			return err
 		}
 		if appointment.SlotID != 0 {
@@ -721,7 +725,11 @@ func (h *Handler) cancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": id, "status": "canceled"})
+	response := gin.H{"id": id, "status": "canceled"}
+	if appointment.PaymentStatus == "paid" {
+		response["paymentStatus"] = "refunded"
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *Handler) rescheduleAppointment(c *gin.Context) {
@@ -2479,6 +2487,8 @@ func (h *Handler) promoteWaitlist(tx *gorm.DB, slotID uint) error {
 		First(&wait).Error; err != nil {
 		return nil
 	}
+	var pkg models.CheckupPackage
+	_ = tx.First(&pkg, wait.PackageID).Error
 	appointment := models.Appointment{
 		OrderNo:         generateOrderNo(),
 		UserID:          wait.UserID,
@@ -2494,6 +2504,9 @@ func (h *Handler) promoteWaitlist(tx *gorm.DB, slotID uint) error {
 		EndTime:         slot.EndTime,
 		Status:          "booked",
 		Note:            wait.Note,
+		PaymentStatus:   "unpaid",
+		OriginalAmount:  pkg.Price,
+		PayableAmount:   pkg.Price,
 	}
 	if err := tx.Create(&appointment).Error; err != nil {
 		return err
