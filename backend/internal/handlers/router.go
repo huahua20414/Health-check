@@ -775,6 +775,8 @@ func (h *Handler) reports(c *gin.Context) {
 	query := h.db.Model(&models.Report{}).Preload("Appointment.Institution").Preload("Appointment.Package").Preload("User").Preload("Doctor").Order("created_at desc")
 	if current.Role == "user" {
 		query = query.Where("user_id = ?", current.ID)
+	} else if current.Role == "doctor" {
+		query = query.Where("doctor_id = ?", current.ID)
 	} else if userID := c.Query("userId"); userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
