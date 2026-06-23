@@ -101,6 +101,8 @@ func reset(db *gorm.DB) error {
 		&models.CheckupItem{},
 		&models.Coupon{},
 		&models.MailLog{},
+		&models.OperationLog{},
+		&models.LoginLog{},
 		&models.Report{},
 		&models.Appointment{},
 		&models.WaitlistEntry{},

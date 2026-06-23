@@ -1,6 +1,6 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { request, setAuthToken, getAuthToken } from '../api/client'
+import { request, requestBlob, setAuthToken, getAuthToken } from '../api/client'
 
 export const appointmentTypes = ['个人体检', '入职体检', '年度体检', '复查体检']
 export const devAuthEnabled = import.meta.env.VITE_DEV_AUTH === 'true'
@@ -34,6 +34,8 @@ const browseHistories = ref([])
 const popularPackages = ref([])
 const recommendedPackages = ref([])
 const notifications = ref([])
+const loginLogs = ref([])
+const operationLogs = ref([])
 const coupons = ref([])
 const activeCoupons = ref([])
 const reviews = ref([])
@@ -49,6 +51,8 @@ const paginations = reactive({
   reports: { page: 1, pageSize: 6, total: 0 },
   waitlist: { page: 1, pageSize: 10, total: 0 },
   mailLogs: { page: 1, pageSize: 10, total: 0 },
+  loginLogs: { page: 1, pageSize: 10, total: 0 },
+  operationLogs: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
   notifications: { page: 1, pageSize: 10, total: 0 },
   coupons: { page: 1, pageSize: 10, total: 0 },
@@ -113,6 +117,8 @@ const loading = reactive({
   checkupItem: false,
   packageItem: false,
   schedule: false,
+  importPackages: false,
+  exportPackages: false,
 })
 
 let bootstrapped = false
@@ -410,6 +416,14 @@ export function useHealthData() {
 
   async function loadMailLogsPage(params = {}) {
     mailLogs.value = await requestPage('/mail-logs', paginations.mailLogs, params)
+  }
+
+  async function loadLoginLogsPage(params = {}) {
+    loginLogs.value = await requestPage('/login-logs', paginations.loginLogs, params)
+  }
+
+  async function loadOperationLogsPage(params = {}) {
+    operationLogs.value = await requestPage('/operation-logs', paginations.operationLogs, params)
   }
 
   async function loadPackagesPage(params = {}) {
@@ -967,6 +981,37 @@ export function useHealthData() {
     }
   }
 
+  async function exportPackages() {
+    if (loading.exportPackages) return
+    loading.exportPackages = true
+    try {
+      const blob = await requestBlob('/packages/export')
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'packages.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('套餐 CSV 已导出')
+    } finally {
+      loading.exportPackages = false
+    }
+  }
+
+  async function importPackages(file) {
+    if (!file || loading.importPackages) return
+    loading.importPackages = true
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await request('/packages/import', { method: 'POST', body: formData })
+      ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      await loadPackagesPage()
+    } finally {
+      loading.importPackages = false
+    }
+  }
+
   async function updateUserStatus(user, status) {
     if (loading.status) return
     loading.status = true
@@ -1021,6 +1066,8 @@ export function useHealthData() {
     slots,
     waitlist,
     mailLogs,
+    loginLogs,
+    operationLogs,
     familyMembers,
     favorites,
     browseHistories,
@@ -1074,6 +1121,8 @@ export function useHealthData() {
     loadUsersPage,
     loadWaitlistPage,
     loadMailLogsPage,
+    loadLoginLogsPage,
+    loadOperationLogsPage,
     loadPackagesPage,
     loadNotificationsPage,
     loadCouponsPage,
@@ -1117,6 +1166,8 @@ export function useHealthData() {
     updateDoctorProfile,
     editPackage,
     savePackage,
+    exportPackages,
+    importPackages,
     selectPackage,
   }
 }

@@ -42,6 +42,8 @@ func Migrate(db *gorm.DB) error {
 		&models.Report{},
 		&models.ServiceReview{},
 		&models.MailLog{},
+		&models.LoginLog{},
+		&models.OperationLog{},
 		&models.Notification{},
 		&models.SystemAnnouncement{},
 	)

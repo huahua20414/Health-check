@@ -258,3 +258,31 @@ type MailLog struct {
 	Error     string    `json:"error" gorm:"type:text"`
 	CreatedAt time.Time `json:"createdAt"`
 }
+
+type LoginLog struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	UserID    uint      `json:"userId" gorm:"index"`
+	Email     string    `json:"email" gorm:"size:128;index"`
+	Role      string    `json:"role" gorm:"size:16"`
+	IP        string    `json:"ip" gorm:"size:64;index"`
+	UserAgent string    `json:"userAgent" gorm:"size:255"`
+	Status    string    `json:"status" gorm:"size:24;not null;index"`
+	Reason    string    `json:"reason" gorm:"size:255"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type OperationLog struct {
+	ID         uint      `json:"id" gorm:"primaryKey"`
+	UserID     uint      `json:"userId" gorm:"index"`
+	UserName   string    `json:"userName" gorm:"size:64"`
+	Role       string    `json:"role" gorm:"size:16;index"`
+	Action     string    `json:"action" gorm:"size:64;not null;index"`
+	Resource   string    `json:"resource" gorm:"size:64;not null;index"`
+	ResourceID string    `json:"resourceId" gorm:"size:64"`
+	Method     string    `json:"method" gorm:"size:16"`
+	Path       string    `json:"path" gorm:"size:255"`
+	IP         string    `json:"ip" gorm:"size:64;index"`
+	Status     string    `json:"status" gorm:"size:24;not null;index"`
+	Detail     string    `json:"detail" gorm:"type:text"`
+	CreatedAt  time.Time `json:"createdAt"`
+}

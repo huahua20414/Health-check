@@ -385,6 +385,17 @@ textarea {
   margin-left: 0;
 }
 
+.data-exchange-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.data-exchange-actions .el-upload {
+  display: inline-flex;
+}
+
 .single-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

@@ -3,9 +3,11 @@ package handlers
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"html/template"
+	"io"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -94,6 +96,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.POST("/announcements", handler.requireRole("admin"), handler.createAnnouncement)
 	protected.PATCH("/announcements/:id", handler.requireRole("admin"), handler.updateAnnouncement)
 	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
+	protected.GET("/packages/export", handler.requireRole("admin"), handler.exportPackages)
+	protected.POST("/packages/import", handler.requireRole("admin"), handler.importPackages)
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
 	protected.GET("/checkup-items", handler.requireRole("admin"), handler.checkupItems)
 	protected.POST("/checkup-items", handler.requireRole("admin"), handler.createCheckupItem)
@@ -105,6 +109,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/users/:id/status", handler.requireRole("admin"), handler.updateUserStatus)
 	protected.PATCH("/users/:id/doctor-profile", handler.requireRole("admin"), handler.updateDoctorProfile)
 	protected.GET("/mail-logs", handler.requireRole("admin"), handler.mailLogs)
+	protected.GET("/login-logs", handler.requireRole("admin"), handler.loginLogs)
+	protected.GET("/operation-logs", handler.requireRole("admin"), handler.operationLogs)
 	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
 
 	return router
@@ -235,6 +241,7 @@ func (h *Handler) login(c *gin.Context) {
 		query = query.Where("role = ?", req.Role)
 	}
 	if err := query.Find(&candidates).Error; err != nil || len(candidates) == 0 {
+		h.recordLogin(c, 0, email, req.Role, "failed", "account not found")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email, password or code"})
 		return
 	}
@@ -246,21 +253,25 @@ func (h *Handler) login(c *gin.Context) {
 		}
 	}
 	if user.ID == 0 {
+		h.recordLogin(c, 0, email, req.Role, "failed", "password mismatch")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email, password or code"})
 		return
 	}
 	if user.Status != "active" {
+		h.recordLogin(c, user.ID, user.Email, user.Role, "blocked", user.Status)
 		c.JSON(http.StatusForbidden, gin.H{"error": "account is not active", "status": user.Status})
 		return
 	}
 	token, err := auth.IssueToken(c.Request.Context(), h.redis, h.config.JWTSecret, time.Duration(h.config.TokenHours)*time.Hour, user)
 	if err != nil {
+		h.recordLogin(c, user.ID, user.Email, user.Role, "failed", "issue token failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
 		return
 	}
 	if req.Code != "" {
 		h.redis.Del(c.Request.Context(), authEmailCodeKey(email))
 	}
+	h.recordLogin(c, user.ID, user.Email, user.Role, "success", "")
 	c.JSON(http.StatusOK, gin.H{"accessToken": token, "user": user})
 }
 
@@ -841,6 +852,7 @@ func (h *Handler) createScheduleSlot(c *gin.Context) {
 		return
 	}
 	h.db.Preload("Doctor").Preload("Institution").First(&slot, slot.ID)
+	h.recordOperation(c, "create", "schedule_slot", strconv.Itoa(int(slot.ID)), "success", fmt.Sprintf("%s %s %s", slot.Date, slot.StartTime, slot.Category))
 	c.JSON(http.StatusCreated, slot)
 }
 
@@ -881,6 +893,7 @@ func (h *Handler) updateScheduleSlot(c *gin.Context) {
 	}
 	var updated models.ScheduleSlot
 	h.db.Preload("Doctor").Preload("Institution").First(&updated, id)
+	h.recordOperation(c, "update", "schedule_slot", strconv.Itoa(id), "success", fmt.Sprintf("%s %s", updated.Date, updated.StartTime))
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -1207,6 +1220,51 @@ func (h *Handler) mailLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, logs)
 }
 
+func (h *Handler) loginLogs(c *gin.Context) {
+	var logs []models.LoginLog
+	query := h.db.Model(&models.LoginLog{}).Order("created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("email LIKE ? OR ip LIKE ? OR role LIKE ?", pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &logs)
+		return
+	}
+	if err := query.Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
+func (h *Handler) operationLogs(c *gin.Context) {
+	var logs []models.OperationLog
+	query := h.db.Model(&models.OperationLog{}).Order("created_at desc")
+	if action := c.Query("action"); action != "" {
+		query = query.Where("action = ?", action)
+	}
+	if resource := c.Query("resource"); resource != "" {
+		query = query.Where("resource = ?", resource)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("user_name LIKE ? OR action LIKE ? OR resource LIKE ? OR detail LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &logs)
+		return
+	}
+	if err := query.Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
 func (h *Handler) adminDashboard(c *gin.Context) {
 	var userCount, doctorCount, appointmentCount, reportCount, reviewCount int64
 	h.db.Model(&models.User{}).Where("role = ?", "user").Count(&userCount)
@@ -1301,6 +1359,7 @@ func (h *Handler) createCoupon(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "create", "coupon", strconv.Itoa(int(coupon.ID)), "success", coupon.Code)
 	c.JSON(http.StatusCreated, coupon)
 }
 
@@ -1332,6 +1391,7 @@ func (h *Handler) updateCoupon(c *gin.Context) {
 	}
 	var coupon models.Coupon
 	h.db.First(&coupon, id)
+	h.recordOperation(c, "update", "coupon", strconv.Itoa(id), "success", coupon.Code)
 	c.JSON(http.StatusOK, coupon)
 }
 
@@ -1371,6 +1431,7 @@ func (h *Handler) createAnnouncement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "create", "announcement", strconv.Itoa(int(announcement.ID)), "success", announcement.Title)
 	c.JSON(http.StatusCreated, announcement)
 }
 
@@ -1401,6 +1462,7 @@ func (h *Handler) updateAnnouncement(c *gin.Context) {
 	}
 	var announcement models.SystemAnnouncement
 	h.db.First(&announcement, id)
+	h.recordOperation(c, "update", "announcement", strconv.Itoa(id), "success", announcement.Title)
 	c.JSON(http.StatusOK, announcement)
 }
 
@@ -1421,6 +1483,7 @@ func (h *Handler) createPackage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "create", "package", strconv.Itoa(int(pkg.ID)), "success", pkg.Name)
 	c.JSON(http.StatusCreated, pkg)
 }
 
@@ -1448,7 +1511,110 @@ func (h *Handler) updatePackage(c *gin.Context) {
 	}
 	var pkg models.CheckupPackage
 	h.db.First(&pkg, id)
+	h.recordOperation(c, "update", "package", strconv.Itoa(id), "success", pkg.Name)
 	c.JSON(http.StatusOK, pkg)
+}
+
+func (h *Handler) exportPackages(c *gin.Context) {
+	var packages []models.CheckupPackage
+	if err := h.db.Order("id asc").Find(&packages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="packages.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"name", "category", "description", "price", "items", "status"})
+	for _, pkg := range packages {
+		_ = writer.Write([]string{pkg.Name, pkg.Category, pkg.Description, fmt.Sprintf("%.2f", pkg.Price), pkg.Items, pkg.Status})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "package", "", "success", fmt.Sprintf("%d packages", len(packages)))
+}
+
+func (h *Handler) importPackages(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "csv file is required"})
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "open csv file failed"})
+		return
+	}
+	defer opened.Close()
+	reader := csv.NewReader(opened)
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
+		return
+	}
+	index := map[string]int{}
+	for i, name := range header {
+		index[strings.ToLower(strings.TrimSpace(name))] = i
+	}
+	required := []string{"name", "category", "price"}
+	for _, field := range required {
+		if _, ok := index[field]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing csv column: " + field})
+			return
+		}
+	}
+	imported := 0
+	updated := 0
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			name := csvValue(record, index, "name")
+			if name == "" {
+				continue
+			}
+			price, err := strconv.ParseFloat(csvValue(record, index, "price"), 64)
+			if err != nil {
+				return fmt.Errorf("invalid price for %s", name)
+			}
+			pkg := models.CheckupPackage{
+				Name:        name,
+				Category:    normalizeStatus(csvValue(record, index, "category"), "综合体检"),
+				Description: csvValue(record, index, "description"),
+				Price:       price,
+				Items:       csvValue(record, index, "items"),
+				Status:      normalizeStatus(csvValue(record, index, "status"), "active"),
+			}
+			var existing models.CheckupPackage
+			err = tx.Where("name = ?", name).First(&existing).Error
+			if err == nil {
+				if err := tx.Model(&existing).Updates(pkg).Error; err != nil {
+					return err
+				}
+				updated++
+				continue
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := tx.Create(&pkg).Error; err != nil {
+				return err
+			}
+			imported++
+		}
+		return nil
+	}); err != nil {
+		h.recordOperation(c, "import", "package", "", "failed", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	detail := fmt.Sprintf("created=%d updated=%d", imported, updated)
+	h.recordOperation(c, "import", "package", "", "success", detail)
+	c.JSON(http.StatusOK, gin.H{"created": imported, "updated": updated})
 }
 
 func (h *Handler) checkupItems(c *gin.Context) {
@@ -1493,6 +1659,7 @@ func (h *Handler) createCheckupItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "create", "checkup_item", strconv.Itoa(int(item.ID)), "success", item.Name)
 	c.JSON(http.StatusCreated, item)
 }
 
@@ -1525,6 +1692,7 @@ func (h *Handler) updateCheckupItem(c *gin.Context) {
 	}
 	var item models.CheckupItem
 	h.db.First(&item, id)
+	h.recordOperation(c, "update", "checkup_item", strconv.Itoa(id), "success", item.Name)
 	c.JSON(http.StatusOK, item)
 }
 
@@ -1561,6 +1729,7 @@ func (h *Handler) upsertPackageItem(c *gin.Context) {
 		return
 	}
 	h.db.Preload("Package").Preload("Item").First(&link, link.ID)
+	h.recordOperation(c, "upsert", "package_item", strconv.Itoa(int(link.ID)), "success", fmt.Sprintf("package=%d item=%d", req.PackageID, req.ItemID))
 	c.JSON(http.StatusOK, link)
 }
 
@@ -1579,6 +1748,7 @@ func (h *Handler) deletePackageItem(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "package item not found"})
 		return
 	}
+	h.recordOperation(c, "delete", "package_item", strconv.Itoa(id), "success", "")
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
@@ -1624,6 +1794,7 @@ func (h *Handler) updateUserStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "update_status", "user", strconv.Itoa(id), "success", req.Status)
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": req.Status})
 }
 
@@ -1677,14 +1848,17 @@ func (h *Handler) updateDoctorProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
 		return
 	}
+	h.recordOperation(c, "update_profile", "doctor", strconv.Itoa(id), "success", user.Name)
 	c.JSON(http.StatusOK, user)
 }
 
 func (h *Handler) seed(c *gin.Context) {
 	if err := seed.Run(h.db); err != nil {
+		h.recordOperation(c, "reset", "seed", "", "failed", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "reset", "seed", "", "success", "seed data rebuilt")
 	c.JSON(http.StatusOK, gin.H{"status": "seeded"})
 }
 
@@ -1757,6 +1931,35 @@ func (h *Handler) recordMail(userID uint, to, subject, body string, err error) {
 		errText = err.Error()
 	}
 	h.db.Create(&models.MailLog{UserID: userID, To: to, Subject: subject, Body: body, Status: status, Error: errText})
+}
+
+func (h *Handler) recordLogin(c *gin.Context, userID uint, email, role, status, reason string) {
+	h.db.Create(&models.LoginLog{
+		UserID:    userID,
+		Email:     strings.ToLower(strings.TrimSpace(email)),
+		Role:      role,
+		IP:        c.ClientIP(),
+		UserAgent: trimForLog(c.Request.UserAgent(), 255),
+		Status:    status,
+		Reason:    trimForLog(reason, 255),
+	})
+}
+
+func (h *Handler) recordOperation(c *gin.Context, action, resource, resourceID, status, detail string) {
+	user := currentUser(c)
+	h.db.Create(&models.OperationLog{
+		UserID:     user.ID,
+		UserName:   user.Name,
+		Role:       user.Role,
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		Method:     c.Request.Method,
+		Path:       c.FullPath(),
+		IP:         c.ClientIP(),
+		Status:     status,
+		Detail:     detail,
+	})
 }
 
 func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
@@ -2087,6 +2290,21 @@ func addMinutes(value string, minutes int) (string, error) {
 	}
 	end := parsed.Add(time.Duration(minutes) * time.Minute)
 	return fmt.Sprintf("%02d:%02d", end.Hour(), end.Minute()), nil
+}
+
+func csvValue(record []string, index map[string]int, key string) string {
+	i, ok := index[key]
+	if !ok || i >= len(record) {
+		return ""
+	}
+	return strings.TrimSpace(record[i])
+}
+
+func trimForLog(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit]
 }
 
 func syncDoctorAvailableSlots(tx *gorm.DB, doctorID uint, categories []string) error {

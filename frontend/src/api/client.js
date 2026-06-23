@@ -14,7 +14,10 @@ export function getAuthToken() {
 }
 
 export async function request(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const headers = { ...(options.headers || {}) }
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`
   }
@@ -30,4 +33,23 @@ export async function request(path, options = {}) {
   }
 
   return response.json()
+}
+
+export async function requestBlob(path, options = {}) {
+  const headers = { ...(options.headers || {}) }
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`
+  }
+
+  const response = await fetch(`${apiBase}${path}`, {
+    headers,
+    ...options,
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }))
+    throw new Error(error.error || response.statusText)
+  }
+
+  return response.blob()
 }
