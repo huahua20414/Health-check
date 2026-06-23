@@ -118,13 +118,21 @@
           <p>维护可预约院区、地址、联系方式和营业时间，号源排班会引用这些机构。</p>
         </div>
         <div class="head-actions">
-          <el-button :loading="loading.exportInstitutions" :disabled="!can('admin:data:exchange')" @click="exportInstitutions">
+          <el-button :loading="loading.exportInstitutions" :disabled="!can('admin:data:exchange')" @click="handleInstitutionExport">
             导出机构 CSV
           </el-button>
           <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleInstitutionImport">
             <el-button :loading="loading.importInstitutions" :disabled="!can('admin:data:exchange')">导入机构 CSV</el-button>
           </el-upload>
         </div>
+      </div>
+      <div class="filter-bar resource-filter-bar">
+        <el-select v-model="institutionStatusFilter" placeholder="机构状态" clearable>
+          <el-option label="启用" value="active" />
+          <el-option label="停用" value="disabled" />
+          <el-option label="已归档" value="deleted" />
+        </el-select>
+        <el-input v-model="institutionKeyword" placeholder="搜索机构/地址/电话" clearable />
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="机构名称"><el-input v-model="institutionForm.name" /></el-form-item>
@@ -142,7 +150,7 @@
           <el-button @click="editInstitution(null)">清空</el-button>
         </div>
       </el-form>
-      <el-table :data="institutions" stripe>
+      <el-table :data="institutionRows" stripe>
         <el-table-column prop="name" label="机构" min-width="150" />
         <el-table-column prop="address" label="地址" min-width="180" />
         <el-table-column prop="phone" label="电话" width="140" />
@@ -152,11 +160,20 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-if="can('admin:resource:manage')" size="small" @click="editInstitution(row)">编辑</el-button>
-              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.institution" @click="archiveInstitution(row)">归档</el-button>
+              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.institution" @click="handleArchiveInstitution(row)">归档</el-button>
             </div>
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.institutions.total"
+        v-model:current-page="paginations.institutions.page"
+        v-model:page-size="paginations.institutions.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
 
     <div class="panel wide-table-panel">
@@ -250,15 +267,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import StatusTag from '../components/StatusTag.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
+import { useDebouncedRef } from '../composables/useDebouncedRef'
 import { useHealthData } from '../composables/useHealthData'
 
 const {
   packages,
   users,
   institutions,
+  institutionRows,
   slots,
   checkupItems,
   packageItems,
@@ -284,6 +303,7 @@ const {
   importPackageItems,
   deletePackageItem,
   loadInstitutions,
+  loadInstitutionsPage,
   editInstitution,
   saveInstitution,
   archiveInstitution,
@@ -299,11 +319,29 @@ const {
 const activeDoctors = computed(() => users.value.filter((user) => user.role === 'doctor' && user.status === 'active'))
 const canSaveInstitution = computed(() => institutionForm.name && institutionForm.address)
 const canSaveSchedule = computed(() => scheduleForm.doctorId && scheduleForm.institutionId && scheduleForm.date && scheduleForm.period && scheduleForm.startTime)
+const institutionStatusFilter = ref('')
+const institutionKeyword = ref('')
+const debouncedInstitutionKeyword = useDebouncedRef(institutionKeyword, 350)
 
 const submitCheckupItem = useDebouncedFn(saveCheckupItem, 350)
 const submitPackageItem = useDebouncedFn(savePackageItem, 350)
-const submitInstitution = useDebouncedFn(saveInstitution, 350)
+const submitInstitution = useDebouncedFn(async () => {
+  await saveInstitution()
+  await reloadInstitutions()
+}, 350)
 const submitSchedule = useDebouncedFn(saveScheduleSlot, 350)
+
+function institutionFilters() {
+  return {
+    status: institutionStatusFilter.value,
+    keyword: debouncedInstitutionKeyword.value,
+  }
+}
+
+function reloadInstitutions(reset = false) {
+  if (reset) paginations.institutions.page = 1
+  return loadInstitutionsPage(institutionFilters())
+}
 
 function reloadPackageItems() {
   paginations.packageItems.page = 1
@@ -324,6 +362,16 @@ async function handlePackageItemImport(file) {
 
 async function handleInstitutionImport(file) {
   await importInstitutions(file.raw)
+  await reloadInstitutions()
+}
+
+function handleInstitutionExport() {
+  return exportInstitutions(institutionFilters())
+}
+
+async function handleArchiveInstitution(row) {
+  await archiveInstitution(row)
+  await reloadInstitutions()
 }
 
 async function handleScheduleSlotImport(file) {
@@ -336,12 +384,15 @@ async function removePackageItem(row) {
 
 watch(() => [paginations.checkupItems.page, paginations.checkupItems.pageSize], () => loadCheckupItemsPage())
 watch(() => [paginations.packageItems.page, paginations.packageItems.pageSize], () => loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {}))
+watch([institutionStatusFilter, debouncedInstitutionKeyword], () => reloadInstitutions(true))
+watch(() => [paginations.institutions.page, paginations.institutions.pageSize], () => reloadInstitutions())
 watch(() => [paginations.slots.page, paginations.slots.pageSize], () => loadSlotsPage())
 
 onMounted(() => {
   loadPackagesPage()
   loadUsersPage({ role: 'doctor', status: 'active' })
   loadInstitutions()
+  reloadInstitutions()
   loadCheckupItemsPage()
   loadPackageItemsPage()
   loadSlotsPage()

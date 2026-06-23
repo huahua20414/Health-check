@@ -25,6 +25,7 @@ const appointments = ref([])
 const reports = ref([])
 const users = ref([])
 const institutions = ref([])
+const institutionRows = ref([])
 const slots = ref([])
 const waitlist = ref([])
 const mailLogs = ref([])
@@ -61,6 +62,7 @@ const paginations = reactive({
   loginLogs: { page: 1, pageSize: 10, total: 0 },
   operationLogs: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
+  institutions: { page: 1, pageSize: 10, total: 0 },
   notifications: { page: 1, pageSize: 10, total: 0 },
   adminNotifications: { page: 1, pageSize: 10, total: 0 },
   supportTickets: { page: 1, pageSize: 10, total: 0 },
@@ -535,6 +537,10 @@ export function useHealthData() {
 
   async function loadInstitutions() {
     institutions.value = await request('/institutions')
+  }
+
+  async function loadInstitutionsPage(params = {}) {
+    institutionRows.value = await requestPage('/institutions', paginations.institutions, params)
   }
 
   async function loadNotificationsPage(params = {}) {
@@ -1263,6 +1269,7 @@ export function useHealthData() {
       ElMessage.success('体检机构已保存')
       editInstitution(null)
       await loadInstitutions()
+      await loadInstitutionsPage()
     } finally {
       loading.institution = false
     }
@@ -1275,6 +1282,7 @@ export function useHealthData() {
       await request(`/institutions/${institution.id}`, { method: 'DELETE' })
       ElMessage.success('体检机构已归档')
       await loadInstitutions()
+      await loadInstitutionsPage()
     } finally {
       loading.institution = false
     }
@@ -1307,6 +1315,7 @@ export function useHealthData() {
       const result = await request('/institutions/import', { method: 'POST', body: formData })
       ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
       await loadInstitutions()
+      await loadInstitutionsPage()
     } finally {
       loading.importInstitutions = false
     }
@@ -1790,6 +1799,7 @@ export function useHealthData() {
     reports,
     users,
     institutions,
+    institutionRows,
     slots,
     waitlist,
     mailLogs,
@@ -1870,6 +1880,7 @@ export function useHealthData() {
     loadSupportInfo,
     loadPackagesPage,
     loadInstitutions,
+    loadInstitutionsPage,
     loadNotificationsPage,
     loadSupportTicketsPage,
     loadAdminNotificationsPage,

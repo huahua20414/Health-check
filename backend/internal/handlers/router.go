@@ -483,13 +483,21 @@ func (h *Handler) recommendedPackages(c *gin.Context) {
 
 func (h *Handler) institutions(c *gin.Context) {
 	var institutions []models.CheckupInstitution
-	query := h.db.Order("id asc")
+	query := h.db.Model(&models.CheckupInstitution{}).Order("id asc")
 	if status := c.Query("status"); status != "" && c.GetHeader("Authorization") != "" {
 		query = query.Where("status = ?", status)
 	} else if c.GetHeader("Authorization") == "" {
 		query = query.Where("status = ?", "active")
 	} else {
 		query = query.Where("status <> ?", "deleted")
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("name LIKE ? OR address LIKE ? OR phone LIKE ?", pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &institutions)
+		return
 	}
 	if err := query.Find(&institutions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -52,6 +52,21 @@ func TestAdminInstitutionsHideDeletedByDefaultAndCanFilterStatus(t *testing.T) {
 	}
 }
 
+func TestAdminInstitutionsSupportKeywordAndPagination(t *testing.T) {
+	handler, _ := newInstitutionTestFixture(t)
+	router := newInstitutionListRouter(handler, true)
+
+	response := performInstitutionRequest(t, router, http.MethodGet, "/institutions?keyword=健康路&page=1&pageSize=1", nil)
+	page := decodeInstitutionPage(t, response)
+
+	if page.Total != 2 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "主院区" {
+		t.Fatalf("unexpected paginated items: %#v", page.Items)
+	}
+}
+
 func TestAdminCreatesAndUpdatesInstitutionWithAudit(t *testing.T) {
 	handler, db := newInstitutionTestFixture(t)
 	router := newInstitutionAdminRouter(handler, models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"})
@@ -215,6 +230,25 @@ func decodeInstitutionRow(t *testing.T, response *httptest.ResponseRecorder) mod
 		t.Fatalf("decode institution: %v", err)
 	}
 	return row
+}
+
+type institutionPageResponse struct {
+	Items    []models.CheckupInstitution `json:"items"`
+	Total    int64                       `json:"total"`
+	Page     int                         `json:"page"`
+	PageSize int                         `json:"pageSize"`
+}
+
+func decodeInstitutionPage(t *testing.T, response *httptest.ResponseRecorder) institutionPageResponse {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page institutionPageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode institution page: %v", err)
+	}
+	return page
 }
 
 func assertInstitutionOperationLogCount(t *testing.T, db *gorm.DB, userID uint, action string, want int64) {
