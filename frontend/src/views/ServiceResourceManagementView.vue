@@ -100,6 +100,9 @@
           <el-button type="primary" :loading="loading.packageItem" :disabled="!packageItemForm.packageId || !packageItemForm.itemId || !can('admin:resource:manage')" @click="submitPackageItem">保存组合</el-button>
         </div>
       </el-form>
+      <div class="filter-bar resource-filter-bar">
+        <el-input v-model="packageItemKeyword" placeholder="搜索套餐/项目/分类/科室" clearable />
+      </div>
       <el-table :data="packageItems" stripe>
         <el-table-column label="套餐" min-width="150"><template #default="{ row }">{{ row.package?.name || '-' }}</template></el-table-column>
         <el-table-column label="项目" min-width="150"><template #default="{ row }">{{ row.item?.name || '-' }}</template></el-table-column>
@@ -329,6 +332,8 @@ const activeDoctors = computed(() => users.value.filter((user) => user.role === 
 const checkupItemStatusFilter = ref('')
 const checkupItemKeyword = ref('')
 const debouncedCheckupItemKeyword = useDebouncedRef(checkupItemKeyword, 350)
+const packageItemKeyword = ref('')
+const debouncedPackageItemKeyword = useDebouncedRef(packageItemKeyword, 350)
 const canSaveInstitution = computed(() => institutionForm.name && institutionForm.address)
 const canSaveSchedule = computed(() => scheduleForm.doctorId && scheduleForm.institutionId && scheduleForm.date && scheduleForm.period && scheduleForm.startTime)
 const institutionStatusFilter = ref('')
@@ -339,7 +344,10 @@ const submitCheckupItem = useDebouncedFn(async () => {
   await saveCheckupItem()
   await reloadCheckupItems()
 }, 350)
-const submitPackageItem = useDebouncedFn(savePackageItem, 350)
+const submitPackageItem = useDebouncedFn(async () => {
+  await savePackageItem()
+  await reloadPackageItems()
+}, 350)
 const submitInstitution = useDebouncedFn(async () => {
   await saveInstitution()
   await reloadInstitutions()
@@ -372,7 +380,14 @@ function reloadInstitutions(reset = false) {
 
 function reloadPackageItems() {
   paginations.packageItems.page = 1
-  loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {})
+  loadPackageItemsPage(packageItemFilters())
+}
+
+function packageItemFilters() {
+  return {
+    packageId: packageItemForm.packageId,
+    keyword: debouncedPackageItemKeyword.value,
+  }
 }
 
 async function handleCheckupItemImport(file) {
@@ -390,11 +405,12 @@ async function handleArchiveCheckupItem(row) {
 }
 
 function handlePackageItemExport() {
-  return exportPackageItems(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {})
+  return exportPackageItems(packageItemFilters())
 }
 
 async function handlePackageItemImport(file) {
   await importPackageItems(file.raw)
+  await reloadPackageItems()
 }
 
 async function handleInstitutionImport(file) {
@@ -421,7 +437,8 @@ async function removePackageItem(row) {
 
 watch([checkupItemStatusFilter, debouncedCheckupItemKeyword], () => reloadCheckupItems(true))
 watch(() => [paginations.checkupItems.page, paginations.checkupItems.pageSize], () => reloadCheckupItems())
-watch(() => [paginations.packageItems.page, paginations.packageItems.pageSize], () => loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {}))
+watch(debouncedPackageItemKeyword, () => reloadPackageItems())
+watch(() => [paginations.packageItems.page, paginations.packageItems.pageSize], () => loadPackageItemsPage(packageItemFilters()))
 watch([institutionStatusFilter, debouncedInstitutionKeyword], () => reloadInstitutions(true))
 watch(() => [paginations.institutions.page, paginations.institutions.pageSize], () => reloadInstitutions())
 watch(() => [paginations.slots.page, paginations.slots.pageSize], () => loadSlotsPage())

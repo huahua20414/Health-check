@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -22,7 +23,7 @@ func TestExportPackageItemsSupportsPackageFilterAndAudits(t *testing.T) {
 	handler, db, fixture := newPackageItemExchangeFixture(t)
 	router := newPackageItemExchangeRouter(handler, fixture.admin)
 
-	response := performPackageItemExchangeRequest(t, router, http.MethodGet, "/package-items/export?packageId=20", nil, "")
+	response := performPackageItemExchangeRequest(t, router, http.MethodGet, "/package-items/export?packageId=20&keyword=血", nil, "")
 
 	records := decodePackageItemCSV(t, response)
 	if len(records) != 2 {
@@ -32,6 +33,21 @@ func TestExportPackageItemsSupportsPackageFilterAndAudits(t *testing.T) {
 		t.Fatalf("export returned wrong package item row: %#v", records[1])
 	}
 	assertPackageItemOperationLogCount(t, db, fixture.admin.ID, "export", 1)
+}
+
+func TestPackageItemsSupportKeywordAndPagination(t *testing.T) {
+	handler, _, fixture := newPackageItemExchangeFixture(t)
+	router := newPackageItemExchangeRouter(handler, fixture.admin)
+
+	response := performPackageItemExchangeRequest(t, router, http.MethodGet, "/package-items?keyword=检验&page=1&pageSize=1", nil, "")
+	page := decodePackageItemPage(t, response)
+
+	if page.Total != 1 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Item.Name != "血常规" || page.Items[0].Package.Name != "基础套餐" {
+		t.Fatalf("unexpected paginated package items: %#v", page.Items)
+	}
 }
 
 func TestImportPackageItemsCreatesAndUpdatesByPackageAndItem(t *testing.T) {
@@ -117,6 +133,7 @@ func newPackageItemExchangeRouter(handler *Handler, current models.User) *gin.En
 		c.Set("user", current)
 		c.Next()
 	})
+	router.GET("/package-items", handler.packageItems)
 	router.GET("/package-items/export", handler.exportPackageItems)
 	router.POST("/package-items/import", handler.importPackageItems)
 	return router
@@ -161,6 +178,25 @@ func decodePackageItemCSV(t *testing.T, response *httptest.ResponseRecorder) [][
 		t.Fatalf("decode package item csv: %v", err)
 	}
 	return records
+}
+
+type packageItemPageResponse struct {
+	Items    []models.PackageItem `json:"items"`
+	Total    int64                `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"pageSize"`
+}
+
+func decodePackageItemPage(t *testing.T, response *httptest.ResponseRecorder) packageItemPageResponse {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page packageItemPageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode package item page: %v", err)
+	}
+	return page
 }
 
 func assertPackageItemImportResult(t *testing.T, body string, parts ...string) {

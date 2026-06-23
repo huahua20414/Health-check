@@ -3222,10 +3222,7 @@ func (h *Handler) importCheckupItems(c *gin.Context) {
 
 func (h *Handler) packageItems(c *gin.Context) {
 	var items []models.PackageItem
-	query := h.db.Model(&models.PackageItem{}).Preload("Package").Preload("Item").Order("package_id asc, sort_order asc, id asc")
-	if packageID := c.Query("packageId"); packageID != "" {
-		query = query.Where("package_id = ?", packageID)
-	}
+	query := h.packageItemsQuery(c)
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &items)
 		return
@@ -3259,10 +3256,7 @@ func (h *Handler) upsertPackageItem(c *gin.Context) {
 
 func (h *Handler) exportPackageItems(c *gin.Context) {
 	var links []models.PackageItem
-	query := h.db.Model(&models.PackageItem{}).Preload("Package").Preload("Item").Order("package_id asc, sort_order asc, id asc")
-	if packageID := c.Query("packageId"); packageID != "" {
-		query = query.Where("package_id = ?", packageID)
-	}
+	query := h.packageItemsQuery(c)
 	if err := query.Find(&links).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -3281,6 +3275,23 @@ func (h *Handler) exportPackageItems(c *gin.Context) {
 	}
 	writer.Flush()
 	h.recordOperation(c, "export", "package_item", "", "success", fmt.Sprintf("%d package items", len(links)))
+}
+
+func (h *Handler) packageItemsQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.PackageItem{}).
+		Preload("Package").
+		Preload("Item").
+		Joins("LEFT JOIN checkup_packages package_filter ON package_filter.id = package_items.package_id").
+		Joins("LEFT JOIN checkup_items item_filter ON item_filter.id = package_items.item_id").
+		Order("package_items.package_id asc, package_items.sort_order asc, package_items.id asc")
+	if packageID := c.Query("packageId"); packageID != "" {
+		query = query.Where("package_items.package_id = ?", packageID)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("package_filter.name LIKE ? OR item_filter.name LIKE ? OR item_filter.category LIKE ? OR item_filter.department LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	return query
 }
 
 func (h *Handler) importPackageItems(c *gin.Context) {
