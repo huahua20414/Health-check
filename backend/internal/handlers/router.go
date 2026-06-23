@@ -1673,6 +1673,17 @@ func (h *Handler) updateSystemSetting(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	var current models.SystemSetting
+	if err := h.db.First(&current, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "setting not found"})
+		return
+	}
+	if current.Key == "service.faq" {
+		if err := validateFAQSetting(value); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	updates := map[string]any{
 		"value":       value,
 		"value_type":  normalizeStatus(req.ValueType, "string"),
@@ -2986,6 +2997,22 @@ func validateSettingValue(valueType, value string) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported setting value type")
+	}
+	return nil
+}
+
+func validateFAQSetting(value string) error {
+	var items []faqItem
+	if err := json.Unmarshal([]byte(value), &items); err != nil {
+		return fmt.Errorf("FAQ must be a valid JSON array")
+	}
+	if len(items) == 0 {
+		return fmt.Errorf("FAQ must contain at least one item")
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item.Question) == "" || strings.TrimSpace(item.Answer) == "" {
+			return fmt.Errorf("FAQ question and answer are required")
+		}
 	}
 	return nil
 }

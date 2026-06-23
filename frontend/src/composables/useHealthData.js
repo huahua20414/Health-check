@@ -1272,6 +1272,9 @@ export function useHealthData() {
       })
       const index = systemSettings.value.findIndex((item) => item.id === updated.id)
       if (index >= 0) systemSettings.value[index] = updated
+      if (updated.key === 'service.faq' || updated.key === 'service.customer_service_url' || updated.key === 'service.customer_service_hours') {
+        await loadSupportInfo()
+      }
       ElMessage.success('系统设置已保存')
     } finally {
       loading.systemSetting = false

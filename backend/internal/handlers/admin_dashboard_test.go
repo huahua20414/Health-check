@@ -16,7 +16,7 @@ import (
 )
 
 func TestAdminDashboardFiltersTrendsByRequestedDays(t *testing.T) {
-	handler, _ := newAdminDashboardFixture(t)
+	handler, _, fixture := newAdminDashboardFixture(t)
 	router := newAdminDashboardRouter(handler)
 
 	response := performAdminDashboardRequest(t, router, "/admin/dashboard?days=7")
@@ -25,13 +25,13 @@ func TestAdminDashboardFiltersTrendsByRequestedDays(t *testing.T) {
 	if payload.Range.Days != 7 {
 		t.Fatalf("expected range days 7, got %#v", payload.Range)
 	}
-	assertDashboardLabels(t, payload.AppointmentTrend, []string{futureDayForDashboardTest(3)})
+	assertDashboardLabels(t, payload.AppointmentTrend, []string{fixture.recentAppointmentDay})
 	assertDashboardLabels(t, payload.PackageSales, []string{"近期套餐"})
-	assertDashboardLabels(t, payload.UserGrowth, []string{todayForDashboardTest()})
+	assertDashboardLabels(t, payload.UserGrowth, []string{fixture.recentUserDay})
 }
 
 func TestAdminDashboardClampsDaysRange(t *testing.T) {
-	handler, _ := newAdminDashboardFixture(t)
+	handler, _, _ := newAdminDashboardFixture(t)
 	router := newAdminDashboardRouter(handler)
 
 	low := decodeAdminDashboardPayload(t, performAdminDashboardRequest(t, router, "/admin/dashboard?days=1"))
@@ -67,7 +67,12 @@ type dashboardRow struct {
 	Total float64 `json:"total"`
 }
 
-func newAdminDashboardFixture(t *testing.T) (*Handler, *gorm.DB) {
+type adminDashboardFixture struct {
+	recentAppointmentDay string
+	recentUserDay        string
+}
+
+func newAdminDashboardFixture(t *testing.T) (*Handler, *gorm.DB, adminDashboardFixture) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -94,7 +99,10 @@ func newAdminDashboardFixture(t *testing.T) (*Handler, *gorm.DB) {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
 	}
-	return &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}, db
+	return &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}, db, adminDashboardFixture{
+		recentAppointmentDay: recentAppointmentDay,
+		recentUserDay:        now.UTC().Format("2006-01-02"),
+	}
 }
 
 func newAdminDashboardRouter(handler *Handler) *gin.Engine {
@@ -133,12 +141,4 @@ func assertDashboardLabels(t *testing.T, rows []dashboardRow, want []string) {
 			t.Fatalf("expected label %q at %d, got %#v", want[i], i, rows)
 		}
 	}
-}
-
-func todayForDashboardTest() string {
-	return time.Now().Format("2006-01-02")
-}
-
-func futureDayForDashboardTest(days int) string {
-	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
 }

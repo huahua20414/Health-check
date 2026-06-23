@@ -52,6 +52,25 @@
         </el-table-column>
       </el-table>
     </div>
+    <div class="panel" v-if="can('admin:system:manage')">
+      <div class="panel-head">
+        <div>
+          <h3>FAQ 结构化维护</h3>
+          <p>维护用户端“消息与客服”页面展示的常见问题，保存前会校验问题和答案必填。</p>
+        </div>
+      </div>
+      <div class="faq-editor">
+        <article v-for="(item, index) in faqDraft" :key="index" class="faq-editor-row">
+          <el-input v-model="item.question" placeholder="问题" />
+          <el-input v-model="item.answer" type="textarea" :rows="2" placeholder="答案" />
+          <el-button type="danger" plain :disabled="faqDraft.length <= 1" @click="removeFAQItem(index)">删除</el-button>
+        </article>
+      </div>
+      <div class="actions faq-editor-actions">
+        <el-button @click="addFAQItem">新增问题</el-button>
+        <el-button type="primary" :loading="loading.systemSetting" :disabled="!faqSetting" @click="saveFAQSetting">保存 FAQ</el-button>
+      </div>
+    </div>
     <div class="panel" v-if="can('admin:data:exchange')">
       <div class="panel-head">
         <div>
@@ -177,7 +196,7 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue'
+import { computed, onMounted, reactive, watch } from 'vue'
 import { Connection, DataAnalysis, Lock } from '@element-plus/icons-vue'
 import { useHealthData } from '../composables/useHealthData'
 
@@ -202,6 +221,9 @@ const {
   updateSystemSetting,
 } = useHealthData()
 
+const faqDraft = reactive([])
+const faqSetting = computed(() => systemSettings.value.find((item) => item.key === 'service.faq'))
+
 watch(() => [paginations.mailLogs.page, paginations.mailLogs.pageSize], () => {
   if (isAdmin.value) loadMailLogsPage()
 })
@@ -224,9 +246,48 @@ function settingGroupText(group) {
   return { appointment: '预约', notification: '通知', security: '安全', service: '服务', system: '系统' }[group] || group
 }
 
+function syncFAQDraft(setting) {
+  const fallback = [{ question: '', answer: '' }]
+  let parsed = fallback
+  try {
+    const value = JSON.parse(setting?.value || '[]')
+    if (Array.isArray(value) && value.length > 0) {
+      parsed = value.map((item) => ({
+        question: String(item?.question || ''),
+        answer: String(item?.answer || ''),
+      }))
+    }
+  } catch {
+    parsed = fallback
+  }
+  faqDraft.splice(0, faqDraft.length, ...parsed)
+}
+
+function addFAQItem() {
+  faqDraft.push({ question: '', answer: '' })
+}
+
+function removeFAQItem(index) {
+  if (faqDraft.length <= 1) return
+  faqDraft.splice(index, 1)
+}
+
+async function saveFAQSetting() {
+  if (!faqSetting.value) return
+  faqSetting.value.value = JSON.stringify(faqDraft.map((item) => ({
+    question: item.question.trim(),
+    answer: item.answer.trim(),
+  })))
+  faqSetting.value.valueType = 'json'
+  await updateSystemSetting(faqSetting.value)
+  syncFAQDraft(faqSetting.value)
+}
+
 async function handlePackageImport(file) {
   await importPackages(file.raw)
 }
+
+watch(faqSetting, (setting) => syncFAQDraft(setting), { immediate: true })
 
 onMounted(() => {
   if (!isAdmin.value) return
