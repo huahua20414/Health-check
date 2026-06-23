@@ -139,6 +139,8 @@ const loading = reactive({
   exportPackages: false,
   importCheckupItems: false,
   exportCheckupItems: false,
+  importPackageItems: false,
+  exportPackageItems: false,
   importCoupons: false,
   exportCoupons: false,
   exportAppointments: false,
@@ -1128,6 +1130,38 @@ export function useHealthData() {
     }
   }
 
+  async function exportPackageItems(params = {}) {
+    if (loading.exportPackageItems) return
+    loading.exportPackageItems = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/package-items/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'package-items.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('套餐项目组合 CSV 已导出')
+    } finally {
+      loading.exportPackageItems = false
+    }
+  }
+
+  async function importPackageItems(file) {
+    if (!file || loading.importPackageItems) return
+    loading.importPackageItems = true
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await request('/package-items/import', { method: 'POST', body: formData })
+      ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      await loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {})
+    } finally {
+      loading.importPackageItems = false
+    }
+  }
+
   async function deletePackageItem(row) {
     if (loading.packageItem) return
     loading.packageItem = true
@@ -1768,6 +1802,8 @@ export function useHealthData() {
     exportCheckupItems,
     importCheckupItems,
     savePackageItem,
+    exportPackageItems,
+    importPackageItems,
     deletePackageItem,
     editScheduleSlot,
     saveScheduleSlot,

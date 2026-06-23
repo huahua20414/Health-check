@@ -66,6 +66,14 @@
           <h3>套餐项目组合</h3>
           <p>把体检项目挂到套餐中，控制是否必检和展示顺序。</p>
         </div>
+        <div class="head-actions">
+          <el-button :loading="loading.exportPackageItems" :disabled="!can('admin:data:exchange')" @click="handlePackageItemExport">
+            导出组合 CSV
+          </el-button>
+          <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handlePackageItemImport">
+            <el-button :loading="loading.importPackageItems" :disabled="!can('admin:data:exchange')">导入组合 CSV</el-button>
+          </el-upload>
+        </div>
       </div>
       <el-form label-position="top" class="form-grid compact-resource-form">
         <el-form-item label="套餐">
@@ -215,6 +223,8 @@ const {
   exportCheckupItems,
   importCheckupItems,
   savePackageItem,
+  exportPackageItems,
+  importPackageItems,
   deletePackageItem,
   editScheduleSlot,
   saveScheduleSlot,
@@ -235,6 +245,14 @@ function reloadPackageItems() {
 
 async function handleCheckupItemImport(file) {
   await importCheckupItems(file.raw)
+}
+
+function handlePackageItemExport() {
+  return exportPackageItems(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {})
+}
+
+async function handlePackageItemImport(file) {
+  await importPackageItems(file.raw)
 }
 
 async function removePackageItem(row) {

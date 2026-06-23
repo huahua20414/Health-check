@@ -133,6 +133,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.DELETE("/checkup-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveCheckupItem)
 	protected.GET("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.packageItems)
 	protected.POST("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.upsertPackageItem)
+	protected.GET("/package-items/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportPackageItems)
+	protected.POST("/package-items/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importPackageItems)
 	protected.DELETE("/package-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.deletePackageItem)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
 	protected.GET("/users/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportUsers)
@@ -2914,6 +2916,110 @@ func (h *Handler) upsertPackageItem(c *gin.Context) {
 	c.JSON(http.StatusOK, link)
 }
 
+func (h *Handler) exportPackageItems(c *gin.Context) {
+	var links []models.PackageItem
+	query := h.db.Model(&models.PackageItem{}).Preload("Package").Preload("Item").Order("package_id asc, sort_order asc, id asc")
+	if packageID := c.Query("packageId"); packageID != "" {
+		query = query.Where("package_id = ?", packageID)
+	}
+	if err := query.Find(&links).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="package-items.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"package_name", "item_name", "sort_order", "required"})
+	for _, link := range links {
+		_ = writer.Write([]string{
+			link.Package.Name,
+			link.Item.Name,
+			strconv.Itoa(link.SortOrder),
+			strconv.FormatBool(link.Required),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "package_item", "", "success", fmt.Sprintf("%d package items", len(links)))
+}
+
+func (h *Handler) importPackageItems(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "csv file is required"})
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "open csv file failed"})
+		return
+	}
+	defer opened.Close()
+	reader := csv.NewReader(opened)
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
+		return
+	}
+	index := csvIndex(header)
+	for _, field := range []string{"package_name", "item_name"} {
+		if _, ok := index[field]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing csv column: " + field})
+			return
+		}
+	}
+	created := 0
+	updated := 0
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			link, err := h.packageItemFromCSVRecord(tx, record, index)
+			if err != nil {
+				return err
+			}
+			if link.PackageID == 0 || link.ItemID == 0 {
+				continue
+			}
+			var existing models.PackageItem
+			err = tx.Where("package_id = ? AND item_id = ?", link.PackageID, link.ItemID).First(&existing).Error
+			if err == nil {
+				updates := map[string]any{
+					"package_id": link.PackageID,
+					"item_id":    link.ItemID,
+					"sort_order": link.SortOrder,
+					"required":   link.Required,
+				}
+				if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+					return err
+				}
+				updated++
+				continue
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := tx.Create(&link).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	}); err != nil {
+		h.recordOperation(c, "import", "package_item", "", "failed", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	detail := fmt.Sprintf("created=%d updated=%d", created, updated)
+	h.recordOperation(c, "import", "package_item", "", "success", detail)
+	c.JSON(http.StatusOK, gin.H{"created": created, "updated": updated})
+}
+
 func (h *Handler) deletePackageItem(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -3970,6 +4076,56 @@ func checkupItemFromCSVRecord(record []string, index map[string]int) (models.Che
 		Description: csvValue(record, index, "description"),
 		Status:      normalizeStatus(csvValue(record, index, "status"), "active"),
 	}, nil
+}
+
+func (h *Handler) packageItemFromCSVRecord(db *gorm.DB, record []string, index map[string]int) (models.PackageItem, error) {
+	packageName := csvValue(record, index, "package_name")
+	itemName := csvValue(record, index, "item_name")
+	if packageName == "" && itemName == "" {
+		return models.PackageItem{}, nil
+	}
+	if packageName == "" || itemName == "" {
+		return models.PackageItem{}, fmt.Errorf("package item package_name and item_name are required")
+	}
+	var pkg models.CheckupPackage
+	if err := db.Where("name = ? AND status <> ?", packageName, "deleted").First(&pkg).Error; err != nil {
+		return models.PackageItem{}, fmt.Errorf("package not found for package item: %s", packageName)
+	}
+	var item models.CheckupItem
+	if err := db.Where("name = ? AND status <> ?", itemName, "deleted").First(&item).Error; err != nil {
+		return models.PackageItem{}, fmt.Errorf("checkup item not found for package item: %s", itemName)
+	}
+	sortOrder := 0
+	if raw := csvValue(record, index, "sort_order"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			return models.PackageItem{}, fmt.Errorf("invalid package item sort order for %s/%s", packageName, itemName)
+		}
+		sortOrder = parsed
+	}
+	required, err := parseCSVBool(csvValue(record, index, "required"), true)
+	if err != nil {
+		return models.PackageItem{}, fmt.Errorf("invalid package item required for %s/%s", packageName, itemName)
+	}
+	return models.PackageItem{
+		PackageID: pkg.ID,
+		ItemID:    item.ID,
+		SortOrder: sortOrder,
+		Required:  required,
+	}, nil
+}
+
+func parseCSVBool(value string, fallback bool) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return fallback, nil
+	case "true", "1", "yes", "y", "required", "必检", "是":
+		return true, nil
+	case "false", "0", "no", "n", "optional", "可选", "否":
+		return false, nil
+	default:
+		return fallback, fmt.Errorf("invalid bool")
+	}
 }
 
 func (h *Handler) settingsByKeys(keys ...string) (map[string]string, error) {
