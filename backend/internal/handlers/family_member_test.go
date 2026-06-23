@@ -37,6 +37,30 @@ func TestFamilyMembersOnlyReturnsCurrentUsersMembers(t *testing.T) {
 	}
 }
 
+func TestFamilyMembersHidesDeletedMembers(t *testing.T) {
+	handler, db, fixture := newFamilyMemberFixture(t)
+	if err := db.Model(&models.FamilyMember{}).Where("id = ?", fixture.member.ID).Update("status", "deleted").Error; err != nil {
+		t.Fatalf("archive member: %v", err)
+	}
+	router := newFamilyMemberTestRouter(handler, fixture.user)
+
+	response := performFamilyRequest(t, router, http.MethodGet, "/family-members", nil)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var members []models.FamilyMember
+	if err := json.Unmarshal(response.Body.Bytes(), &members); err != nil {
+		t.Fatalf("decode members: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("deleted members should be hidden, got %#v", members)
+	}
+	if handler.familyMemberBelongsTo(fixture.user.ID, fixture.member.ID) {
+		t.Fatal("deleted family member should not be usable for appointments")
+	}
+}
+
 func TestCreateFamilyMemberAssignsCurrentUser(t *testing.T) {
 	handler, db, fixture := newFamilyMemberFixture(t)
 	router := newFamilyMemberTestRouter(handler, fixture.user)
@@ -59,6 +83,9 @@ func TestCreateFamilyMemberAssignsCurrentUser(t *testing.T) {
 	if created.UserID != fixture.user.ID || created.Name != "母亲" {
 		t.Fatalf("created member should belong to current user, got %#v", created)
 	}
+	if created.Status != "active" {
+		t.Fatalf("created member should be active, got %q", created.Status)
+	}
 	var count int64
 	if err := db.Model(&models.FamilyMember{}).Where("user_id = ?", fixture.user.ID).Count(&count).Error; err != nil {
 		t.Fatalf("count members: %v", err)
@@ -66,6 +93,7 @@ func TestCreateFamilyMemberAssignsCurrentUser(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("expected current user to have 2 members, got %d", count)
 	}
+	assertFamilyOperationLog(t, db, fixture.user.ID, created.ID, "create", "母亲")
 }
 
 func TestUpdateFamilyMemberRejectsOtherUsersMember(t *testing.T) {
@@ -112,6 +140,7 @@ func TestUpdateFamilyMemberUpdatesCurrentUsersMember(t *testing.T) {
 	if member.Name != "父亲-更新" || member.UserID != fixture.user.ID || member.Age != 62 {
 		t.Fatalf("member was not updated correctly: %#v", member)
 	}
+	assertFamilyOperationLog(t, db, fixture.user.ID, fixture.member.ID, "update", "父亲-更新")
 }
 
 func TestDeleteFamilyMemberRejectsOtherUsersMember(t *testing.T) {
@@ -133,7 +162,7 @@ func TestDeleteFamilyMemberRejectsOtherUsersMember(t *testing.T) {
 	}
 }
 
-func TestDeleteFamilyMemberDeletesCurrentUsersMember(t *testing.T) {
+func TestDeleteFamilyMemberArchivesCurrentUsersMember(t *testing.T) {
 	handler, db, fixture := newFamilyMemberFixture(t)
 	router := newFamilyMemberTestRouter(handler, fixture.user)
 
@@ -142,13 +171,14 @@ func TestDeleteFamilyMemberDeletesCurrentUsersMember(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
-	var count int64
-	if err := db.Model(&models.FamilyMember{}).Where("id = ?", fixture.member.ID).Count(&count).Error; err != nil {
-		t.Fatalf("count deleted member: %v", err)
+	var member models.FamilyMember
+	if err := db.First(&member, fixture.member.ID).Error; err != nil {
+		t.Fatalf("load archived member: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("current user's member should be deleted, got count %d", count)
+	if member.Status != "deleted" {
+		t.Fatalf("current user's member should be archived, got %q", member.Status)
 	}
+	assertFamilyOperationLog(t, db, fixture.user.ID, fixture.member.ID, "archive", "")
 }
 
 type familyMemberFixture struct {
@@ -165,14 +195,14 @@ func newFamilyMemberFixture(t *testing.T) (*Handler, *gorm.DB, familyMemberFixtu
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.FamilyMember{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.FamilyMember{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := familyMemberFixture{
 		user:        models.User{ID: 100, Name: "用户", Phone: "13800000100", Email: "user@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
 		otherUser:   models.User{ID: 200, Name: "其他用户", Phone: "13800000200", Email: "other@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
-		member:      models.FamilyMember{ID: 10, UserID: 100, Name: "父亲", Relation: "父亲", Gender: "male", Age: 60, Phone: "13900000000"},
-		otherMember: models.FamilyMember{ID: 20, UserID: 200, Name: "其他家属", Relation: "母亲", Gender: "female", Age: 59, Phone: "13900000020"},
+		member:      models.FamilyMember{ID: 10, UserID: 100, Name: "父亲", Relation: "父亲", Gender: "male", Age: 60, Phone: "13900000000", Status: "active"},
+		otherMember: models.FamilyMember{ID: 20, UserID: 200, Name: "其他家属", Relation: "母亲", Gender: "female", Age: 59, Phone: "13900000020", Status: "active"},
 	}
 	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.member, &fixture.otherMember} {
 		if err := db.Create(row).Error; err != nil {
@@ -211,4 +241,17 @@ func performFamilyRequest(t *testing.T, router *gin.Engine, method, path string,
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec
+}
+
+func assertFamilyOperationLog(t *testing.T, db *gorm.DB, userID, memberID uint, action, detail string) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).
+		Where("user_id = ? AND action = ? AND resource = ? AND resource_id = ? AND detail = ?", userID, action, "family_member", strconv.Itoa(int(memberID)), detail).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count family operation log: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one %s family operation log with detail %q, got %d", action, detail, count)
+	}
 }

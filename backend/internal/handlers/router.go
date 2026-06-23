@@ -1255,7 +1255,7 @@ func (h *Handler) replyReview(c *gin.Context) {
 func (h *Handler) familyMembers(c *gin.Context) {
 	current := currentUser(c)
 	var members []models.FamilyMember
-	if err := h.db.Where("user_id = ?", current.ID).Order("created_at desc").Find(&members).Error; err != nil {
+	if err := h.db.Where("user_id = ? AND status <> ?", current.ID, "deleted").Order("created_at desc").Find(&members).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1276,11 +1276,13 @@ func (h *Handler) createFamilyMember(c *gin.Context) {
 		Age:      req.Age,
 		IDCard:   req.IDCard,
 		Phone:    req.Phone,
+		Status:   "active",
 	}
 	if err := h.db.Create(&member).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "create", "family_member", strconv.Itoa(int(member.ID)), "success", member.Name)
 	c.JSON(http.StatusCreated, member)
 }
 
@@ -1303,7 +1305,7 @@ func (h *Handler) updateFamilyMember(c *gin.Context) {
 		"id_card":  req.IDCard,
 		"phone":    req.Phone,
 	}
-	result := h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ?", id, current.ID).Updates(updates)
+	result := h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ? AND status <> ?", id, current.ID, "deleted").Updates(updates)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
@@ -1314,6 +1316,7 @@ func (h *Handler) updateFamilyMember(c *gin.Context) {
 	}
 	var member models.FamilyMember
 	h.db.First(&member, id)
+	h.recordOperation(c, "update", "family_member", strconv.Itoa(id), "success", member.Name)
 	c.JSON(http.StatusOK, member)
 }
 
@@ -1324,7 +1327,7 @@ func (h *Handler) deleteFamilyMember(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
-	result := h.db.Where("id = ? AND user_id = ?", id, current.ID).Delete(&models.FamilyMember{})
+	result := h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ? AND status <> ?", id, current.ID, "deleted").Update("status", "deleted")
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -1333,6 +1336,7 @@ func (h *Handler) deleteFamilyMember(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "family member not found"})
 		return
 	}
+	h.recordOperation(c, "archive", "family_member", strconv.Itoa(id), "success", "")
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
@@ -2674,7 +2678,7 @@ func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, cou
 
 func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
 	var count int64
-	h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ?", familyMemberID, userID).Count(&count)
+	h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ? AND status <> ?", familyMemberID, userID, "deleted").Count(&count)
 	return count > 0
 }
 

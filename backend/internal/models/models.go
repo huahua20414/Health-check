@@ -133,6 +133,7 @@ type FamilyMember struct {
 	Age       int       `json:"age"`
 	IDCard    string    `json:"idCard" gorm:"size:32"`
 	Phone     string    `json:"phone" gorm:"size:32"`
+	Status    string    `json:"status" gorm:"size:24;not null;default:'active';index"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
