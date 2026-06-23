@@ -44,7 +44,14 @@
           <template #default="{ row }">{{ row.type === 'percent' ? `${row.value}%` : `￥${row.value}` }}</template>
         </el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:operation:manage')" size="small" @click="editCoupon(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button v-if="can('admin:operation:manage')" size="small" @click="editCoupon(row)">编辑</el-button>
+              <el-button v-if="can('admin:operation:manage')" size="small" type="danger" plain :loading="loading.coupon" @click="archiveCoupon(row)">归档</el-button>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </div>
 
@@ -109,7 +116,14 @@
         <el-table-column prop="audience" label="受众" width="100" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
         <el-table-column prop="content" label="内容" />
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:operation:manage')" size="small" @click="editAnnouncement(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button v-if="can('admin:operation:manage')" size="small" @click="editAnnouncement(row)">编辑</el-button>
+              <el-button v-if="can('admin:operation:manage')" size="small" type="danger" plain :loading="loading.announcement" @click="archiveAnnouncement(row)">归档</el-button>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </div>
   </section>
@@ -136,10 +150,12 @@ const {
   loadAnnouncementsPage,
   editCoupon,
   saveCoupon,
+  archiveCoupon,
   editReviewReply,
   saveReviewReply,
   editAnnouncement,
   saveAnnouncement,
+  archiveAnnouncement,
 } = useHealthData()
 
 onMounted(() => {

@@ -47,9 +47,12 @@
         <el-table-column label="状态" width="100">
           <template #default="{ row }"><StatusTag :status="row.status || 'active'" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="90">
+        <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button v-if="can('admin:package:manage')" size="small" @click="editPackage(row)">编辑</el-button>
+            <div class="table-actions">
+              <el-button v-if="can('admin:package:manage')" size="small" @click="editPackage(row)">编辑</el-button>
+              <el-button v-if="can('admin:package:manage')" size="small" type="danger" plain :loading="loading.package" @click="archivePackage(row)">归档</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -72,7 +75,7 @@ import StatusTag from '../components/StatusTag.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { useHealthData } from '../composables/useHealthData'
 
-const { packages, packageForm, loading, can, editPackage, savePackage, paginations, loadPackagesPage } = useHealthData()
+const { packages, packageForm, loading, can, editPackage, savePackage, archivePackage, paginations, loadPackagesPage } = useHealthData()
 const packageCategories = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
 const submit = useDebouncedFn(async () => {
   await savePackage()

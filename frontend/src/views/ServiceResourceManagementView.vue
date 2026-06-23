@@ -32,7 +32,14 @@
         <el-table-column label="价格" width="100"><template #default="{ row }">￥{{ row.price }}</template></el-table-column>
         <el-table-column prop="durationMin" label="分钟" width="80" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:resource:manage')" size="small" @click="editCheckupItem(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button v-if="can('admin:resource:manage')" size="small" @click="editCheckupItem(row)">编辑</el-button>
+              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.checkupItem" @click="archiveCheckupItem(row)">归档</el-button>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination
         class="table-pagination"
@@ -138,7 +145,14 @@
         <el-table-column prop="category" label="分类" width="110" />
         <el-table-column label="库存" width="100"><template #default="{ row }">{{ row.bookedCount }}/{{ row.capacity }}</template></el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:resource:manage')" size="small" @click="editScheduleSlot(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button v-if="can('admin:resource:manage')" size="small" @click="editScheduleSlot(row)">编辑</el-button>
+              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.schedule" @click="archiveScheduleSlot(row)">归档</el-button>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination
         class="table-pagination"
@@ -179,10 +193,12 @@ const {
   loadSlotsPage,
   editCheckupItem,
   saveCheckupItem,
+  archiveCheckupItem,
   savePackageItem,
   deletePackageItem,
   editScheduleSlot,
   saveScheduleSlot,
+  archiveScheduleSlot,
 } = useHealthData()
 
 const activeDoctors = computed(() => users.value.filter((user) => user.role === 'doctor' && user.status === 'active'))

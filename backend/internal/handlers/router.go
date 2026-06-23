@@ -71,6 +71,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.POST("/schedule/slots", handler.requireRole("admin"), handler.createScheduleSlot)
 	protected.PATCH("/schedule/slots/:id", handler.requireRole("admin"), handler.updateScheduleSlot)
+	protected.DELETE("/schedule/slots/:id", handler.requireRole("admin"), handler.archiveScheduleSlot)
 	protected.GET("/waitlist", handler.requireRole("user"), handler.waitlist)
 	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
@@ -94,16 +95,20 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/coupons", handler.requireRole("admin"), handler.coupons)
 	protected.POST("/coupons", handler.requireRole("admin"), handler.createCoupon)
 	protected.PATCH("/coupons/:id", handler.requireRole("admin"), handler.updateCoupon)
+	protected.DELETE("/coupons/:id", handler.requireRole("admin"), handler.archiveCoupon)
 	protected.GET("/announcements", handler.requireRole("admin"), handler.announcements)
 	protected.POST("/announcements", handler.requireRole("admin"), handler.createAnnouncement)
 	protected.PATCH("/announcements/:id", handler.requireRole("admin"), handler.updateAnnouncement)
+	protected.DELETE("/announcements/:id", handler.requireRole("admin"), handler.archiveAnnouncement)
 	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
 	protected.GET("/packages/export", handler.requireRole("admin"), handler.exportPackages)
 	protected.POST("/packages/import", handler.requireRole("admin"), handler.importPackages)
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
+	protected.DELETE("/packages/:id", handler.requireRole("admin"), handler.archivePackage)
 	protected.GET("/checkup-items", handler.requireRole("admin"), handler.checkupItems)
 	protected.POST("/checkup-items", handler.requireRole("admin"), handler.createCheckupItem)
 	protected.PATCH("/checkup-items/:id", handler.requireRole("admin"), handler.updateCheckupItem)
+	protected.DELETE("/checkup-items/:id", handler.requireRole("admin"), handler.archiveCheckupItem)
 	protected.GET("/package-items", handler.requireRole("admin"), handler.packageItems)
 	protected.POST("/package-items", handler.requireRole("admin"), handler.upsertPackageItem)
 	protected.DELETE("/package-items/:id", handler.requireRole("admin"), handler.deletePackageItem)
@@ -382,6 +387,10 @@ func (h *Handler) packages(c *gin.Context) {
 	query := h.db.Model(&models.CheckupPackage{}).Order("price asc")
 	if c.GetHeader("Authorization") == "" {
 		query = query.Where("status = ?", "active")
+	} else if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &packages)
@@ -833,6 +842,11 @@ func (h *Handler) scheduleSlots(c *gin.Context) {
 	if period := c.Query("period"); period != "" {
 		query = query.Where("period = ?", period)
 	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
+	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &slots)
 		return
@@ -901,6 +915,19 @@ func (h *Handler) updateScheduleSlot(c *gin.Context) {
 	h.db.Preload("Doctor").Preload("Institution").First(&updated, id)
 	h.recordOperation(c, "update", "schedule_slot", strconv.Itoa(id), "success", fmt.Sprintf("%s %s", updated.Date, updated.StartTime))
 	c.JSON(http.StatusOK, updated)
+}
+
+func (h *Handler) archiveScheduleSlot(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid schedule slot id")
+	if !ok {
+		return
+	}
+	if err := h.archiveByID(&models.ScheduleSlot{}, id, "schedule_slot"); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "schedule_slot", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
 func (h *Handler) waitlist(c *gin.Context) {
@@ -1418,6 +1445,8 @@ func (h *Handler) coupons(c *gin.Context) {
 	query := h.db.Model(&models.Coupon{}).Order("created_at desc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &coupons)
@@ -1487,11 +1516,26 @@ func (h *Handler) updateCoupon(c *gin.Context) {
 	c.JSON(http.StatusOK, coupon)
 }
 
+func (h *Handler) archiveCoupon(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid coupon id")
+	if !ok {
+		return
+	}
+	if err := h.archiveByID(&models.Coupon{}, id, "coupon"); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "coupon", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
 func (h *Handler) announcements(c *gin.Context) {
 	var announcements []models.SystemAnnouncement
 	query := h.db.Model(&models.SystemAnnouncement{}).Order("created_at desc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &announcements)
@@ -1558,6 +1602,19 @@ func (h *Handler) updateAnnouncement(c *gin.Context) {
 	c.JSON(http.StatusOK, announcement)
 }
 
+func (h *Handler) archiveAnnouncement(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid announcement id")
+	if !ok {
+		return
+	}
+	if err := h.archiveByID(&models.SystemAnnouncement{}, id, "announcement"); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "announcement", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
 func (h *Handler) createPackage(c *gin.Context) {
 	var req packageRequest
 	if !bind(c, &req) {
@@ -1605,6 +1662,19 @@ func (h *Handler) updatePackage(c *gin.Context) {
 	h.db.First(&pkg, id)
 	h.recordOperation(c, "update", "package", strconv.Itoa(id), "success", pkg.Name)
 	c.JSON(http.StatusOK, pkg)
+}
+
+func (h *Handler) archivePackage(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid package id")
+	if !ok {
+		return
+	}
+	if err := h.archiveByID(&models.CheckupPackage{}, id, "package"); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "package", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
 func (h *Handler) exportPackages(c *gin.Context) {
@@ -1714,6 +1784,8 @@ func (h *Handler) checkupItems(c *gin.Context) {
 	query := h.db.Model(&models.CheckupItem{}).Order("category asc, name asc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
 	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		pattern := "%" + keyword + "%"
@@ -1786,6 +1858,19 @@ func (h *Handler) updateCheckupItem(c *gin.Context) {
 	h.db.First(&item, id)
 	h.recordOperation(c, "update", "checkup_item", strconv.Itoa(id), "success", item.Name)
 	c.JSON(http.StatusOK, item)
+}
+
+func (h *Handler) archiveCheckupItem(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid checkup item id")
+	if !ok {
+		return
+	}
+	if err := h.archiveByID(&models.CheckupItem{}, id, "checkup_item"); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "checkup_item", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
 func (h *Handler) packageItems(c *gin.Context) {
@@ -2434,6 +2519,26 @@ func trimForLog(value string, limit int) string {
 		return value
 	}
 	return value[:limit]
+}
+
+func parseIDParam(c *gin.Context, name, message string) (int, bool) {
+	id, err := strconv.Atoi(c.Param(name))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": message})
+		return 0, false
+	}
+	return id, true
+}
+
+func (h *Handler) archiveByID(model any, id int, resource string) error {
+	result := h.db.Model(model).Where("id = ? AND status <> ?", id, "deleted").Update("status", "deleted")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%s not found", resource)
+	}
+	return nil
 }
 
 func validateSettingValue(valueType, value string) error {

@@ -129,11 +129,11 @@ const loading = reactive({
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', deleted: '已归档', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', deleted: 'info', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info' }[status] || 'info'
 }
 
 export function formatDate(value) {
@@ -673,6 +673,18 @@ export function useHealthData() {
     }
   }
 
+  async function archiveCoupon(coupon) {
+    if (loading.coupon) return
+    loading.coupon = true
+    try {
+      await request(`/coupons/${coupon.id}`, { method: 'DELETE' })
+      ElMessage.success('优惠券已归档')
+      await loadCouponsPage()
+    } finally {
+      loading.coupon = false
+    }
+  }
+
   async function createReview() {
     if (loading.review) return
     loading.review = true
@@ -744,6 +756,18 @@ export function useHealthData() {
     }
   }
 
+  async function archiveAnnouncement(announcement) {
+    if (loading.announcement) return
+    loading.announcement = true
+    try {
+      await request(`/announcements/${announcement.id}`, { method: 'DELETE' })
+      ElMessage.success('公告已归档')
+      await loadAnnouncementsPage()
+    } finally {
+      loading.announcement = false
+    }
+  }
+
   function editCheckupItem(item) {
     Object.assign(checkupItemForm, {
       id: item?.id || null,
@@ -774,6 +798,18 @@ export function useHealthData() {
       else await request('/checkup-items', { method: 'POST', body })
       ElMessage.success('体检项目已保存')
       editCheckupItem(null)
+      await loadCheckupItemsPage()
+    } finally {
+      loading.checkupItem = false
+    }
+  }
+
+  async function archiveCheckupItem(item) {
+    if (loading.checkupItem) return
+    loading.checkupItem = true
+    try {
+      await request(`/checkup-items/${item.id}`, { method: 'DELETE' })
+      ElMessage.success('体检项目已归档')
       await loadCheckupItemsPage()
     } finally {
       loading.checkupItem = false
@@ -846,6 +882,18 @@ export function useHealthData() {
       else await request('/schedule/slots', { method: 'POST', body })
       ElMessage.success('排班号源已保存')
       editScheduleSlot(null)
+      await loadSlotsPage()
+    } finally {
+      loading.schedule = false
+    }
+  }
+
+  async function archiveScheduleSlot(slot) {
+    if (loading.schedule) return
+    loading.schedule = true
+    try {
+      await request(`/schedule/slots/${slot.id}`, { method: 'DELETE' })
+      ElMessage.success('排班号源已归档')
       await loadSlotsPage()
     } finally {
       loading.schedule = false
@@ -1004,6 +1052,18 @@ export function useHealthData() {
       ElMessage.success('套餐已保存')
       editPackage(null)
       await loadAll()
+    } finally {
+      loading.package = false
+    }
+  }
+
+  async function archivePackage(pkg) {
+    if (loading.package) return
+    loading.package = true
+    try {
+      await request(`/packages/${pkg.id}`, { method: 'DELETE' })
+      ElMessage.success('套餐已归档')
+      await loadPackagesPage()
     } finally {
       loading.package = false
     }
@@ -1220,17 +1280,21 @@ export function useHealthData() {
     markNotificationRead,
     editCoupon,
     saveCoupon,
+    archiveCoupon,
     createReview,
     editReviewReply,
     saveReviewReply,
     editAnnouncement,
     saveAnnouncement,
+    archiveAnnouncement,
     editCheckupItem,
     saveCheckupItem,
+    archiveCheckupItem,
     savePackageItem,
     deletePackageItem,
     editScheduleSlot,
     saveScheduleSlot,
+    archiveScheduleSlot,
     saveProfile,
     sendEmailCode,
     updateEmail,
@@ -1240,6 +1304,7 @@ export function useHealthData() {
     updateDoctorProfile,
     editPackage,
     savePackage,
+    archivePackage,
     exportPackages,
     importPackages,
     updateRolePermission,
