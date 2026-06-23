@@ -66,6 +66,9 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/profile", handler.updateProfile)
 	protected.POST("/profile/email-code", handler.sendEmailCode)
 	protected.PATCH("/profile/email", handler.updateEmail)
+	protected.POST("/institutions", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createInstitution)
+	protected.PATCH("/institutions/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateInstitution)
+	protected.DELETE("/institutions/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveInstitution)
 	protected.GET("/appointments", handler.appointments)
 	protected.POST("/appointments", handler.requireRoleAndPermission("appointment:create", "user"), handler.createAppointment)
 	protected.PATCH("/appointments/:id/cancel", handler.requireRoleAndPermission("appointment:cancel", "user"), handler.cancelAppointment)
@@ -479,14 +482,91 @@ func (h *Handler) recommendedPackages(c *gin.Context) {
 func (h *Handler) institutions(c *gin.Context) {
 	var institutions []models.CheckupInstitution
 	query := h.db.Order("id asc")
-	if c.GetHeader("Authorization") == "" {
+	if status := c.Query("status"); status != "" && c.GetHeader("Authorization") != "" {
+		query = query.Where("status = ?", status)
+	} else if c.GetHeader("Authorization") == "" {
 		query = query.Where("status = ?", "active")
+	} else {
+		query = query.Where("status <> ?", "deleted")
 	}
 	if err := query.Find(&institutions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, institutions)
+}
+
+func (h *Handler) createInstitution(c *gin.Context) {
+	var req institutionRequest
+	if !bind(c, &req) {
+		return
+	}
+	institution := models.CheckupInstitution{
+		Name:      strings.TrimSpace(req.Name),
+		Address:   strings.TrimSpace(req.Address),
+		Phone:     strings.TrimSpace(req.Phone),
+		OpenHours: strings.TrimSpace(req.OpenHours),
+		Status:    normalizeStatus(req.Status, "active"),
+	}
+	if err := h.db.Create(&institution).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "create", "institution", strconv.Itoa(int(institution.ID)), "success", institution.Name)
+	c.JSON(http.StatusCreated, institution)
+}
+
+func (h *Handler) updateInstitution(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid institution id")
+	if !ok {
+		return
+	}
+	var req institutionRequest
+	if !bind(c, &req) {
+		return
+	}
+	updates := map[string]any{
+		"name":       strings.TrimSpace(req.Name),
+		"address":    strings.TrimSpace(req.Address),
+		"phone":      strings.TrimSpace(req.Phone),
+		"open_hours": strings.TrimSpace(req.OpenHours),
+		"status":     normalizeStatus(req.Status, "active"),
+	}
+	result := h.db.Model(&models.CheckupInstitution{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "institution not found"})
+		return
+	}
+	var institution models.CheckupInstitution
+	h.db.First(&institution, id)
+	h.recordOperation(c, "update", "institution", strconv.Itoa(id), "success", institution.Name)
+	c.JSON(http.StatusOK, institution)
+}
+
+func (h *Handler) archiveInstitution(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid institution id")
+	if !ok {
+		return
+	}
+	var count int64
+	if err := h.db.Model(&models.ScheduleSlot{}).Where("institution_id = ? AND status <> ?", id, "deleted").Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "institution has active schedule slots"})
+		return
+	}
+	if err := h.archiveByID(&models.CheckupInstitution{}, id, "institution"); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "institution", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
 func (h *Handler) activeCoupons(c *gin.Context) {
@@ -3974,6 +4054,14 @@ type packageRequest struct {
 	Price       float64 `json:"price" binding:"required"`
 	Items       string  `json:"items" binding:"required"`
 	Status      string  `json:"status"`
+}
+
+type institutionRequest struct {
+	Name      string `json:"name" binding:"required"`
+	Address   string `json:"address" binding:"required"`
+	Phone     string `json:"phone"`
+	OpenHours string `json:"openHours"`
+	Status    string `json:"status"`
 }
 
 type checkupItemRequest struct {

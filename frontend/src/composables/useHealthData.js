@@ -93,6 +93,7 @@ const familyMemberForm = reactive({ id: null, name: '', relation: '', gender: ''
 const rescheduleForm = reactive({ appointmentId: null, institutionId: null, slotId: null, date: '', period: '', note: '' })
 const invoiceForm = reactive({ appointmentId: null, invoiceTitle: '', invoiceTaxNo: '' })
 const packageForm = reactive({ id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' })
+const institutionForm = reactive({ id: null, name: '', address: '', phone: '', openHours: '', status: 'active' })
 const couponForm = reactive({ id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: null, status: 'active', startDate: '', endDate: '', description: '' })
 const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
 const reviewReplyForm = reactive({ id: null, reply: '', status: 'published' })
@@ -119,6 +120,7 @@ const loading = reactive({
   report: false,
   status: false,
   package: false,
+  institution: false,
   doctorProfile: false,
   profile: false,
   emailCode: false,
@@ -527,6 +529,10 @@ export function useHealthData() {
 
   async function loadPackagesPage(params = {}) {
     packages.value = await requestPage('/packages', paginations.packages, params)
+  }
+
+  async function loadInstitutions() {
+    institutions.value = await request('/institutions')
   }
 
   async function loadNotificationsPage(params = {}) {
@@ -1228,6 +1234,50 @@ export function useHealthData() {
     }
   }
 
+  function editInstitution(institution) {
+    Object.assign(institutionForm, {
+      id: institution?.id || null,
+      name: institution?.name || '',
+      address: institution?.address || '',
+      phone: institution?.phone || '',
+      openHours: institution?.openHours || '',
+      status: institution?.status || 'active',
+    })
+  }
+
+  async function saveInstitution() {
+    if (loading.institution) return
+    loading.institution = true
+    try {
+      const body = JSON.stringify({
+        name: institutionForm.name,
+        address: institutionForm.address,
+        phone: institutionForm.phone,
+        openHours: institutionForm.openHours,
+        status: institutionForm.status,
+      })
+      if (institutionForm.id) await request(`/institutions/${institutionForm.id}`, { method: 'PATCH', body })
+      else await request('/institutions', { method: 'POST', body })
+      ElMessage.success('体检机构已保存')
+      editInstitution(null)
+      await loadInstitutions()
+    } finally {
+      loading.institution = false
+    }
+  }
+
+  async function archiveInstitution(institution) {
+    if (loading.institution) return
+    loading.institution = true
+    try {
+      await request(`/institutions/${institution.id}`, { method: 'DELETE' })
+      ElMessage.success('体检机构已归档')
+      await loadInstitutions()
+    } finally {
+      loading.institution = false
+    }
+  }
+
   async function exportScheduleSlots(params = {}) {
     if (loading.exportScheduleSlots) return
     loading.exportScheduleSlots = true
@@ -1741,6 +1791,7 @@ export function useHealthData() {
     rescheduleForm,
     invoiceForm,
     packageForm,
+    institutionForm,
     couponForm,
     reviewForm,
     reviewReplyForm,
@@ -1784,6 +1835,7 @@ export function useHealthData() {
     loadSystemSettings,
     loadSupportInfo,
     loadPackagesPage,
+    loadInstitutions,
     loadNotificationsPage,
     loadSupportTicketsPage,
     loadAdminNotificationsPage,
@@ -1844,6 +1896,9 @@ export function useHealthData() {
     archiveScheduleSlot,
     exportScheduleSlots,
     importScheduleSlots,
+    editInstitution,
+    saveInstitution,
+    archiveInstitution,
     saveProfile,
     sendEmailCode,
     updateEmail,

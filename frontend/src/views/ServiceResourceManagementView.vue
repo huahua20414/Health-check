@@ -111,6 +111,46 @@
       />
     </div>
 
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>体检机构管理</h3>
+          <p>维护可预约院区、地址、联系方式和营业时间，号源排班会引用这些机构。</p>
+        </div>
+      </div>
+      <el-form label-position="top" class="form-grid spacious-form">
+        <el-form-item label="机构名称"><el-input v-model="institutionForm.name" /></el-form-item>
+        <el-form-item label="机构地址"><el-input v-model="institutionForm.address" /></el-form-item>
+        <el-form-item label="联系电话"><el-input v-model="institutionForm.phone" /></el-form-item>
+        <el-form-item label="开放时间"><el-input v-model="institutionForm.openHours" placeholder="如 08:00-17:00" /></el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="institutionForm.status">
+            <el-option label="启用" value="active" />
+            <el-option label="停用" value="disabled" />
+          </el-select>
+        </el-form-item>
+        <div class="actions">
+          <el-button type="primary" :loading="loading.institution" :disabled="!canSaveInstitution || !can('admin:resource:manage')" @click="submitInstitution">保存机构</el-button>
+          <el-button @click="editInstitution(null)">清空</el-button>
+        </div>
+      </el-form>
+      <el-table :data="institutions" stripe>
+        <el-table-column prop="name" label="机构" min-width="150" />
+        <el-table-column prop="address" label="地址" min-width="180" />
+        <el-table-column prop="phone" label="电话" width="140" />
+        <el-table-column prop="openHours" label="开放时间" width="140" />
+        <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button v-if="can('admin:resource:manage')" size="small" @click="editInstitution(row)">编辑</el-button>
+              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.institution" @click="archiveInstitution(row)">归档</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
     <div class="panel wide-table-panel">
       <div class="panel-head">
         <div>
@@ -216,6 +256,7 @@ const {
   packageItems,
   checkupItemForm,
   packageItemForm,
+  institutionForm,
   scheduleForm,
   paginations,
   loading,
@@ -234,6 +275,10 @@ const {
   exportPackageItems,
   importPackageItems,
   deletePackageItem,
+  loadInstitutions,
+  editInstitution,
+  saveInstitution,
+  archiveInstitution,
   editScheduleSlot,
   saveScheduleSlot,
   archiveScheduleSlot,
@@ -242,10 +287,12 @@ const {
 } = useHealthData()
 
 const activeDoctors = computed(() => users.value.filter((user) => user.role === 'doctor' && user.status === 'active'))
+const canSaveInstitution = computed(() => institutionForm.name && institutionForm.address)
 const canSaveSchedule = computed(() => scheduleForm.doctorId && scheduleForm.institutionId && scheduleForm.date && scheduleForm.period && scheduleForm.startTime)
 
 const submitCheckupItem = useDebouncedFn(saveCheckupItem, 350)
 const submitPackageItem = useDebouncedFn(savePackageItem, 350)
+const submitInstitution = useDebouncedFn(saveInstitution, 350)
 const submitSchedule = useDebouncedFn(saveScheduleSlot, 350)
 
 function reloadPackageItems() {
@@ -280,6 +327,7 @@ watch(() => [paginations.slots.page, paginations.slots.pageSize], () => loadSlot
 onMounted(() => {
   loadPackagesPage()
   loadUsersPage({ role: 'doctor', status: 'active' })
+  loadInstitutions()
   loadCheckupItemsPage()
   loadPackageItemsPage()
   loadSlotsPage()
