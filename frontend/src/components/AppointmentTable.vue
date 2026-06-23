@@ -28,7 +28,7 @@
     <el-table-column label="操作" width="250">
       <template #default="{ row }">
         <el-button size="small" @click="$emit('view-order', row)">查看订单</el-button>
-        <el-button v-if="isDoctor && canMarkDone" size="small" :loading="loading" :disabled="row.status === 'reported' || row.status === 'canceled'" @click="$emit('mark-done', row)">
+        <el-button v-if="isDoctor && canMarkDone" size="small" :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('mark-done', row)">
           完成体检
         </el-button>
         <template v-else>

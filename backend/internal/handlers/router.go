@@ -926,10 +926,25 @@ func (h *Handler) updateAppointmentStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment status"})
 		return
 	}
+	current := currentUser(c)
+	var appointment models.Appointment
+	if err := h.db.First(&appointment, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if current.Role == "doctor" && appointment.DoctorID != current.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "appointment does not belong to current doctor"})
+		return
+	}
+	if !canTransitionAppointmentStatus(appointment.Status, req.Status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment status transition"})
+		return
+	}
 	if err := h.db.Model(&models.Appointment{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "update_status", "appointment", strconv.Itoa(id), "success", appointment.Status+"->"+req.Status)
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": req.Status})
 }
 
@@ -2520,6 +2535,20 @@ func (h *Handler) createAppointmentNotifications(appointment models.Appointment,
 	h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: kind, Title: "短信模拟：" + title, Content: body, Status: "unread"})
 	if appointment.Status == "booked" {
 		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: "请携带有效证件，按预约时间到达体检机构。体检前一天建议清淡饮食，部分项目需空腹。", Status: "unread"})
+	}
+}
+
+func canTransitionAppointmentStatus(current, next string) bool {
+	if current == next {
+		return true
+	}
+	switch current {
+	case "booked":
+		return next == "checked"
+	case "checked", "reported", "canceled":
+		return false
+	default:
+		return false
 	}
 }
 
