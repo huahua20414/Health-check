@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"health-checkup/backend/internal/models"
 
@@ -113,6 +114,35 @@ func TestRescheduleAppointmentRejectsFullTargetSlot(t *testing.T) {
 	assertSlotBookedCount(t, db, fixture.newSlot.ID, 1)
 }
 
+func TestRescheduleAppointmentRejectsCutoffWindow(t *testing.T) {
+	handler, db, fixture := newRescheduleFixture(t)
+	if err := db.Model(&models.SystemSetting{}).Where("key = ?", "appointment.allow_reschedule_hours").Update("value", "24").Error; err != nil {
+		t.Fatalf("enable cutoff setting: %v", err)
+	}
+	soon := time.Now().Add(2 * time.Hour)
+	if err := db.Model(&models.Appointment{}).Where("id = ?", fixture.appointment.ID).Updates(map[string]any{
+		"date":       soon.Format("2006-01-02"),
+		"start_time": soon.Format("15:04"),
+	}).Error; err != nil {
+		t.Fatalf("move appointment near cutoff: %v", err)
+	}
+	router := newRescheduleTestRouter(handler, fixture.user)
+
+	response := performRescheduleRequest(t, router, fixture.appointment.ID, rescheduleRequest{
+		InstitutionID: fixture.institution.ID,
+		SlotID:        fixture.newSlot.ID,
+		Date:          fixture.newSlot.Date,
+		Period:        fixture.newSlot.Period,
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "appointment is too close to reschedule")
+	assertSlotBookedCount(t, db, fixture.oldSlot.ID, 1)
+	assertSlotBookedCount(t, db, fixture.newSlot.ID, 0)
+}
+
 type rescheduleFixture struct {
 	user        models.User
 	doctor      models.User
@@ -137,6 +167,7 @@ func newRescheduleFixture(t *testing.T) (*Handler, *gorm.DB, rescheduleFixture) 
 		&models.ScheduleSlot{},
 		&models.Appointment{},
 		&models.Notification{},
+		&models.SystemSetting{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -149,7 +180,8 @@ func newRescheduleFixture(t *testing.T) (*Handler, *gorm.DB, rescheduleFixture) 
 		newSlot:     models.ScheduleSlot{ID: 31, DoctorID: 300, InstitutionID: 10, Date: "2026-07-03", Period: "上午", Category: "年度综合", StartTime: "10:00", EndTime: "10:30", Capacity: 1, BookedCount: 0, Status: "available"},
 		appointment: models.Appointment{ID: 40, OrderNo: "HC202607010001", UserID: 100, DoctorID: 300, InstitutionID: 10, SlotID: 30, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked", PaymentStatus: "unpaid"},
 	}
-	for _, row := range []any{&fixture.user, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.oldSlot, &fixture.newSlot, &fixture.appointment} {
+	setting := models.SystemSetting{Key: "appointment.allow_reschedule_hours", Value: "0", ValueType: "number", Group: "appointment", Label: "改期截止小时数", Status: "active"}
+	for _, row := range []any{&fixture.user, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.oldSlot, &fixture.newSlot, &fixture.appointment, &setting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}

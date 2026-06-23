@@ -732,6 +732,10 @@ func (h *Handler) rescheduleAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only booked appointments can be rescheduled"})
 		return
 	}
+	if h.rescheduleCutoffReached(appointment) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "appointment is too close to reschedule"})
+		return
+	}
 	var pkg models.CheckupPackage
 	if err := h.db.First(&pkg, appointment.PackageID).Error; err != nil || pkg.Status != "active" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "package is unavailable"})
@@ -2568,6 +2572,37 @@ func canTransitionAppointmentStatus(current, next string) bool {
 	default:
 		return false
 	}
+}
+
+func (h *Handler) rescheduleCutoffReached(appointment models.Appointment) bool {
+	if appointment.Date == "" || appointment.StartTime == "" {
+		return false
+	}
+	cutoffHours := h.numericSetting("appointment.allow_reschedule_hours", 12)
+	if cutoffHours <= 0 {
+		return false
+	}
+	startAt, err := time.ParseInLocation("2006-01-02 15:04", appointment.Date+" "+appointment.StartTime, time.Local)
+	if err != nil {
+		return false
+	}
+	return time.Until(startAt) < time.Duration(cutoffHours)*time.Hour
+}
+
+func (h *Handler) numericSetting(key string, fallback float64) float64 {
+	settings, err := h.settingsByKeys(key)
+	if err != nil {
+		return fallback
+	}
+	value := strings.TrimSpace(settings[key])
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, bookedCount int) (models.ScheduleSlot, bool) {
