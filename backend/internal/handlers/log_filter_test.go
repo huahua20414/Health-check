@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +53,38 @@ func TestOperationLogsFilterByResourceAndKeyword(t *testing.T) {
 	}
 }
 
+func TestExportLoginLogsUsesFiltersAndAudits(t *testing.T) {
+	handler := newLogFilterFixture(t)
+	router := newLogFilterRouter(handler)
+
+	response := performLogFilterRequest(t, router, "/login-logs/export?status=blocked&keyword=10.0.0.9")
+
+	records := decodeLogCSV(t, response)
+	if len(records) != 2 {
+		t.Fatalf("expected header plus one login log, got %#v", records)
+	}
+	if records[1][2] != "blocked@example.com" || records[1][6] != "blocked" || records[1][7] != "too many attempts" {
+		t.Fatalf("export returned wrong login log row: %#v", records[1])
+	}
+	assertLogExportOperation(t, handler.db, "login_log", "1 login logs")
+}
+
+func TestExportOperationLogsUsesFiltersAndAudits(t *testing.T) {
+	handler := newLogFilterFixture(t)
+	router := newLogFilterRouter(handler)
+
+	response := performLogFilterRequest(t, router, "/operation-logs/export?resource=package&keyword=导入")
+
+	records := decodeLogCSV(t, response)
+	if len(records) != 2 {
+		t.Fatalf("expected header plus one operation log, got %#v", records)
+	}
+	if records[1][4] != "import" || records[1][5] != "package" || records[1][11] != "导入套餐 3 条" {
+		t.Fatalf("export returned wrong operation log row: %#v", records[1])
+	}
+	assertLogExportOperation(t, handler.db, "operation_log", "1 operation logs")
+}
+
 type mailLogPage struct {
 	Items []models.MailLog `json:"items"`
 	Total int64            `json:"total"`
@@ -95,9 +129,15 @@ func newLogFilterFixture(t *testing.T) *Handler {
 
 func newLogFilterRouter(handler *Handler) *gin.Engine {
 	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user", models.User{ID: 99, Name: "审计管理员", Role: "admin", Status: "active"})
+		c.Next()
+	})
 	router.GET("/mail-logs", handler.mailLogs)
 	router.GET("/login-logs", handler.loginLogs)
+	router.GET("/login-logs/export", handler.exportLoginLogs)
 	router.GET("/operation-logs", handler.operationLogs)
+	router.GET("/operation-logs/export", handler.exportOperationLogs)
 	return router
 }
 
@@ -143,4 +183,29 @@ func decodeOperationLogPage(t *testing.T, response *httptest.ResponseRecorder) o
 		t.Fatalf("decode operation log page: %v", err)
 	}
 	return payload
+}
+
+func decodeLogCSV(t *testing.T, response *httptest.ResponseRecorder) [][]string {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	records, err := csv.NewReader(strings.NewReader(response.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("decode log csv: %v", err)
+	}
+	return records
+}
+
+func assertLogExportOperation(t *testing.T, db *gorm.DB, resource, detail string) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).
+		Where("user_id = ? AND action = ? AND resource = ? AND status = ? AND detail = ?", 99, "export", resource, "success", detail).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count export operation log: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one %s export operation log, got %d", resource, count)
+	}
 }

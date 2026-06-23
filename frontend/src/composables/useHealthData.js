@@ -142,6 +142,8 @@ const loading = reactive({
   exportAppointments: false,
   exportSupportTickets: false,
   exportUsers: false,
+  exportLoginLogs: false,
+  exportOperationLogs: false,
   permission: false,
   systemSetting: false,
 })
@@ -1425,6 +1427,42 @@ export function useHealthData() {
     }
   }
 
+  async function exportLoginLogs(params = {}) {
+    if (loading.exportLoginLogs) return
+    loading.exportLoginLogs = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/login-logs/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'login-logs.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('登录日志 CSV 已导出')
+    } finally {
+      loading.exportLoginLogs = false
+    }
+  }
+
+  async function exportOperationLogs(params = {}) {
+    if (loading.exportOperationLogs) return
+    loading.exportOperationLogs = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/operation-logs/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'operation-logs.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('操作日志 CSV 已导出')
+    } finally {
+      loading.exportOperationLogs = false
+    }
+  }
+
   async function importPackages(file) {
     if (!file || loading.importPackages) return
     loading.importPackages = true
@@ -1694,6 +1732,8 @@ export function useHealthData() {
     exportAppointments,
     exportSupportTickets,
     exportUsers,
+    exportLoginLogs,
+    exportOperationLogs,
     importPackages,
     importCoupons,
     updateRolePermission,

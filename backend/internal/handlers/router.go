@@ -138,7 +138,9 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/users/:id/doctor-profile", handler.requireRoleAndPermission("admin:doctor:review", "admin"), handler.updateDoctorProfile)
 	protected.GET("/mail-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.mailLogs)
 	protected.GET("/login-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.loginLogs)
+	protected.GET("/login-logs/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportLoginLogs)
 	protected.GET("/operation-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.operationLogs)
+	protected.GET("/operation-logs/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportOperationLogs)
 	protected.GET("/role-permissions", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.rolePermissions)
 	protected.PATCH("/role-permissions/:id", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.updateRolePermission)
 	protected.GET("/system-settings", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.systemSettings)
@@ -1902,14 +1904,7 @@ func (h *Handler) mailLogs(c *gin.Context) {
 
 func (h *Handler) loginLogs(c *gin.Context) {
 	var logs []models.LoginLog
-	query := h.db.Model(&models.LoginLog{}).Order("created_at desc")
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		pattern := "%" + keyword + "%"
-		query = query.Where("email LIKE ? OR ip LIKE ? OR role LIKE ?", pattern, pattern, pattern)
-	}
+	query := h.loginLogQuery(c).Order("created_at desc")
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &logs)
 		return
@@ -1923,7 +1918,90 @@ func (h *Handler) loginLogs(c *gin.Context) {
 
 func (h *Handler) operationLogs(c *gin.Context) {
 	var logs []models.OperationLog
-	query := h.db.Model(&models.OperationLog{}).Order("created_at desc")
+	query := h.operationLogQuery(c).Order("created_at desc")
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &logs)
+		return
+	}
+	if err := query.Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
+func (h *Handler) exportLoginLogs(c *gin.Context) {
+	var logs []models.LoginLog
+	if err := h.loginLogQuery(c).Order("created_at desc").Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="login-logs.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "user_id", "email", "role", "ip", "user_agent", "status", "reason", "created_at"})
+	for _, log := range logs {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(log.ID)),
+			strconv.Itoa(int(log.UserID)),
+			log.Email,
+			log.Role,
+			log.IP,
+			log.UserAgent,
+			log.Status,
+			log.Reason,
+			log.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "login_log", "", "success", fmt.Sprintf("%d login logs", len(logs)))
+}
+
+func (h *Handler) exportOperationLogs(c *gin.Context) {
+	var logs []models.OperationLog
+	if err := h.operationLogQuery(c).Order("created_at desc").Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="operation-logs.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "user_id", "user_name", "role", "action", "resource", "resource_id", "method", "path", "ip", "status", "detail", "created_at"})
+	for _, log := range logs {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(log.ID)),
+			strconv.Itoa(int(log.UserID)),
+			log.UserName,
+			log.Role,
+			log.Action,
+			log.Resource,
+			log.ResourceID,
+			log.Method,
+			log.Path,
+			log.IP,
+			log.Status,
+			log.Detail,
+			log.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "operation_log", "", "success", fmt.Sprintf("%d operation logs", len(logs)))
+}
+
+func (h *Handler) loginLogQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.LoginLog{})
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("email LIKE ? OR ip LIKE ? OR role LIKE ?", pattern, pattern, pattern)
+	}
+	return query
+}
+
+func (h *Handler) operationLogQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.OperationLog{})
 	if action := c.Query("action"); action != "" {
 		query = query.Where("action = ?", action)
 	}
@@ -1934,15 +2012,7 @@ func (h *Handler) operationLogs(c *gin.Context) {
 		pattern := "%" + keyword + "%"
 		query = query.Where("user_name LIKE ? OR action LIKE ? OR resource LIKE ? OR detail LIKE ?", pattern, pattern, pattern, pattern)
 	}
-	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &logs)
-		return
-	}
-	if err := query.Find(&logs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, logs)
+	return query
 }
 
 func (h *Handler) myPermissions(c *gin.Context) {

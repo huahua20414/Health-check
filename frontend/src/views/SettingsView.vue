@@ -132,6 +132,13 @@
             <el-option label="拦截" value="blocked" />
           </el-select>
           <el-input v-model="loginLogKeyword" placeholder="搜索邮箱/IP/角色" clearable />
+          <el-button
+            :loading="loading.exportLoginLogs"
+            :disabled="!can('admin:data:exchange')"
+            @click="handleLoginLogExport"
+          >
+            导出登录日志
+          </el-button>
         </div>
       </div>
       <el-table :data="loginLogs" stripe>
@@ -172,6 +179,13 @@
             <el-option label="用户" value="user" />
           </el-select>
           <el-input v-model="operationKeyword" placeholder="搜索操作人/动作/详情" clearable />
+          <el-button
+            :loading="loading.exportOperationLogs"
+            :disabled="!can('admin:data:exchange')"
+            @click="handleOperationLogExport"
+          >
+            导出操作日志
+          </el-button>
         </div>
       </div>
       <el-table :data="operationLogs" stripe>
@@ -243,6 +257,8 @@ const {
   loadRolePermissions,
   loadSystemSettings,
   exportPackages,
+  exportLoginLogs,
+  exportOperationLogs,
   importPackages,
   updateRolePermission,
   updateSystemSetting,
@@ -276,6 +292,14 @@ function loadOperationLogPage(reset = false) {
   if (!isAdmin.value) return
   if (reset) paginations.operationLogs.page = 1
   return loadOperationLogsPage({ resource: operationResource.value, keyword: debouncedOperationKeyword.value })
+}
+
+function handleLoginLogExport() {
+  return exportLoginLogs({ status: loginLogStatus.value, keyword: debouncedLoginLogKeyword.value })
+}
+
+function handleOperationLogExport() {
+  return exportOperationLogs({ resource: operationResource.value, keyword: debouncedOperationKeyword.value })
 }
 
 watch(() => [paginations.mailLogs.page, paginations.mailLogs.pageSize], () => {
