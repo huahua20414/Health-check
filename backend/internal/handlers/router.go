@@ -95,6 +95,10 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
 	protected.GET("/notifications", handler.notifications)
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
+	protected.GET("/support-tickets", handler.requireRole("user"), handler.mySupportTickets)
+	protected.POST("/support-tickets", handler.requireRole("user"), handler.createSupportTicket)
+	protected.GET("/admin/support-tickets", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.supportTickets)
+	protected.PATCH("/admin/support-tickets/:id/reply", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.replySupportTicket)
 	protected.GET("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.adminNotifications)
 	protected.POST("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.createAdminNotification)
 	protected.POST("/admin/notifications/reminders", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.sendCheckupReminders)
@@ -1463,6 +1467,113 @@ func (h *Handler) markNotificationRead(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "read"})
+}
+
+func (h *Handler) mySupportTickets(c *gin.Context) {
+	current := currentUser(c)
+	var tickets []models.SupportTicket
+	query := h.db.Model(&models.SupportTicket{}).Where("user_id = ?", current.ID).Order("created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &tickets)
+		return
+	}
+	if err := query.Find(&tickets).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, tickets)
+}
+
+func (h *Handler) createSupportTicket(c *gin.Context) {
+	var req supportTicketRequest
+	if !bind(c, &req) {
+		return
+	}
+	subject := strings.TrimSpace(req.Subject)
+	content := strings.TrimSpace(req.Content)
+	if subject == "" || content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "support ticket subject and content are required"})
+		return
+	}
+	if len(subject) > 128 || len(content) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "support ticket is too long"})
+		return
+	}
+	current := currentUser(c)
+	ticket := models.SupportTicket{UserID: current.ID, Subject: subject, Content: content, Status: "open"}
+	if err := h.db.Create(&ticket).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "create", "support_ticket", strconv.Itoa(int(ticket.ID)), "success", subject)
+	c.JSON(http.StatusCreated, ticket)
+}
+
+func (h *Handler) supportTickets(c *gin.Context) {
+	var tickets []models.SupportTicket
+	query := h.db.Model(&models.SupportTicket{}).Preload("User").Order("support_tickets.created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("support_tickets.status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Joins("LEFT JOIN users support_users ON support_users.id = support_tickets.user_id").
+			Where("support_tickets.subject LIKE ? OR support_tickets.content LIKE ? OR support_users.name LIKE ? OR support_users.email LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &tickets)
+		return
+	}
+	if err := query.Find(&tickets).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, tickets)
+}
+
+func (h *Handler) replySupportTicket(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid support ticket id"})
+		return
+	}
+	var req supportTicketReplyRequest
+	if !bind(c, &req) {
+		return
+	}
+	reply := strings.TrimSpace(req.Reply)
+	status := normalizeStatus(req.Status, "replied")
+	if status != "open" && status != "replied" && status != "closed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid support ticket status"})
+		return
+	}
+	if status != "open" && reply == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "support ticket reply is required"})
+		return
+	}
+	if len(reply) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "support ticket reply is too long"})
+		return
+	}
+	result := h.db.Model(&models.SupportTicket{}).Where("id = ?", id).Updates(map[string]any{"reply": reply, "status": status})
+	if result.Error != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "support ticket not found"})
+		return
+	}
+	var ticket models.SupportTicket
+	h.db.Preload("User").First(&ticket, id)
+	if ticket.UserID != 0 && reply != "" && h.inAppNotificationsEnabled() {
+		h.db.Create(&models.Notification{UserID: ticket.UserID, Channel: "in_app", Type: "support_ticket_reply", Title: "客服已回复", Content: fmt.Sprintf("您的咨询“%s”已回复：%s", ticket.Subject, reply), Status: "unread"})
+	}
+	h.recordOperation(c, "reply", "support_ticket", strconv.Itoa(id), "success", status)
+	c.JSON(http.StatusOK, ticket)
 }
 
 func (h *Handler) adminNotifications(c *gin.Context) {
@@ -3042,6 +3153,16 @@ type paymentStatusRequest struct {
 type invoiceRequest struct {
 	InvoiceTitle string `json:"invoiceTitle"`
 	InvoiceTaxNo string `json:"invoiceTaxNo"`
+}
+
+type supportTicketRequest struct {
+	Subject string `json:"subject" binding:"required"`
+	Content string `json:"content" binding:"required"`
+}
+
+type supportTicketReplyRequest struct {
+	Reply  string `json:"reply"`
+	Status string `json:"status"`
 }
 
 type profileRequest struct {

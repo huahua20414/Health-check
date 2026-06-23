@@ -35,6 +35,8 @@ const popularPackages = ref([])
 const recommendedPackages = ref([])
 const notifications = ref([])
 const adminNotifications = ref([])
+const supportTickets = ref([])
+const adminSupportTickets = ref([])
 const loginLogs = ref([])
 const operationLogs = ref([])
 const rolePermissions = ref([])
@@ -61,6 +63,8 @@ const paginations = reactive({
   packages: { page: 1, pageSize: 10, total: 0 },
   notifications: { page: 1, pageSize: 10, total: 0 },
   adminNotifications: { page: 1, pageSize: 10, total: 0 },
+  supportTickets: { page: 1, pageSize: 10, total: 0 },
+  adminSupportTickets: { page: 1, pageSize: 10, total: 0 },
   coupons: { page: 1, pageSize: 10, total: 0 },
   reviews: { page: 1, pageSize: 10, total: 0 },
   announcements: { page: 1, pageSize: 10, total: 0 },
@@ -94,6 +98,8 @@ const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
 const reviewReplyForm = reactive({ id: null, reply: '', status: 'published' })
 const announcementForm = reactive({ id: null, title: '', content: '', audience: 'all', status: 'draft' })
 const notificationForm = reactive({ userId: null, role: 'user', channel: 'in_app', type: 'admin_notice', title: '', content: '' })
+const supportTicketForm = reactive({ subject: '', content: '' })
+const supportTicketReplyForm = reactive({ id: null, reply: '', status: 'replied' })
 const reminderForm = reactive({ date: nextDateString() })
 const checkupItemForm = reactive({ id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' })
 const packageItemForm = reactive({ packageId: null, itemId: null, sortOrder: 0, required: true })
@@ -139,11 +145,11 @@ const loading = reactive({
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', deleted: '已归档', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', deleted: '已归档', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读', open: '待处理', replied: '已回复', closed: '已关闭' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', deleted: 'info', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', deleted: 'info', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info', open: 'warning', replied: 'success', closed: 'info' }[status] || 'info'
 }
 
 export function paymentStatusText(status) {
@@ -438,6 +444,7 @@ export function useHealthData() {
         familyMembers.value = await request('/family-members')
         favorites.value = await request('/package-favorites')
         browseHistories.value = await request('/package-browses')
+        supportTickets.value = await request('/support-tickets')
       }
       notifications.value = await request('/notifications')
       if (isDoctor.value || isAdmin.value) users.value = await request('/users')
@@ -512,9 +519,18 @@ export function useHealthData() {
     notifications.value = await requestPage('/notifications', paginations.notifications, params)
   }
 
+  async function loadSupportTicketsPage(params = {}) {
+    supportTickets.value = await requestPage('/support-tickets', paginations.supportTickets, params)
+  }
+
   async function loadAdminNotificationsPage(params = {}) {
     if (!isAdmin.value) return
     adminNotifications.value = await requestPage('/admin/notifications', paginations.adminNotifications, params)
+  }
+
+  async function loadAdminSupportTicketsPage(params = {}) {
+    if (!isAdmin.value) return
+    adminSupportTickets.value = await requestPage('/admin/support-tickets', paginations.adminSupportTickets, params)
   }
 
   async function loadCouponsPage(params = {}) {
@@ -917,6 +933,53 @@ export function useHealthData() {
       await request(`/admin/notifications/${notification.id}`, { method: 'DELETE' })
       ElMessage.success('通知已归档')
       await loadAdminNotificationsPage()
+    } finally {
+      loading.adminNotification = false
+    }
+  }
+
+  async function createSupportTicket() {
+    if (loading.notification) return
+    loading.notification = true
+    try {
+      await request('/support-tickets', {
+        method: 'POST',
+        body: JSON.stringify({
+          subject: supportTicketForm.subject,
+          content: supportTicketForm.content,
+        }),
+      })
+      supportTicketForm.subject = ''
+      supportTicketForm.content = ''
+      ElMessage.success('咨询已提交')
+      await loadSupportTicketsPage()
+    } finally {
+      loading.notification = false
+    }
+  }
+
+  function editSupportTicketReply(ticket) {
+    Object.assign(supportTicketReplyForm, {
+      id: ticket?.id || null,
+      reply: ticket?.reply || '',
+      status: ticket?.status === 'closed' ? 'closed' : 'replied',
+    })
+  }
+
+  async function saveSupportTicketReply() {
+    if (!supportTicketReplyForm.id || loading.adminNotification) return
+    loading.adminNotification = true
+    try {
+      await request(`/admin/support-tickets/${supportTicketReplyForm.id}/reply`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          reply: supportTicketReplyForm.reply,
+          status: supportTicketReplyForm.status,
+        }),
+      })
+      ElMessage.success('客服工单已处理')
+      editSupportTicketReply(null)
+      await loadAdminSupportTicketsPage()
     } finally {
       loading.adminNotification = false
     }
@@ -1380,6 +1443,8 @@ export function useHealthData() {
     recommendedPackages,
     notifications,
     adminNotifications,
+    supportTickets,
+    adminSupportTickets,
     coupons,
     activeCoupons,
     reviews,
@@ -1403,6 +1468,8 @@ export function useHealthData() {
     reviewReplyForm,
     announcementForm,
     notificationForm,
+    supportTicketForm,
+    supportTicketReplyForm,
     reminderForm,
     checkupItemForm,
     packageItemForm,
@@ -1440,7 +1507,9 @@ export function useHealthData() {
     loadSupportInfo,
     loadPackagesPage,
     loadNotificationsPage,
+    loadSupportTicketsPage,
     loadAdminNotificationsPage,
+    loadAdminSupportTicketsPage,
     loadCouponsPage,
     loadReviewsPage,
     loadAnnouncementsPage,
@@ -1476,6 +1545,9 @@ export function useHealthData() {
     sendAdminNotification,
     sendCheckupReminders,
     archiveAdminNotification,
+    createSupportTicket,
+    editSupportTicketReply,
+    saveSupportTicketReply,
     editCheckupItem,
     saveCheckupItem,
     archiveCheckupItem,

@@ -105,6 +105,7 @@ func Run(db *gorm.DB) error {
 func reset(db *gorm.DB) error {
 	for _, model := range []any{
 		&models.SystemAnnouncement{},
+		&models.SupportTicket{},
 		&models.SystemSetting{},
 		&models.Notification{},
 		&models.ServiceReview{},

@@ -238,6 +238,48 @@
         :page-sizes="[10, 20, 50]"
       />
     </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>客服工单</h3>
+          <p>处理用户在线咨询并将回复同步到用户消息。</p>
+        </div>
+        <div class="filter-bar">
+          <el-select v-model="supportTicketStatusFilter" placeholder="状态" clearable>
+            <el-option label="待处理" value="open" />
+            <el-option label="已回复" value="replied" />
+            <el-option label="已关闭" value="closed" />
+          </el-select>
+          <el-input v-model="supportTicketKeyword" placeholder="搜索主题/内容/用户" clearable />
+        </div>
+      </div>
+      <el-table :data="adminSupportTickets" stripe>
+        <el-table-column label="用户" width="140"><template #default="{ row }">{{ row.user?.name || row.userId }}</template></el-table-column>
+        <el-table-column prop="subject" label="主题" min-width="140" />
+        <el-table-column prop="content" label="内容" min-width="180" />
+        <el-table-column prop="reply" label="回复" min-width="180" />
+        <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:operation:manage')" size="small" @click="editSupportTicketReply(row)">处理</el-button></template></el-table-column>
+      </el-table>
+      <div class="review-reply-box">
+        <el-input v-model="supportTicketReplyForm.reply" type="textarea" :rows="3" placeholder="选择工单后填写客服回复" />
+        <el-select v-model="supportTicketReplyForm.status">
+          <el-option label="已回复" value="replied" />
+          <el-option label="已关闭" value="closed" />
+        </el-select>
+        <el-button type="primary" :disabled="!supportTicketReplyForm.id || !supportTicketReplyForm.reply || !can('admin:operation:manage')" :loading="loading.adminNotification" @click="saveSupportTicketReply">保存回复</el-button>
+      </div>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.adminSupportTickets.total"
+        v-model:current-page="paginations.adminSupportTickets.page"
+        v-model:page-size="paginations.adminSupportTickets.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
+    </div>
   </section>
 </template>
 
@@ -254,10 +296,12 @@ const {
   reviews,
   announcements,
   adminNotifications,
+  adminSupportTickets,
   couponForm,
   reviewReplyForm,
   announcementForm,
   notificationForm,
+  supportTicketReplyForm,
   reminderForm,
   loading,
   can,
@@ -268,6 +312,7 @@ const {
   loadReviewsPage,
   loadAnnouncementsPage,
   loadAdminNotificationsPage,
+  loadAdminSupportTicketsPage,
   exportAppointments,
   editCoupon,
   saveCoupon,
@@ -281,6 +326,8 @@ const {
   sendAdminNotification,
   sendCheckupReminders,
   archiveAdminNotification,
+  editSupportTicketReply,
+  saveSupportTicketReply,
 } = useHealthData()
 
 const notificationStatusFilter = ref('')
@@ -288,8 +335,11 @@ const notificationChannelFilter = ref('')
 const notificationKeyword = ref('')
 const appointmentExportStatus = ref('')
 const appointmentExportKeyword = ref('')
+const supportTicketStatusFilter = ref('')
+const supportTicketKeyword = ref('')
 const debouncedNotificationKeyword = useDebouncedRef(notificationKeyword, 350)
 const debouncedAppointmentExportKeyword = useDebouncedRef(appointmentExportKeyword, 350)
+const debouncedSupportTicketKeyword = useDebouncedRef(supportTicketKeyword, 350)
 
 function loadNotificationPage(reset = false) {
   if (reset) paginations.adminNotifications.page = 1
@@ -307,8 +357,18 @@ function handleAppointmentExport() {
   })
 }
 
+function loadSupportTicketPage(reset = false) {
+  if (reset) paginations.adminSupportTickets.page = 1
+  return loadAdminSupportTicketsPage({
+    status: supportTicketStatusFilter.value,
+    keyword: debouncedSupportTicketKeyword.value,
+  })
+}
+
 watch([notificationStatusFilter, notificationChannelFilter, debouncedNotificationKeyword], () => loadNotificationPage(true))
 watch(() => [paginations.adminNotifications.page, paginations.adminNotifications.pageSize], () => loadNotificationPage())
+watch([supportTicketStatusFilter, debouncedSupportTicketKeyword], () => loadSupportTicketPage(true))
+watch(() => [paginations.adminSupportTickets.page, paginations.adminSupportTickets.pageSize], () => loadSupportTicketPage())
 
 onMounted(() => {
   loadPackagesPage()
@@ -317,5 +377,6 @@ onMounted(() => {
   loadReviewsPage()
   loadAnnouncementsPage()
   loadNotificationPage()
+  loadSupportTicketPage()
 })
 </script>

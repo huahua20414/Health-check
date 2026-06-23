@@ -201,6 +201,18 @@ type SystemAnnouncement struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
+type SupportTicket struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	UserID    uint      `json:"userId" gorm:"not null;index"`
+	Subject   string    `json:"subject" gorm:"size:128;not null"`
+	Content   string    `json:"content" gorm:"type:text;not null"`
+	Reply     string    `json:"reply" gorm:"type:text"`
+	Status    string    `json:"status" gorm:"size:24;not null;default:'open';index"`
+	User      User      `json:"user"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 type SystemSetting struct {
 	ID          uint      `json:"id" gorm:"primaryKey"`
 	Key         string    `json:"key" gorm:"size:64;not null;uniqueIndex"`
