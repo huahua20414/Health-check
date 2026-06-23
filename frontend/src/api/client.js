@@ -28,11 +28,16 @@ export async function request(path, options = {}) {
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }))
-    throw new Error(error.error || response.statusText)
+    const error = await response.json().catch(() => ({ message: response.statusText }))
+    throw new Error(error.message || error.error || response.statusText)
   }
 
-  return response.json()
+  const result = await response.json()
+  if (result && typeof result === 'object' && 'code' in result && 'data' in result) {
+    if (result.code !== 0) throw new Error(result.message || response.statusText)
+    return result.data
+  }
+  return result
 }
 
 export async function requestBlob(path, options = {}) {
@@ -47,8 +52,8 @@ export async function requestBlob(path, options = {}) {
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }))
-    throw new Error(error.error || response.statusText)
+    const error = await response.json().catch(() => ({ message: response.statusText }))
+    throw new Error(error.message || error.error || response.statusText)
   }
 
   return response.blob()
