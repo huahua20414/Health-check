@@ -1,5 +1,15 @@
 <template>
   <section class="view">
+    <div class="panel compact-toolbar">
+      <div class="panel-head">
+        <div>
+          <h3>数据大屏</h3>
+          <p>{{ dashboardRange.appointmentStartDate }} 至 {{ dashboardRange.appointmentEndDate }} 的预约趋势。</p>
+        </div>
+        <el-segmented v-model="daysFilter" :options="rangeOptions" @change="refreshDashboard" />
+      </div>
+    </div>
+
     <div class="metric-grid">
       <div class="metric-card">
         <span>用户数</span>
@@ -78,11 +88,19 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useHealthData } from '../composables/useHealthData'
 
 const { adminDashboard, loadAdminDashboard } = useHealthData()
+const daysFilter = ref(14)
+const rangeOptions = [
+  { label: '7 天', value: 7 },
+  { label: '14 天', value: 14 },
+  { label: '30 天', value: 30 },
+  { label: '90 天', value: 90 },
+]
 const summary = computed(() => adminDashboard.value.summary || {})
+const dashboardRange = computed(() => adminDashboard.value.range || { appointmentStartDate: '-', appointmentEndDate: '-' })
 const maxTrend = computed(() => Math.max(1, ...adminDashboard.value.appointmentTrend.map((item) => item.count || 0)))
 const maxGrowth = computed(() => Math.max(1, ...adminDashboard.value.userGrowth.map((item) => item.count || 0)))
 
@@ -90,5 +108,9 @@ function barWidth(value, max) {
   return Math.max(6, Math.round((Number(value || 0) / Number(max.value || 1)) * 100))
 }
 
-onMounted(loadAdminDashboard)
+function refreshDashboard() {
+  return loadAdminDashboard({ days: daysFilter.value })
+}
+
+onMounted(refreshDashboard)
 </script>

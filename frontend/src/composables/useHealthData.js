@@ -487,9 +487,10 @@ export function useHealthData() {
     announcements.value = await requestPage('/announcements', paginations.announcements, params)
   }
 
-  async function loadAdminDashboard() {
+  async function loadAdminDashboard(params = {}) {
     if (!isAdmin.value) return
-    adminDashboard.value = await request('/admin/dashboard')
+    const query = toQuery(params)
+    adminDashboard.value = await request(`/admin/dashboard${query ? `?${query}` : ''}`)
   }
 
   async function loadCheckupItemsPage(params = {}) {

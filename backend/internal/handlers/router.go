@@ -1581,6 +1581,12 @@ func (h *Handler) updateSystemSetting(c *gin.Context) {
 }
 
 func (h *Handler) adminDashboard(c *gin.Context) {
+	days := dashboardDays(c)
+	today := time.Now()
+	appointmentStartDate := today.Format("2006-01-02")
+	appointmentEndDate := today.AddDate(0, 0, days-1).Format("2006-01-02")
+	growthStartDate := today.AddDate(0, 0, -days+1).Format("2006-01-02")
+	growthStartTime := today.AddDate(0, 0, -days+1).Truncate(24 * time.Hour)
 	var userCount, doctorCount, appointmentCount, reportCount, reviewCount int64
 	h.db.Model(&models.User{}).Where("role = ?", "user").Count(&userCount)
 	h.db.Model(&models.User{}).Where("role = ?", "doctor").Count(&doctorCount)
@@ -1596,15 +1602,15 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 	var appointmentTrend []row
 	h.db.Model(&models.Appointment{}).
 		Select("date AS label, COUNT(*) AS count").
+		Where("date BETWEEN ? AND ?", appointmentStartDate, appointmentEndDate).
 		Group("date").
 		Order("date asc").
-		Limit(14).
 		Scan(&appointmentTrend)
 	var packageSales []row
 	h.db.Model(&models.Appointment{}).
 		Select("checkup_packages.name AS label, COUNT(appointments.id) AS count, SUM(checkup_packages.price) AS total").
 		Joins("LEFT JOIN checkup_packages ON checkup_packages.id = appointments.package_id").
-		Where("appointments.status <> ?", "canceled").
+		Where("appointments.status <> ? AND appointments.date BETWEEN ? AND ?", "canceled", appointmentStartDate, appointmentEndDate).
 		Group("checkup_packages.id, checkup_packages.name").
 		Order("count desc").
 		Limit(10).
@@ -1612,10 +1618,9 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 	var userGrowth []row
 	h.db.Model(&models.User{}).
 		Select("DATE(created_at) AS label, COUNT(*) AS count").
-		Where("role = ?", "user").
+		Where("role = ? AND created_at >= ?", "user", growthStartTime).
 		Group("DATE(created_at)").
 		Order("label asc").
-		Limit(14).
 		Scan(&userGrowth)
 	var averageRating struct {
 		Average float64 `json:"average"`
@@ -1629,6 +1634,13 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 			"reports":       reportCount,
 			"reviews":       reviewCount,
 			"averageRating": averageRating.Average,
+		},
+		"range": gin.H{
+			"days":                 days,
+			"appointmentStartDate": appointmentStartDate,
+			"appointmentEndDate":   appointmentEndDate,
+			"growthStartDate":      growthStartDate,
+			"growthEndDate":        appointmentStartDate,
 		},
 		"appointmentTrend": appointmentTrend,
 		"packageSales":     packageSales,
@@ -2897,6 +2909,20 @@ func paginationParams(c *gin.Context) (int, int, bool) {
 		pageSize = 100
 	}
 	return page, pageSize, true
+}
+
+func dashboardDays(c *gin.Context) int {
+	days, err := strconv.Atoi(c.DefaultQuery("days", "14"))
+	if err != nil {
+		return 14
+	}
+	if days < 7 {
+		return 7
+	}
+	if days > 90 {
+		return 90
+	}
+	return days
 }
 
 func respondPaginated[T any](c *gin.Context, query *gorm.DB, page, pageSize int, dest *[]T) {
