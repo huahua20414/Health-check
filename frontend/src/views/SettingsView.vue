@@ -91,6 +91,13 @@
           <h3>邮件发送记录</h3>
           <p>预约成功、候补递补、报告生成都会记录邮件发送结果。</p>
         </div>
+        <div class="filter-bar log-filter-bar">
+          <el-select v-model="mailLogStatus" placeholder="状态" clearable>
+            <el-option label="已发送" value="sent" />
+            <el-option label="失败" value="failed" />
+          </el-select>
+          <el-input v-model="mailLogKeyword" placeholder="搜索收件人/主题/错误" clearable />
+        </div>
       </div>
       <el-table :data="mailLogs" stripe>
         <el-table-column prop="to" label="收件人" width="190" />
@@ -117,6 +124,14 @@
         <div>
           <h3>登录日志</h3>
           <p>记录成功、失败和被拦截的登录行为，用于排查账号和安全问题。</p>
+        </div>
+        <div class="filter-bar log-filter-bar">
+          <el-select v-model="loginLogStatus" placeholder="状态" clearable>
+            <el-option label="成功" value="success" />
+            <el-option label="失败" value="failed" />
+            <el-option label="拦截" value="blocked" />
+          </el-select>
+          <el-input v-model="loginLogKeyword" placeholder="搜索邮箱/IP/角色" clearable />
         </div>
       </div>
       <el-table :data="loginLogs" stripe>
@@ -146,6 +161,17 @@
         <div>
           <h3>操作日志</h3>
           <p>记录管理员对套餐、排班、公告、人员等核心资源的变更。</p>
+        </div>
+        <div class="filter-bar log-filter-bar">
+          <el-select v-model="operationResource" placeholder="资源" clearable>
+            <el-option label="套餐" value="package" />
+            <el-option label="排班" value="schedule_slot" />
+            <el-option label="通知" value="notification" />
+            <el-option label="公告" value="announcement" />
+            <el-option label="系统设置" value="system_setting" />
+            <el-option label="用户" value="user" />
+          </el-select>
+          <el-input v-model="operationKeyword" placeholder="搜索操作人/动作/详情" clearable />
         </div>
       </div>
       <el-table :data="operationLogs" stripe>
@@ -196,9 +222,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Connection, DataAnalysis, Lock } from '@element-plus/icons-vue'
 import { useHealthData } from '../composables/useHealthData'
+import { useDebouncedRef } from '../composables/useDebouncedRef'
 
 const {
   isAdmin,
@@ -223,16 +250,46 @@ const {
 
 const faqDraft = reactive([])
 const faqSetting = computed(() => systemSettings.value.find((item) => item.key === 'service.faq'))
+const mailLogStatus = ref('')
+const mailLogKeyword = ref('')
+const loginLogStatus = ref('')
+const loginLogKeyword = ref('')
+const operationResource = ref('')
+const operationKeyword = ref('')
+const debouncedMailLogKeyword = useDebouncedRef(mailLogKeyword, 350)
+const debouncedLoginLogKeyword = useDebouncedRef(loginLogKeyword, 350)
+const debouncedOperationKeyword = useDebouncedRef(operationKeyword, 350)
+
+function loadMailLogPage(reset = false) {
+  if (!isAdmin.value) return
+  if (reset) paginations.mailLogs.page = 1
+  return loadMailLogsPage({ status: mailLogStatus.value, keyword: debouncedMailLogKeyword.value })
+}
+
+function loadLoginLogPage(reset = false) {
+  if (!isAdmin.value) return
+  if (reset) paginations.loginLogs.page = 1
+  return loadLoginLogsPage({ status: loginLogStatus.value, keyword: debouncedLoginLogKeyword.value })
+}
+
+function loadOperationLogPage(reset = false) {
+  if (!isAdmin.value) return
+  if (reset) paginations.operationLogs.page = 1
+  return loadOperationLogsPage({ resource: operationResource.value, keyword: debouncedOperationKeyword.value })
+}
 
 watch(() => [paginations.mailLogs.page, paginations.mailLogs.pageSize], () => {
-  if (isAdmin.value) loadMailLogsPage()
+  loadMailLogPage()
 })
 watch(() => [paginations.loginLogs.page, paginations.loginLogs.pageSize], () => {
-  if (isAdmin.value) loadLoginLogsPage()
+  loadLoginLogPage()
 })
 watch(() => [paginations.operationLogs.page, paginations.operationLogs.pageSize], () => {
-  if (isAdmin.value) loadOperationLogsPage()
+  loadOperationLogPage()
 })
+watch([mailLogStatus, debouncedMailLogKeyword], () => loadMailLogPage(true))
+watch([loginLogStatus, debouncedLoginLogKeyword], () => loadLoginLogPage(true))
+watch([operationResource, debouncedOperationKeyword], () => loadOperationLogPage(true))
 
 function loginStatusText(status) {
   return { success: '成功', failed: '失败', blocked: '拦截' }[status] || status
@@ -291,9 +348,9 @@ watch(faqSetting, (setting) => syncFAQDraft(setting), { immediate: true })
 
 onMounted(() => {
   if (!isAdmin.value) return
-  loadMailLogsPage()
-  loadLoginLogsPage()
-  loadOperationLogsPage()
+  loadMailLogPage()
+  loadLoginLogPage()
+  loadOperationLogPage()
   loadRolePermissions()
   loadSystemSettings()
 })

@@ -1550,6 +1550,13 @@ func (h *Handler) archiveAdminNotification(c *gin.Context) {
 func (h *Handler) mailLogs(c *gin.Context) {
 	var logs []models.MailLog
 	query := h.db.Model(&models.MailLog{}).Order("created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("`to` LIKE ? OR subject LIKE ? OR error LIKE ?", pattern, pattern, pattern)
+	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &logs)
 		return

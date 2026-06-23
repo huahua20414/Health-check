@@ -871,6 +871,10 @@ textarea {
   grid-template-columns: 120px 120px minmax(180px, 1fr);
 }
 
+.log-filter-bar {
+  min-width: 28rem;
+}
+
 .notification-toolbar {
   margin-bottom: 1rem;
   display: flex;
@@ -1532,6 +1536,10 @@ code {
   .people-filter-bar {
     min-width: 0;
     grid-template-columns: 1fr;
+  }
+
+  .log-filter-bar {
+    min-width: 0;
   }
 
   .faq-editor-row {
