@@ -3,6 +3,33 @@
     <div class="panel">
       <div class="panel-head">
         <div>
+          <h3>预约数据导出</h3>
+          <p>按状态、客户、套餐或订单号导出预约 CSV，用于运营对账和线下交接。</p>
+        </div>
+      </div>
+      <div class="filter-bar export-filter-bar">
+        <el-select v-model="appointmentExportStatus" placeholder="预约状态" clearable>
+          <el-option label="已预约" value="booked" />
+          <el-option label="已体检" value="checked" />
+          <el-option label="已出报告" value="reported" />
+          <el-option label="已取消" value="cancelled" />
+          <el-option label="候补" value="waitlisted" />
+        </el-select>
+        <el-input v-model="appointmentExportKeyword" placeholder="搜索客户/套餐/订单号/日期" clearable />
+        <el-button
+          type="primary"
+          :loading="loading.exportAppointments"
+          :disabled="!can('admin:data:exchange')"
+          @click="handleAppointmentExport"
+        >
+          导出预约 CSV
+        </el-button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
           <h3>优惠券管理</h3>
           <p>用于活动价、满减和特定套餐促销。</p>
         </div>
@@ -226,6 +253,7 @@ const {
   loadReviewsPage,
   loadAnnouncementsPage,
   loadAdminNotificationsPage,
+  exportAppointments,
   editCoupon,
   saveCoupon,
   archiveCoupon,
@@ -242,7 +270,10 @@ const {
 const notificationStatusFilter = ref('')
 const notificationChannelFilter = ref('')
 const notificationKeyword = ref('')
+const appointmentExportStatus = ref('')
+const appointmentExportKeyword = ref('')
 const debouncedNotificationKeyword = useDebouncedRef(notificationKeyword, 350)
+const debouncedAppointmentExportKeyword = useDebouncedRef(appointmentExportKeyword, 350)
 
 function loadNotificationPage(reset = false) {
   if (reset) paginations.adminNotifications.page = 1
@@ -250,6 +281,13 @@ function loadNotificationPage(reset = false) {
     status: notificationStatusFilter.value,
     channel: notificationChannelFilter.value,
     keyword: debouncedNotificationKeyword.value,
+  })
+}
+
+function handleAppointmentExport() {
+  return exportAppointments({
+    status: appointmentExportStatus.value,
+    keyword: debouncedAppointmentExportKeyword.value,
   })
 }
 
