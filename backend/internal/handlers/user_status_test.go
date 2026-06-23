@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"health-checkup/backend/internal/models"
@@ -68,6 +70,22 @@ func TestAdminCanReactivateDisabledUser(t *testing.T) {
 	assertUserStatus(t, db, fixture.disabledUser.ID, "active")
 }
 
+func TestAdminExportUsersUsesFiltersAndAudits(t *testing.T) {
+	handler, db, fixture := newUserStatusFixture(t)
+	router := newUserStatusRouter(handler, fixture.admin)
+
+	response := performUserStatusRequest(t, router, http.MethodGet, "/users/export?role=admin&status=active&keyword=管理员乙")
+
+	records := decodeUserCSV(t, response)
+	if len(records) != 2 {
+		t.Fatalf("expected header plus one user, got %#v", records)
+	}
+	if records[1][0] != strconv.Itoa(int(fixture.otherAdmin.ID)) || records[1][1] != fixture.otherAdmin.Name || records[1][4] != "admin" {
+		t.Fatalf("export returned wrong user row: %#v", records[1])
+	}
+	assertUserOperationLogCount(t, db, fixture.admin.ID, "export", "user", 1)
+}
+
 type userStatusFixture struct {
 	admin        models.User
 	otherAdmin   models.User
@@ -103,8 +121,17 @@ func newUserStatusRouter(handler *Handler, current models.User) *gin.Engine {
 		c.Set("user", current)
 		c.Next()
 	})
+	router.GET("/users/export", handler.exportUsers)
 	router.PATCH("/users/:id/status", handler.updateUserStatus)
 	return router
+}
+
+func performUserStatusRequest(t *testing.T, router *gin.Engine, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
 }
 
 func performUserStatusPatch(t *testing.T, router *gin.Engine, id uint, body statusRequest) *httptest.ResponseRecorder {
@@ -120,6 +147,19 @@ func performUserStatusPatch(t *testing.T, router *gin.Engine, id uint, body stat
 	return rec
 }
 
+func decodeUserCSV(t *testing.T, response *httptest.ResponseRecorder) [][]string {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	reader := csv.NewReader(strings.NewReader(response.Body.String()))
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("decode user csv: %v", err)
+	}
+	return records
+}
+
 func assertUserStatus(t *testing.T, db *gorm.DB, id uint, want string) {
 	t.Helper()
 	var user models.User
@@ -128,5 +168,16 @@ func assertUserStatus(t *testing.T, db *gorm.DB, id uint, want string) {
 	}
 	if user.Status != want {
 		t.Fatalf("expected user %d status %s, got %s", id, want, user.Status)
+	}
+}
+
+func assertUserOperationLogCount(t *testing.T, db *gorm.DB, userID uint, action, resource string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).Where("user_id = ? AND action = ? AND resource = ?", userID, action, resource).Count(&count).Error; err != nil {
+		t.Fatalf("count operation logs: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected %d %s/%s operation logs, got %d", want, action, resource, count)
 	}
 }

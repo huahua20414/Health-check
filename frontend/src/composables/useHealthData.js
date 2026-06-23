@@ -139,6 +139,7 @@ const loading = reactive({
   exportPackages: false,
   exportAppointments: false,
   exportSupportTickets: false,
+  exportUsers: false,
   permission: false,
   systemSetting: false,
 })
@@ -1370,6 +1371,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportUsers(params = {}) {
+    if (loading.exportUsers) return
+    loading.exportUsers = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/users/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'users.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('人员档案 CSV 已导出')
+    } finally {
+      loading.exportUsers = false
+    }
+  }
+
   async function importPackages(file) {
     if (!file || loading.importPackages) return
     loading.importPackages = true
@@ -1621,6 +1640,7 @@ export function useHealthData() {
     exportPackages,
     exportAppointments,
     exportSupportTickets,
+    exportUsers,
     importPackages,
     updateRolePermission,
     updateSystemSetting,

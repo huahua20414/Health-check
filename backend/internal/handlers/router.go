@@ -130,6 +130,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.POST("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.upsertPackageItem)
 	protected.DELETE("/package-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.deletePackageItem)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
+	protected.GET("/users/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportUsers)
 	protected.PATCH("/users/:id/status", handler.requireRoleAndPermission("admin:user:manage", "admin"), handler.updateUserStatus)
 	protected.PATCH("/users/:id/doctor-profile", handler.requireRoleAndPermission("admin:doctor:review", "admin"), handler.updateDoctorProfile)
 	protected.GET("/mail-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.mailLogs)
@@ -2557,7 +2558,20 @@ func (h *Handler) deletePackageItem(c *gin.Context) {
 
 func (h *Handler) users(c *gin.Context) {
 	var users []models.User
-	query := h.db.Model(&models.User{}).Order("created_at desc")
+	query := h.userQuery(c).Order("created_at desc")
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &users)
+		return
+	}
+	if err := query.Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}
+
+func (h *Handler) userQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.User{})
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", role)
 	}
@@ -2568,15 +2582,38 @@ func (h *Handler) users(c *gin.Context) {
 		pattern := "%" + keyword + "%"
 		query = query.Where("name LIKE ? OR email LIKE ? OR employee_no LIKE ? OR department LIKE ?", pattern, pattern, pattern, pattern)
 	}
-	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &users)
-		return
-	}
-	if err := query.Find(&users).Error; err != nil {
+	return query
+}
+
+func (h *Handler) exportUsers(c *gin.Context) {
+	var users []models.User
+	if err := h.userQuery(c).Order("created_at desc").Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, users)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="users.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "name", "email", "phone", "role", "status", "gender", "age", "employee_no", "department", "title", "specialties", "created_at"})
+	for _, user := range users {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(user.ID)),
+			user.Name,
+			user.Email,
+			user.Phone,
+			user.Role,
+			user.Status,
+			user.Gender,
+			strconv.Itoa(user.Age),
+			user.EmployeeNo,
+			user.Department,
+			user.Title,
+			user.Specialties,
+			user.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "user", "", "success", fmt.Sprintf("%d users", len(users)))
 }
 
 func (h *Handler) updateUserStatus(c *gin.Context) {

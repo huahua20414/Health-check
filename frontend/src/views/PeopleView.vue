@@ -18,6 +18,14 @@
             <el-option label="停用" value="disabled" />
           </el-select>
           <el-input v-model="keyword" placeholder="搜索姓名/邮箱/工号/科室" clearable />
+          <el-button
+            plain
+            :loading="loading.exportUsers"
+            :disabled="!can('admin:data:exchange')"
+            @click="handleExportUsers"
+          >
+            导出人员 CSV
+          </el-button>
         </div>
       </div>
       <el-table :data="tableRows" stripe>
@@ -78,7 +86,7 @@ import { useHealthData } from '../composables/useHealthData'
 import { useDebouncedRef } from '../composables/useDebouncedRef'
 import StatusTag from '../components/StatusTag.vue'
 
-const { peopleRows: tableRows, isAdmin, loading, can, updateUserStatus, paginations, loadUsersPage } = useHealthData()
+const { peopleRows: tableRows, isAdmin, loading, can, updateUserStatus, exportUsers, paginations, loadUsersPage } = useHealthData()
 const roleFilter = ref('')
 const statusFilter = ref('')
 const keyword = ref('')
@@ -87,13 +95,21 @@ const debouncedKeyword = useDebouncedRef(keyword, 350)
 function loadPage(reset = false) {
   if (isAdmin.value) {
     if (reset) paginations.users.page = 1
-    return loadUsersPage({
-      role: roleFilter.value,
-      status: statusFilter.value,
-      keyword: debouncedKeyword.value,
-    })
+    return loadUsersPage(currentFilters())
   }
   return Promise.resolve()
+}
+
+function currentFilters() {
+  return {
+    role: roleFilter.value,
+    status: statusFilter.value,
+    keyword: debouncedKeyword.value,
+  }
+}
+
+function handleExportUsers() {
+  return exportUsers(currentFilters())
 }
 
 function roleLabel(role) {
