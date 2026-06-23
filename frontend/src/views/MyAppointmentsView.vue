@@ -60,6 +60,11 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
+        <el-table-column label="操作" width="110">
+          <template #default="{ row }">
+            <el-button v-if="row.status === 'waiting' && can('appointment:cancel')" size="small" type="danger" plain :loading="loading.status" @click="cancelWaitlist(row)">取消候补</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination
         class="table-pagination"
@@ -158,7 +163,7 @@ import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, appointmentPayableAmount, downloadHTML, moneyText, paymentStatusText, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, slots, rescheduleForm, invoiceForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, updateAppointmentPayment, editInvoice, saveInvoice, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
+const { myAppointments, waitlist, slots, rescheduleForm, invoiceForm, reviewForm, loading, can, cancelAppointment, cancelWaitlist, editReschedule, rescheduleAppointment, updateAppointmentPayment, editInvoice, saveInvoice, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const rescheduleVisible = ref(false)

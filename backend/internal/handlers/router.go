@@ -78,6 +78,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/schedule/slots/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateScheduleSlot)
 	protected.DELETE("/schedule/slots/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveScheduleSlot)
 	protected.GET("/waitlist", handler.requireRoleAndPermission("appointment:create", "user"), handler.waitlist)
+	protected.PATCH("/waitlist/:id/cancel", handler.requireRoleAndPermission("appointment:cancel", "user"), handler.cancelWaitlist)
 	protected.PATCH("/appointments/:id/status", handler.requireAnyRolePermission(map[string]string{"doctor": "doctor:appointment:update", "admin": "admin:resource:manage"}), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
 	protected.POST("/reports", handler.requireRoleAndPermission("report:create", "doctor"), handler.createReport)
@@ -1169,6 +1170,28 @@ func (h *Handler) waitlist(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, entries)
+}
+
+func (h *Handler) cancelWaitlist(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid waitlist id")
+	if !ok {
+		return
+	}
+	current := currentUser(c)
+	result := h.db.Model(&models.WaitlistEntry{}).Where("id = ? AND user_id = ? AND status = ?", id, current.ID, "waiting").Update("status", "canceled")
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "waitlist entry not found"})
+		return
+	}
+	if h.inAppNotificationsEnabled() {
+		h.db.Create(&models.Notification{UserID: current.ID, Channel: "in_app", Type: "waitlist_canceled", Title: "候补已取消", Content: "您的候补申请已取消。", Status: "unread"})
+	}
+	h.recordOperation(c, "cancel", "waitlist", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "canceled"})
 }
 
 func (h *Handler) reviews(c *gin.Context) {

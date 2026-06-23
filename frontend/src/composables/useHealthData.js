@@ -1209,6 +1209,18 @@ export function useHealthData() {
     }
   }
 
+  async function cancelWaitlist(row) {
+    if (!row?.id || loading.status) return
+    loading.status = true
+    try {
+      await request(`/waitlist/${row.id}/cancel`, { method: 'PATCH' })
+      ElMessage.success('候补已取消')
+      await loadWaitlistPage()
+    } finally {
+      loading.status = false
+    }
+  }
+
   async function markDone(row) {
     if (loading.status) return
     loading.status = true
@@ -1521,6 +1533,7 @@ export function useHealthData() {
     createAppointment,
     joinWaitlist,
     cancelAppointment,
+    cancelWaitlist,
     editFamilyMember,
     saveFamilyMember,
     deleteFamilyMember,
