@@ -160,6 +160,20 @@
           <h3>消息通知管理</h3>
           <p>向指定用户或角色发送站内信，也可维护历史通知状态。</p>
         </div>
+      </div>
+      <div class="notification-toolbar">
+        <div class="reminder-actions">
+          <el-date-picker v-model="reminderForm.date" value-format="YYYY-MM-DD" type="date" />
+          <el-button
+            type="primary"
+            plain
+            :loading="loading.reminder"
+            :disabled="!reminderForm.date || !can('admin:notification:manage')"
+            @click="sendCheckupReminders"
+          >
+            发送体检前提醒
+          </el-button>
+        </div>
         <div class="filter-bar">
           <el-select v-model="notificationStatusFilter" placeholder="状态" clearable>
             <el-option label="未读" value="unread" />
@@ -244,6 +258,7 @@ const {
   reviewReplyForm,
   announcementForm,
   notificationForm,
+  reminderForm,
   loading,
   can,
   paginations,
@@ -264,6 +279,7 @@ const {
   archiveAnnouncement,
   resetNotificationForm,
   sendAdminNotification,
+  sendCheckupReminders,
   archiveAdminNotification,
 } = useHealthData()
 

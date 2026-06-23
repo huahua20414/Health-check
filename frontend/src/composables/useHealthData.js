@@ -93,6 +93,7 @@ const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
 const reviewReplyForm = reactive({ id: null, reply: '', status: 'published' })
 const announcementForm = reactive({ id: null, title: '', content: '', audience: 'all', status: 'draft' })
 const notificationForm = reactive({ userId: null, role: 'user', channel: 'in_app', type: 'admin_notice', title: '', content: '' })
+const reminderForm = reactive({ date: nextDateString() })
 const checkupItemForm = reactive({ id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' })
 const packageItemForm = reactive({ packageId: null, itemId: null, sortOrder: 0, required: true })
 const scheduleForm = reactive({ id: null, doctorId: null, institutionId: null, date: '', period: '上午', category: '', startTime: '08:30', endTime: '', capacity: 1, status: 'available' })
@@ -120,6 +121,7 @@ const loading = reactive({
   favorite: false,
   notification: false,
   adminNotification: false,
+  reminder: false,
   coupon: false,
   review: false,
   announcement: false,
@@ -150,6 +152,12 @@ export function formatDate(value) {
 
 function escapeHTML(value) {
   return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
+}
+
+function nextDateString() {
+  const date = new Date()
+  date.setDate(date.getDate() + 1)
+  return date.toISOString().slice(0, 10)
 }
 
 function documentHTML(title, rows, footer) {
@@ -854,6 +862,21 @@ export function useHealthData() {
     }
   }
 
+  async function sendCheckupReminders() {
+    if (loading.reminder) return
+    loading.reminder = true
+    try {
+      const result = await request('/admin/notifications/reminders', {
+        method: 'POST',
+        body: JSON.stringify({ date: reminderForm.date }),
+      })
+      ElMessage.success(`已生成 ${result.created || 0} 条体检前提醒`)
+      await loadAdminNotificationsPage()
+    } finally {
+      loading.reminder = false
+    }
+  }
+
   async function archiveAdminNotification(notification) {
     if (loading.adminNotification) return
     loading.adminNotification = true
@@ -1344,6 +1367,7 @@ export function useHealthData() {
     reviewReplyForm,
     announcementForm,
     notificationForm,
+    reminderForm,
     checkupItemForm,
     packageItemForm,
     scheduleForm,
@@ -1414,6 +1438,7 @@ export function useHealthData() {
     archiveAnnouncement,
     resetNotificationForm,
     sendAdminNotification,
+    sendCheckupReminders,
     archiveAdminNotification,
     editCheckupItem,
     saveCheckupItem,

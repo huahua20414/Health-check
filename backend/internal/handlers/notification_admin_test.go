@@ -84,6 +84,47 @@ func TestAdminArchiveNotificationHidesItFromUserAndRecordsOperation(t *testing.T
 	assertOperationCount(t, db, "archive", "notification", 1)
 }
 
+func TestAdminSendCheckupRemindersOnlyTargetsBookedAppointmentsForDate(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	createReminderAppointments(t, db, fixture)
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	response := performNotificationAdminJSON(t, router, http.MethodPost, "/admin/notifications/reminders", reminderRequest{Date: "2026-07-08"})
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
+	}
+	assertNotificationTypeCount(t, db, fixture.user.ID, "checkup_reminder", 2)
+	assertNotificationTypeCount(t, db, fixture.inactiveUser.ID, "checkup_reminder", 0)
+	assertNotificationTypeCount(t, db, fixture.doctor.ID, "checkup_reminder", 0)
+	assertOperationCount(t, db, "send", "checkup_reminder", 1)
+}
+
+func TestAdminSendCheckupRemindersIsIdempotentPerAppointment(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	createReminderAppointments(t, db, fixture)
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	first := performNotificationAdminJSON(t, router, http.MethodPost, "/admin/notifications/reminders", reminderRequest{Date: "2026-07-08"})
+	second := performNotificationAdminJSON(t, router, http.MethodPost, "/admin/notifications/reminders", reminderRequest{Date: "2026-07-08"})
+
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated {
+		t.Fatalf("expected both reminder requests to succeed, got %d/%d", first.Code, second.Code)
+	}
+	assertNotificationTypeCount(t, db, fixture.user.ID, "checkup_reminder", 2)
+}
+
+func TestAdminSendCheckupRemindersRejectsInvalidDate(t *testing.T) {
+	handler, _, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	response := performNotificationAdminJSON(t, router, http.MethodPost, "/admin/notifications/reminders", reminderRequest{Date: "20260708"})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
 type notificationAdminFixture struct {
 	admin        models.User
 	user         models.User
@@ -106,7 +147,15 @@ func newNotificationAdminFixture(t *testing.T) (*Handler, *gorm.DB, notification
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Notification{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.Notification{},
+		&models.OperationLog{},
+		&models.CheckupInstitution{},
+		&models.CheckupPackage{},
+		&models.FamilyMember{},
+		&models.Appointment{},
+	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := notificationAdminFixture{
@@ -135,6 +184,7 @@ func newNotificationAdminRouter(handler *Handler, current models.User) *gin.Engi
 	router.GET("/notifications", handler.notifications)
 	router.GET("/admin/notifications", handler.adminNotifications)
 	router.POST("/admin/notifications", handler.createAdminNotification)
+	router.POST("/admin/notifications/reminders", handler.sendCheckupReminders)
 	router.DELETE("/admin/notifications/:id", handler.archiveAdminNotification)
 	return router
 }
@@ -195,6 +245,17 @@ func assertNotificationTitleCount(t *testing.T, db *gorm.DB, userID uint, title 
 	}
 }
 
+func assertNotificationTypeCount(t *testing.T, db *gorm.DB, userID uint, notificationType string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.Notification{}).Where("user_id = ? AND type = ?", userID, notificationType).Count(&count).Error; err != nil {
+		t.Fatalf("count notifications: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected notification count %d for user=%d type=%s, got %d", want, userID, notificationType, count)
+	}
+}
+
 func assertNotificationStatus(t *testing.T, db *gorm.DB, id uint, want string) {
 	t.Helper()
 	var notification models.Notification
@@ -214,5 +275,28 @@ func assertOperationCount(t *testing.T, db *gorm.DB, action, resource string, wa
 	}
 	if count != want {
 		t.Fatalf("expected operation count %d for %s/%s, got %d", want, action, resource, count)
+	}
+}
+
+func createReminderAppointments(t *testing.T, db *gorm.DB, fixture notificationAdminFixture) {
+	t.Helper()
+	institution := models.CheckupInstitution{ID: 20, Name: "主院区", Address: "健康路 1 号", Status: "active"}
+	pkg := models.CheckupPackage{ID: 21, Name: "年度体检", Category: "年度综合", Price: 399, Status: "active"}
+	familyMember := models.FamilyMember{ID: 22, UserID: fixture.user.ID, Name: "用户甲父亲", Relation: "父亲"}
+	rows := []any{&institution, &pkg, &familyMember}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create reminder fixture row %#v: %v", row, err)
+		}
+	}
+	appointments := []models.Appointment{
+		{ID: 30, OrderNo: "REMIND001", UserID: fixture.user.ID, FamilyMemberID: familyMember.ID, DoctorID: fixture.doctor.ID, InstitutionID: institution.ID, PackageID: pkg.ID, Date: "2026-07-08", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked"},
+		{ID: 31, OrderNo: "REMIND002", UserID: fixture.inactiveUser.ID, DoctorID: fixture.doctor.ID, InstitutionID: institution.ID, PackageID: pkg.ID, Date: "2026-07-08", Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "canceled"},
+		{ID: 32, OrderNo: "REMIND003", UserID: fixture.doctor.ID, DoctorID: fixture.doctor.ID, InstitutionID: institution.ID, PackageID: pkg.ID, Date: "2026-07-09", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked"},
+	}
+	for _, appointment := range appointments {
+		if err := db.Create(&appointment).Error; err != nil {
+			t.Fatalf("create reminder appointment %#v: %v", appointment, err)
+		}
 	}
 }

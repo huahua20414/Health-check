@@ -97,6 +97,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
 	protected.GET("/admin/notifications", handler.requireRole("admin"), handler.adminNotifications)
 	protected.POST("/admin/notifications", handler.requireRole("admin"), handler.createAdminNotification)
+	protected.POST("/admin/notifications/reminders", handler.requireRole("admin"), handler.sendCheckupReminders)
 	protected.DELETE("/admin/notifications/:id", handler.requireRole("admin"), handler.archiveAdminNotification)
 	protected.GET("/permissions/me", handler.myPermissions)
 	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
@@ -1477,6 +1478,57 @@ func (h *Handler) createAdminNotification(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"created": len(notifications), "items": notifications})
 }
 
+func (h *Handler) sendCheckupReminders(c *gin.Context) {
+	var req reminderRequest
+	if !bind(c, &req) {
+		return
+	}
+	date := strings.TrimSpace(req.Date)
+	if date == "" {
+		date = time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid reminder date"})
+		return
+	}
+	var appointments []models.Appointment
+	if err := h.db.Preload("User").Preload("FamilyMember").Preload("Institution").Preload("Package").
+		Where("date = ? AND status = ?", date, "booked").
+		Order("start_time asc, order_no asc").
+		Find(&appointments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	notifications := make([]models.Notification, 0, len(appointments)*2)
+	for _, appointment := range appointments {
+		existing := int64(0)
+		h.db.Model(&models.Notification{}).
+			Where("user_id = ? AND type = ? AND content LIKE ?", appointment.UserID, "checkup_reminder", "%预约单号："+appointment.OrderNo+"%").
+			Count(&existing)
+		if existing > 0 {
+			continue
+		}
+		person := "本人"
+		if appointment.FamilyMember.Name != "" {
+			person = appointment.FamilyMember.Name
+		}
+		content := fmt.Sprintf("体检前提醒：%s 将于 %s %s-%s 到 %s 进行 %s，请携带有效证件，前一天清淡饮食，需空腹项目请按医嘱执行。预约单号：%s",
+			person, appointment.Date, appointment.StartTime, appointment.EndTime, appointment.Institution.Name, appointment.Package.Name, appointment.OrderNo)
+		notifications = append(notifications,
+			models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: content, Status: "unread"},
+			models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: "checkup_reminder", Title: "短信模拟：体检前提醒", Content: content, Status: "unread"},
+		)
+	}
+	if len(notifications) > 0 {
+		if err := h.db.Create(&notifications).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	h.recordOperation(c, "send", "checkup_reminder", "", "success", fmt.Sprintf("%s created=%d", date, len(notifications)))
+	c.JSON(http.StatusCreated, gin.H{"date": date, "created": len(notifications), "appointments": len(appointments)})
+}
+
 func (h *Handler) archiveAdminNotification(c *gin.Context) {
 	id, ok := parseIDParam(c, "id", "invalid notification id")
 	if !ok {
@@ -2748,6 +2800,10 @@ type notificationRequest struct {
 	Type    string `json:"type"`
 	Title   string `json:"title" binding:"required"`
 	Content string `json:"content" binding:"required"`
+}
+
+type reminderRequest struct {
+	Date string `json:"date"`
 }
 
 type doctorProfileRequest struct {

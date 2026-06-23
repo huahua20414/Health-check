@@ -843,6 +843,27 @@ textarea {
   gap: 10px;
 }
 
+.notification-toolbar {
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reminder-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reminder-actions .el-date-editor {
+  width: 150px;
+}
+
 .report-list {
   display: flex;
   flex-direction: column;
@@ -1478,6 +1499,20 @@ code {
 
   .filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .notification-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reminder-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .reminder-actions .el-date-editor {
+    width: 100%;
   }
 
   .auth-card {
