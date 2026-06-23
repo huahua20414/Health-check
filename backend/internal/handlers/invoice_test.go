@@ -25,6 +25,7 @@ func TestUpdateAppointmentInvoiceUpdatesOwnAppointment(t *testing.T) {
 		t.Fatalf("unexpected invoice data: %#v", appointment)
 	}
 	assertAppointmentInvoice(t, db, fixture.bookedAppointment.ID, "东软熙心科技有限公司", "TAX123456")
+	assertAppointmentOperationLog(t, db, fixture.user.ID, fixture.bookedAppointment.ID, "update_invoice", "东软熙心科技有限公司")
 }
 
 func TestUpdateAppointmentInvoiceRejectsOtherUsersAppointment(t *testing.T) {

@@ -45,6 +45,7 @@ func TestRescheduleAppointmentMovesBookingBetweenSlots(t *testing.T) {
 	assertSlotBookedCount(t, db, fixture.oldSlot.ID, 0)
 	assertSlotBookedCount(t, db, fixture.newSlot.ID, 1)
 	assertNotificationCount(t, db, fixture.user.ID, 3)
+	assertAppointmentOperationLog(t, db, fixture.user.ID, fixture.appointment.ID, "reschedule", "2026-07-03 10:00-10:30")
 }
 
 func TestRescheduleAppointmentRejectsOtherUsersAppointment(t *testing.T) {
@@ -189,6 +190,7 @@ func newRescheduleFixture(t *testing.T) (*Handler, *gorm.DB, rescheduleFixture) 
 		&models.Appointment{},
 		&models.Notification{},
 		&models.SystemSetting{},
+		&models.OperationLog{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}

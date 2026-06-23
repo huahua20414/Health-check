@@ -28,6 +28,7 @@ func TestUpdateAppointmentPaymentMarksOwnBookedAppointmentPaid(t *testing.T) {
 	}
 	assertAppointmentPaymentStatus(t, db, fixture.bookedAppointment.ID, "paid")
 	assertPaymentNotificationCount(t, db, fixture.user.ID, 1)
+	assertAppointmentOperationLog(t, db, fixture.user.ID, fixture.bookedAppointment.ID, "update_payment", "paid")
 }
 
 func TestUpdateAppointmentPaymentRejectsOtherUsersAppointment(t *testing.T) {
@@ -101,7 +102,7 @@ func newPaymentStatusFixture(t *testing.T) (*Handler, *gorm.DB, paymentStatusFix
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Notification{}, &models.SystemSetting{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Notification{}, &models.SystemSetting{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := paymentStatusFixture{
@@ -178,5 +179,18 @@ func assertPaymentNotificationCount(t *testing.T, db *gorm.DB, userID uint, want
 	}
 	if count != want {
 		t.Fatalf("expected payment notification count %d, got %d", want, count)
+	}
+}
+
+func assertAppointmentOperationLog(t *testing.T, db *gorm.DB, userID, appointmentID uint, action, detail string) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).
+		Where("user_id = ? AND action = ? AND resource = ? AND resource_id = ? AND detail = ?", userID, action, "appointment", strconv.Itoa(int(appointmentID)), detail).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count appointment operation log: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one %s operation log with detail %q, got %d", action, detail, count)
 	}
 }

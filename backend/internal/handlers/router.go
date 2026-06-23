@@ -820,6 +820,7 @@ func (h *Handler) rescheduleAppointment(c *gin.Context) {
 		return
 	}
 	h.createAppointmentNotifications(updated, "appointment_rescheduled", "预约已改期", "您的体检预约时间已更新，请按新的时间到检。")
+	h.recordOperation(c, "reschedule", "appointment", strconv.Itoa(id), "success", fmt.Sprintf("%s %s-%s", updated.Date, updated.StartTime, updated.EndTime))
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -859,6 +860,7 @@ func (h *Handler) updateAppointmentPayment(c *gin.Context) {
 	if h.inAppNotificationsEnabled() {
 		h.db.Create(&models.Notification{UserID: current.ID, Channel: "in_app", Type: "payment_status", Title: title, Content: content, Status: "unread"})
 	}
+	h.recordOperation(c, "update_payment", "appointment", strconv.Itoa(id), "success", req.PaymentStatus)
 	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
 	c.JSON(http.StatusOK, appointment)
 }
@@ -896,6 +898,7 @@ func (h *Handler) updateAppointmentInvoice(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.recordOperation(c, "update_invoice", "appointment", strconv.Itoa(id), "success", title)
 	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
 	c.JSON(http.StatusOK, appointment)
 }
