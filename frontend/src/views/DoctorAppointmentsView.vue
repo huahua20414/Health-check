@@ -16,7 +16,7 @@
           <el-input v-model="keyword" placeholder="搜索客户/套餐" />
         </div>
       </div>
-      <AppointmentTable :rows="filteredAppointments" :is-doctor="isDoctor" :loading="loading.status" @mark-done="handleMarkDone" @view-order="openOrder" />
+      <AppointmentTable :rows="filteredAppointments" :is-doctor="isDoctor" :can-mark-done="can('doctor:appointment:update')" :loading="loading.status" @mark-done="handleMarkDone" @view-order="openOrder" />
       <el-pagination
         class="table-pagination"
         background
@@ -50,7 +50,7 @@ const keyword = ref('')
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const debouncedKeyword = useDebouncedRef(keyword, 350)
-const { appointments, isDoctor, loading, markDone, paginations, loadAppointmentsPage } = useHealthData()
+const { appointments, isDoctor, loading, can, markDone, paginations, loadAppointmentsPage } = useHealthData()
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
 
 const filteredAppointments = computed(() => appointments.value)

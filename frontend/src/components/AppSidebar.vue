@@ -59,11 +59,21 @@ import { menuItems } from '../router'
 import { useHealthData } from '../composables/useHealthData'
 
 const route = useRoute()
-const { currentUser } = useHealthData()
+const { currentUser, can } = useHealthData()
 const icons = { Calendar, DataAnalysis, Document, DocumentChecked, Files, House, Setting, Tickets, User }
 const activePath = computed(() => route.path)
 const visibleMenuItems = computed(() => {
   const currentRole = currentUser.value?.role
-  return menuItems.filter((item) => item.roles.includes(currentRole))
+  return menuItems
+    .filter((item) => item.roles.includes(currentRole) && hasPermission(item))
+    .map((item) => {
+      if (!item.children) return item
+      return { ...item, children: item.children.filter((child) => child.roles.includes(currentRole) && hasPermission(child)) }
+    })
+    .filter((item) => !item.children || item.children.length > 0)
 })
+
+function hasPermission(item) {
+  return !item.permission || can(item.permission)
+}
 </script>

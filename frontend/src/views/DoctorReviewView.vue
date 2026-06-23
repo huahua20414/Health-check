@@ -32,9 +32,9 @@
         <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button size="small" :loading="loading.doctorProfile" @click="saveDoctorProfile(row)">保存资料</el-button>
-              <el-button v-if="row.status === 'pending'" size="small" type="success" :loading="loading.status" @click="changeStatus(row, 'active')">通过</el-button>
-              <el-button v-if="row.status !== 'disabled'" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">停用</el-button>
+              <el-button v-if="can('admin:doctor:review')" size="small" :loading="loading.doctorProfile" @click="saveDoctorProfile(row)">保存资料</el-button>
+              <el-button v-if="row.status === 'pending' && can('admin:doctor:review')" size="small" type="success" :loading="loading.status" @click="changeStatus(row, 'active')">通过</el-button>
+              <el-button v-if="row.status !== 'disabled' && can('admin:doctor:review')" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">停用</el-button>
             </div>
           </template>
         </el-table-column>
@@ -57,7 +57,7 @@ import { computed, onMounted, watch } from 'vue'
 import StatusTag from '../components/StatusTag.vue'
 import { doctorDepartments, specialtyOptions, useHealthData } from '../composables/useHealthData'
 
-const { users, loading, updateUserStatus, updateDoctorProfile, paginations, loadUsersPage } = useHealthData()
+const { users, loading, can, updateUserStatus, updateDoctorProfile, paginations, loadUsersPage } = useHealthData()
 const doctorRows = computed(() => users.value.map((item) => ({
   ...item,
   specialtyValues: splitSpecialties(item.specialties),

@@ -69,7 +69,7 @@
           <el-form-item label="备注说明">
             <el-input v-model="appointmentForm.note" type="textarea" :rows="3" placeholder="例如既往病史、特殊检查需求" />
           </el-form-item>
-          <el-button type="primary" class="summary-submit" :disabled="!canSubmit" :loading="loading.appointment" @click="submit">
+          <el-button type="primary" class="summary-submit" :disabled="!canSubmit || !can('appointment:create')" :loading="loading.appointment" @click="submit">
             提交预约
           </el-button>
         </el-form>
@@ -169,7 +169,7 @@
           <div class="time-cell">
             <strong>{{ group.time }}</strong>
             <span>{{ group.available > 0 ? `可约 ${group.available}` : '已满' }}</span>
-            <el-button v-if="group.available === 0" size="small" type="warning" plain :loading="loading.appointment" @click="joinFullGroup(group)">
+            <el-button v-if="group.available === 0 && can('appointment:create')" size="small" type="warning" plain :loading="loading.appointment" @click="joinFullGroup(group)">
               加入候补
             </el-button>
           </div>
@@ -201,7 +201,7 @@ import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { appointmentTypes, useHealthData } from '../composables/useHealthData'
 
-const { packages, institutions, slots, familyMembers, appointmentForm, loading, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
+const { packages, institutions, slots, familyMembers, appointmentForm, loading, can, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
 const dialogs = reactive({ type: false, institution: false, package: false, date: false, slot: false, member: false })
 let refreshTimer = 0
 const paymentOptions = [

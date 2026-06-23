@@ -26,6 +26,12 @@ func Run(db *gorm.DB) error {
 		return err
 	}
 
+	for _, permission := range defaultRolePermissions() {
+		if err := db.Create(&permission).Error; err != nil {
+			return err
+		}
+	}
+
 	institutions := []models.CheckupInstitution{
 		{Name: "熙心健康体检中心总院", Address: "沈阳市和平区健康路 88 号", Phone: "024-88880001", OpenHours: "周一至周六 08:00-17:00", Status: "active"},
 		{Name: "熙心健康高新区分院", Address: "沈阳市浑南区创新路 19 号", Phone: "024-88880002", OpenHours: "周一至周五 08:30-16:30", Status: "active"},
@@ -103,6 +109,7 @@ func reset(db *gorm.DB) error {
 		&models.MailLog{},
 		&models.OperationLog{},
 		&models.LoginLog{},
+		&models.RolePermission{},
 		&models.Report{},
 		&models.Appointment{},
 		&models.WaitlistEntry{},
@@ -117,4 +124,45 @@ func reset(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func defaultRolePermissions() []models.RolePermission {
+	definitions := map[string]string{
+		"appointment:create":        "创建体检预约",
+		"appointment:reschedule":    "预约改期",
+		"appointment:cancel":        "取消预约",
+		"review:create":             "评价体检服务",
+		"favorite:manage":           "收藏套餐",
+		"family:manage":             "管理家庭成员",
+		"report:view":               "查看体检报告",
+		"doctor:appointment:update": "处理预约状态",
+		"report:create":             "生成体检报告",
+		"customer:view":             "查看客户档案",
+		"admin:user:manage":         "管理用户状态",
+		"admin:doctor:review":       "审核医生账号",
+		"admin:package:manage":      "管理体检套餐",
+		"admin:resource:manage":     "管理项目和排班",
+		"admin:operation:manage":    "管理优惠券、评价和公告",
+		"admin:system:manage":       "管理系统设置和日志",
+		"admin:data:exchange":       "导入导出业务数据",
+		"admin:permission:manage":   "管理角色权限",
+	}
+	roles := map[string][]string{
+		"user": {
+			"appointment:create", "appointment:reschedule", "appointment:cancel", "review:create",
+			"favorite:manage", "family:manage", "report:view",
+		},
+		"doctor": {"doctor:appointment:update", "report:create", "customer:view"},
+		"admin": {
+			"admin:user:manage", "admin:doctor:review", "admin:package:manage", "admin:resource:manage",
+			"admin:operation:manage", "admin:system:manage", "admin:data:exchange", "admin:permission:manage",
+		},
+	}
+	var permissions []models.RolePermission
+	for role, codes := range roles {
+		for _, code := range codes {
+			permissions = append(permissions, models.RolePermission{Role: role, Permission: code, Description: definitions[code], Enabled: true})
+		}
+	}
+	return permissions
 }

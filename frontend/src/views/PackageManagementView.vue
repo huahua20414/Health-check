@@ -24,7 +24,7 @@
           </el-select>
         </el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.package" @click="submit">保存套餐</el-button>
+          <el-button type="primary" :loading="loading.package" :disabled="!can('admin:package:manage')" @click="submit">保存套餐</el-button>
           <el-button @click="editPackage(null)">清空</el-button>
         </div>
       </el-form>
@@ -49,7 +49,7 @@
         </el-table-column>
         <el-table-column label="操作" width="90">
           <template #default="{ row }">
-            <el-button size="small" @click="editPackage(row)">编辑</el-button>
+            <el-button v-if="can('admin:package:manage')" size="small" @click="editPackage(row)">编辑</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -72,7 +72,7 @@ import StatusTag from '../components/StatusTag.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { useHealthData } from '../composables/useHealthData'
 
-const { packages, packageForm, loading, editPackage, savePackage, paginations, loadPackagesPage } = useHealthData()
+const { packages, packageForm, loading, can, editPackage, savePackage, paginations, loadPackagesPage } = useHealthData()
 const packageCategories = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
 const submit = useDebouncedFn(async () => {
   await savePackage()

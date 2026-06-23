@@ -35,7 +35,7 @@
         <el-table-column v-if="isAdmin" label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button v-if="row.status !== 'disabled'" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">
+              <el-button v-if="row.status !== 'disabled' && can('admin:user:manage')" size="small" type="danger" plain :loading="loading.status" @click="changeStatus(row, 'disabled')">
                 停用
               </el-button>
               <el-tag v-else type="info" effect="plain">已停用</el-tag>
@@ -62,7 +62,7 @@ import { onMounted, watch } from 'vue'
 import { useHealthData } from '../composables/useHealthData'
 import StatusTag from '../components/StatusTag.vue'
 
-const { peopleRows: tableRows, isAdmin, loading, updateUserStatus, paginations, loadUsersPage } = useHealthData()
+const { peopleRows: tableRows, isAdmin, loading, can, updateUserStatus, paginations, loadUsersPage } = useHealthData()
 
 function loadPage() {
   if (isAdmin.value) return loadUsersPage()

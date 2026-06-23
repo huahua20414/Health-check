@@ -21,7 +21,7 @@
         <el-form-item label="检查摘要"><el-input v-model="reportForm.summary" type="textarea" :rows="4" /></el-form-item>
         <el-form-item label="体检结论"><el-input v-model="reportForm.conclusion" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="健康建议"><el-input v-model="reportForm.recommendation" type="textarea" :rows="3" /></el-form-item>
-        <el-button type="success" :disabled="!reportForm.appointmentId" :loading="loading.report" @click="submit">生成/更新报告</el-button>
+        <el-button type="success" :disabled="!reportForm.appointmentId || !can('report:create')" :loading="loading.report" @click="submit">生成/更新报告</el-button>
       </el-form>
     </div>
 
@@ -59,7 +59,7 @@ import ReportList from '../components/ReportList.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { downloadHTML, reportDocumentHTML, useHealthData } from '../composables/useHealthData'
 
-const { appointments, reports, reportForm, loading, createReport, paginations, loadReportsPage } = useHealthData()
+const { appointments, reports, reportForm, loading, can, createReport, paginations, loadReportsPage } = useHealthData()
 const reportableAppointments = computed(() => appointments.value.filter((item) => item.status === 'checked' || item.status === 'reported'))
 const submit = useDebouncedFn(createReport, 400)
 const selectedReport = ref(null)

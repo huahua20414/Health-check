@@ -33,7 +33,7 @@
         </el-form-item>
         <el-form-item label="说明"><el-input v-model="couponForm.description" type="textarea" :rows="3" /></el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.coupon" :disabled="!couponForm.name || !couponForm.code" @click="saveCoupon">保存优惠券</el-button>
+          <el-button type="primary" :loading="loading.coupon" :disabled="!couponForm.name || !couponForm.code || !can('admin:operation:manage')" @click="saveCoupon">保存优惠券</el-button>
           <el-button @click="editCoupon(null)">清空</el-button>
         </div>
       </el-form>
@@ -44,7 +44,7 @@
           <template #default="{ row }">{{ row.type === 'percent' ? `${row.value}%` : `￥${row.value}` }}</template>
         </el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" @click="editCoupon(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:operation:manage')" size="small" @click="editCoupon(row)">编辑</el-button></template></el-table-column>
       </el-table>
     </div>
 
@@ -62,7 +62,7 @@
         <el-table-column prop="content" label="评价内容" />
         <el-table-column prop="reply" label="回复" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" @click="editReviewReply(row)">处理</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:operation:manage')" size="small" @click="editReviewReply(row)">处理</el-button></template></el-table-column>
       </el-table>
       <div class="review-reply-box">
         <el-input v-model="reviewReplyForm.reply" type="textarea" :rows="3" placeholder="选择评价后填写回复" />
@@ -70,7 +70,7 @@
           <el-option label="展示" value="published" />
           <el-option label="隐藏" value="hidden" />
         </el-select>
-        <el-button type="primary" :disabled="!reviewReplyForm.id" :loading="loading.review" @click="saveReviewReply">保存处理</el-button>
+        <el-button type="primary" :disabled="!reviewReplyForm.id || !can('admin:operation:manage')" :loading="loading.review" @click="saveReviewReply">保存处理</el-button>
       </div>
     </div>
 
@@ -100,7 +100,7 @@
         </el-form-item>
         <el-form-item label="内容"><el-input v-model="announcementForm.content" type="textarea" :rows="4" /></el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.announcement" :disabled="!announcementForm.title || !announcementForm.content" @click="saveAnnouncement">保存公告</el-button>
+          <el-button type="primary" :loading="loading.announcement" :disabled="!announcementForm.title || !announcementForm.content || !can('admin:operation:manage')" @click="saveAnnouncement">保存公告</el-button>
           <el-button @click="editAnnouncement(null)">清空</el-button>
         </div>
       </el-form>
@@ -109,7 +109,7 @@
         <el-table-column prop="audience" label="受众" width="100" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
         <el-table-column prop="content" label="内容" />
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" @click="editAnnouncement(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:operation:manage')" size="small" @click="editAnnouncement(row)">编辑</el-button></template></el-table-column>
       </el-table>
     </div>
   </section>
@@ -129,6 +129,7 @@ const {
   reviewReplyForm,
   announcementForm,
   loading,
+  can,
   loadPackagesPage,
   loadCouponsPage,
   loadReviewsPage,

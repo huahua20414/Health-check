@@ -10,9 +10,9 @@
       <AppointmentTable
         :rows="myAppointments"
         :is-doctor="false"
-        :can-cancel="true"
-        :can-reschedule="true"
-        :can-review="true"
+        :can-cancel="can('appointment:cancel')"
+        :can-reschedule="can('appointment:reschedule')"
+        :can-review="can('review:create')"
         :loading="loading.status || loading.appointment"
         @cancel="cancelAppointment"
         @reschedule="openReschedule"
@@ -97,7 +97,7 @@
       </el-form>
       <template #footer>
         <el-button @click="rescheduleVisible = false">取消</el-button>
-        <el-button type="primary" :loading="loading.appointment" :disabled="!rescheduleForm.slotId" @click="submitReschedule">确认改期</el-button>
+        <el-button type="primary" :loading="loading.appointment" :disabled="!rescheduleForm.slotId || !can('appointment:reschedule')" @click="submitReschedule">确认改期</el-button>
       </template>
     </el-dialog>
 
@@ -112,7 +112,7 @@
       </el-form>
       <template #footer>
         <el-button @click="reviewVisible = false">取消</el-button>
-        <el-button type="primary" :loading="loading.review" :disabled="!reviewForm.appointmentId" @click="submitReview">提交评价</el-button>
+        <el-button type="primary" :loading="loading.review" :disabled="!reviewForm.appointmentId || !can('review:create')" @click="submitReview">提交评价</el-button>
       </template>
     </el-dialog>
   </section>
@@ -124,7 +124,7 @@ import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, slots, rescheduleForm, reviewForm, loading, cancelAppointment, editReschedule, rescheduleAppointment, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
+const { myAppointments, waitlist, slots, rescheduleForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const rescheduleVisible = ref(false)

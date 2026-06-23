@@ -17,7 +17,7 @@
         <p>系统已接入 JWT、Redis Session、角色菜单和后端权限校验。</p>
       </div>
     </div>
-    <div class="panel" v-if="isAdmin">
+    <div class="panel" v-if="can('admin:data:exchange')">
       <div class="panel-head">
         <div>
           <h3>数据导入导出</h3>
@@ -31,7 +31,7 @@
         </el-upload>
       </div>
     </div>
-    <div class="panel" v-if="isAdmin">
+    <div class="panel" v-if="can('admin:system:manage')">
       <div class="panel-head">
         <div>
           <h3>邮件发送记录</h3>
@@ -58,7 +58,7 @@
         :page-sizes="[10, 20, 50]"
       />
     </div>
-    <div class="panel" v-if="isAdmin">
+    <div class="panel" v-if="can('admin:system:manage')">
       <div class="panel-head">
         <div>
           <h3>登录日志</h3>
@@ -87,7 +87,7 @@
         :page-sizes="[10, 20, 50]"
       />
     </div>
-    <div class="panel" v-if="isAdmin">
+    <div class="panel" v-if="can('admin:system:manage')">
       <div class="panel-head">
         <div>
           <h3>操作日志</h3>
@@ -118,6 +118,26 @@
         :page-sizes="[10, 20, 50]"
       />
     </div>
+    <div class="panel" v-if="can('admin:permission:manage')">
+      <div class="panel-head">
+        <div>
+          <h3>角色权限管理</h3>
+          <p>维护角色可见菜单和关键按钮能力，后端仍保留角色级接口保护。</p>
+        </div>
+      </div>
+      <el-table :data="rolePermissions" stripe>
+        <el-table-column label="角色" width="100">
+          <template #default="{ row }">{{ roleText(row.role) }}</template>
+        </el-table-column>
+        <el-table-column prop="permission" label="权限点" min-width="190" />
+        <el-table-column prop="description" label="说明" min-width="220" />
+        <el-table-column label="启用" width="120">
+          <template #default="{ row }">
+            <el-switch v-model="row.enabled" :loading="loading.permission" @change="updateRolePermission(row)" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
   </section>
 </template>
 
@@ -131,13 +151,17 @@ const {
   mailLogs,
   loginLogs,
   operationLogs,
+  rolePermissions,
   paginations,
   loading,
+  can,
   loadMailLogsPage,
   loadLoginLogsPage,
   loadOperationLogsPage,
+  loadRolePermissions,
   exportPackages,
   importPackages,
+  updateRolePermission,
 } = useHealthData()
 
 watch(() => [paginations.mailLogs.page, paginations.mailLogs.pageSize], () => {
@@ -154,6 +178,10 @@ function loginStatusText(status) {
   return { success: '成功', failed: '失败', blocked: '拦截' }[status] || status
 }
 
+function roleText(role) {
+  return { user: '用户', doctor: '医生', admin: '管理员' }[role] || role
+}
+
 async function handlePackageImport(file) {
   await importPackages(file.raw)
 }
@@ -163,5 +191,6 @@ onMounted(() => {
   loadMailLogsPage()
   loadLoginLogsPage()
   loadOperationLogsPage()
+  loadRolePermissions()
 })
 </script>

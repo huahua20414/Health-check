@@ -23,7 +23,7 @@
         </el-form>
         <div class="dialog-actions">
           <el-button @click="editFamilyMember(null)">清空</el-button>
-          <el-button type="primary" :loading="loading.familyMember" :disabled="!familyMemberForm.name || !familyMemberForm.relation" @click="saveFamilyMember">
+          <el-button type="primary" :loading="loading.familyMember" :disabled="!familyMemberForm.name || !familyMemberForm.relation || !can('family:manage')" @click="saveFamilyMember">
             保存成员
           </el-button>
         </div>
@@ -44,8 +44,8 @@
           <el-table-column prop="phone" label="电话" />
           <el-table-column label="操作" width="150">
             <template #default="{ row }">
-              <el-button size="small" @click="editFamilyMember(row)">编辑</el-button>
-              <el-button size="small" type="danger" plain :loading="loading.familyMember" @click="deleteFamilyMember(row)">删除</el-button>
+              <el-button v-if="can('family:manage')" size="small" @click="editFamilyMember(row)">编辑</el-button>
+              <el-button v-if="can('family:manage')" size="small" type="danger" plain :loading="loading.familyMember" @click="deleteFamilyMember(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -59,7 +59,7 @@
 import { onMounted } from 'vue'
 import { useHealthData } from '../composables/useHealthData'
 
-const { familyMembers, familyMemberForm, loading, loadAll, editFamilyMember, saveFamilyMember, deleteFamilyMember } = useHealthData()
+const { familyMembers, familyMemberForm, loading, can, loadAll, editFamilyMember, saveFamilyMember, deleteFamilyMember } = useHealthData()
 
 onMounted(loadAll)
 </script>

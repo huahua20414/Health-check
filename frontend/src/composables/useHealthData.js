@@ -36,6 +36,8 @@ const recommendedPackages = ref([])
 const notifications = ref([])
 const loginLogs = ref([])
 const operationLogs = ref([])
+const rolePermissions = ref([])
+const permissionCodes = ref([])
 const coupons = ref([])
 const activeCoupons = ref([])
 const reviews = ref([])
@@ -119,6 +121,7 @@ const loading = reactive({
   schedule: false,
   importPackages: false,
   exportPackages: false,
+  permission: false,
 })
 
 let bootstrapped = false
@@ -243,6 +246,7 @@ export function useHealthData() {
   const isUser = computed(() => role.value === 'user')
   const isDoctor = computed(() => role.value === 'doctor')
   const isAdmin = computed(() => role.value === 'admin')
+  const can = (permission) => permissionCodes.value.includes(permission)
   const myAppointments = computed(() => appointments.value.filter((item) => item.userId === currentUser.value?.id))
   const bookedCount = computed(() => appointments.value.filter((item) => item.status === 'booked').length)
   const reportedCount = computed(() => appointments.value.filter((item) => item.status === 'reported').length)
@@ -286,6 +290,7 @@ export function useHealthData() {
       })
       setAuthToken(result.accessToken)
       saveUser(result.user)
+      await loadMyPermissions()
       await loadAll()
       ElMessage.success('登录成功')
       return result.user
@@ -356,6 +361,8 @@ export function useHealthData() {
       favorites.value = []
       browseHistories.value = []
       notifications.value = []
+      rolePermissions.value = []
+      permissionCodes.value = []
     } finally {
       loading.logout = false
     }
@@ -426,6 +433,17 @@ export function useHealthData() {
     operationLogs.value = await requestPage('/operation-logs', paginations.operationLogs, params)
   }
 
+  async function loadMyPermissions() {
+    if (!getAuthToken()) return
+    const result = await request('/permissions/me').catch(() => ({ permissions: [] }))
+    permissionCodes.value = result.permissions || []
+  }
+
+  async function loadRolePermissions() {
+    if (!isAdmin.value) return
+    rolePermissions.value = await request('/role-permissions')
+  }
+
   async function loadPackagesPage(params = {}) {
     packages.value = await requestPage('/packages', paginations.packages, params)
   }
@@ -468,7 +486,10 @@ export function useHealthData() {
     bootstrapped = true
     if (getAuthToken()) {
       const user = await request('/auth/me').catch(() => null)
-      if (user) saveUser(user)
+      if (user) {
+        saveUser(user)
+        await loadMyPermissions()
+      }
       else {
         setAuthToken('')
         saveUser(null)
@@ -1012,6 +1033,23 @@ export function useHealthData() {
     }
   }
 
+  async function updateRolePermission(permission) {
+    if (loading.permission) return
+    loading.permission = true
+    try {
+      const updated = await request(`/role-permissions/${permission.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: permission.enabled }),
+      })
+      const index = rolePermissions.value.findIndex((item) => item.id === updated.id)
+      if (index >= 0) rolePermissions.value[index] = updated
+      if (updated.role === currentUser.value?.role) await loadMyPermissions()
+      ElMessage.success('权限配置已更新')
+    } finally {
+      loading.permission = false
+    }
+  }
+
   async function updateUserStatus(user, status) {
     if (loading.status) return
     loading.status = true
@@ -1068,6 +1106,8 @@ export function useHealthData() {
     mailLogs,
     loginLogs,
     operationLogs,
+    rolePermissions,
+    permissionCodes,
     familyMembers,
     favorites,
     browseHistories,
@@ -1104,6 +1144,7 @@ export function useHealthData() {
     isUser,
     isDoctor,
     isAdmin,
+    can,
     myAppointments,
     bookedCount,
     reportedCount,
@@ -1123,6 +1164,8 @@ export function useHealthData() {
     loadMailLogsPage,
     loadLoginLogsPage,
     loadOperationLogsPage,
+    loadMyPermissions,
+    loadRolePermissions,
     loadPackagesPage,
     loadNotificationsPage,
     loadCouponsPage,
@@ -1168,6 +1211,7 @@ export function useHealthData() {
     savePackage,
     exportPackages,
     importPackages,
+    updateRolePermission,
     selectPackage,
   }
 }

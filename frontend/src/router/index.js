@@ -29,7 +29,7 @@ export const menuItems = [
     roles: ['user'],
     children: [
       { path: '/packages/catalog', name: 'packageCatalog', label: '体检套餐', icon: 'DataAnalysis', roles: ['user'] },
-      { path: '/booking', name: 'booking', label: '预约体检', icon: 'Calendar', roles: ['user'] },
+      { path: '/booking', name: 'booking', label: '预约体检', icon: 'Calendar', roles: ['user'], permission: 'appointment:create' },
     ],
   },
   {
@@ -38,7 +38,7 @@ export const menuItems = [
     roles: ['user'],
     children: [
       { path: '/my-appointments', name: 'myAppointments', label: '我的预约', icon: 'Tickets', roles: ['user'] },
-      { path: '/my-reports', name: 'myReports', label: '我的报告', icon: 'DocumentChecked', roles: ['user'] },
+      { path: '/my-reports', name: 'myReports', label: '我的报告', icon: 'DocumentChecked', roles: ['user'], permission: 'report:view' },
     ],
   },
   {
@@ -47,7 +47,7 @@ export const menuItems = [
     roles: ['user'],
     children: [
       { path: '/profile', name: 'profile', label: '个人资料', icon: 'User', roles: ['user'] },
-      { path: '/family-members', name: 'familyMembers', label: '家庭成员', icon: 'UserFilled', roles: ['user'] },
+      { path: '/family-members', name: 'familyMembers', label: '家庭成员', icon: 'UserFilled', roles: ['user'], permission: 'family:manage' },
       { path: '/notifications', name: 'notifications', label: '消息与客服', icon: 'Bell', roles: ['user'] },
     ],
   },
@@ -57,15 +57,15 @@ export const menuItems = [
     icon: 'Files',
     roles: ['doctor'],
     children: [
-      { path: '/appointments', name: 'appointments', label: '预约处理', icon: 'Files', roles: ['doctor'] },
-      { path: '/reports', name: 'reports', label: '报告录入', icon: 'Document', roles: ['doctor'] },
+      { path: '/appointments', name: 'appointments', label: '预约处理', icon: 'Files', roles: ['doctor'], permission: 'doctor:appointment:update' },
+      { path: '/reports', name: 'reports', label: '报告录入', icon: 'Document', roles: ['doctor'], permission: 'report:create' },
     ],
   },
   {
     label: '档案查询',
     icon: 'User',
     roles: ['doctor'],
-    children: [{ path: '/people', name: 'people', label: '客户档案', icon: 'User', roles: ['doctor'] }],
+    children: [{ path: '/people', name: 'people', label: '客户档案', icon: 'User', roles: ['doctor'], permission: 'customer:view' }],
   },
   { path: '/admin', name: 'adminDashboard', label: '管理工作台', icon: 'House', roles: ['admin'] },
   {
@@ -73,8 +73,8 @@ export const menuItems = [
     icon: 'User',
     roles: ['admin'],
     children: [
-      { path: '/admin/users', name: 'adminUsers', label: '用户管理', icon: 'User', roles: ['admin'] },
-      { path: '/admin/doctors', name: 'doctorReview', label: '医生审核', icon: 'DocumentChecked', roles: ['admin'] },
+      { path: '/admin/users', name: 'adminUsers', label: '用户管理', icon: 'User', roles: ['admin'], permission: 'admin:user:manage' },
+      { path: '/admin/doctors', name: 'doctorReview', label: '医生审核', icon: 'DocumentChecked', roles: ['admin'], permission: 'admin:doctor:review' },
     ],
   },
   {
@@ -82,8 +82,8 @@ export const menuItems = [
     icon: 'DataAnalysis',
     roles: ['admin'],
     children: [
-      { path: '/admin/packages', name: 'adminPackages', label: '套餐管理', icon: 'DataAnalysis', roles: ['admin'] },
-      { path: '/admin/service-resources', name: 'serviceResources', label: '项目与排班', icon: 'Calendar', roles: ['admin'] },
+      { path: '/admin/packages', name: 'adminPackages', label: '套餐管理', icon: 'DataAnalysis', roles: ['admin'], permission: 'admin:package:manage' },
+      { path: '/admin/service-resources', name: 'serviceResources', label: '项目与排班', icon: 'Calendar', roles: ['admin'], permission: 'admin:resource:manage' },
     ],
   },
   {
@@ -91,8 +91,8 @@ export const menuItems = [
     icon: 'Setting',
     roles: ['admin'],
     children: [
-      { path: '/admin/operations', name: 'adminOperations', label: '运营管理', icon: 'Operation', roles: ['admin'] },
-      { path: '/admin/settings', name: 'adminSettings', label: '系统设置', icon: 'Setting', roles: ['admin'] },
+      { path: '/admin/operations', name: 'adminOperations', label: '运营管理', icon: 'Operation', roles: ['admin'], permission: 'admin:operation:manage' },
+      { path: '/admin/settings', name: 'adminSettings', label: '系统设置', icon: 'Setting', roles: ['admin'], permission: 'admin:system:manage' },
     ],
   },
 ]

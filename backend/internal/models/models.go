@@ -286,3 +286,13 @@ type OperationLog struct {
 	Detail     string    `json:"detail" gorm:"type:text"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
+
+type RolePermission struct {
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	Role        string    `json:"role" gorm:"size:16;not null;uniqueIndex:idx_role_permission"`
+	Permission  string    `json:"permission" gorm:"size:64;not null;uniqueIndex:idx_role_permission"`
+	Description string    `json:"description" gorm:"size:255"`
+	Enabled     bool      `json:"enabled" gorm:"not null;default:true;index"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}

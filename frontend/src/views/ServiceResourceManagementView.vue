@@ -21,7 +21,7 @@
         </el-form-item>
         <el-form-item label="项目说明"><el-input v-model="checkupItemForm.description" type="textarea" :rows="3" /></el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.checkupItem" :disabled="!checkupItemForm.name" @click="submitCheckupItem">保存项目</el-button>
+          <el-button type="primary" :loading="loading.checkupItem" :disabled="!checkupItemForm.name || !can('admin:resource:manage')" @click="submitCheckupItem">保存项目</el-button>
           <el-button @click="editCheckupItem(null)">清空</el-button>
         </div>
       </el-form>
@@ -32,7 +32,7 @@
         <el-table-column label="价格" width="100"><template #default="{ row }">￥{{ row.price }}</template></el-table-column>
         <el-table-column prop="durationMin" label="分钟" width="80" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" @click="editCheckupItem(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:resource:manage')" size="small" @click="editCheckupItem(row)">编辑</el-button></template></el-table-column>
       </el-table>
       <el-pagination
         class="table-pagination"
@@ -66,7 +66,7 @@
         <el-form-item label="排序"><el-input-number v-model="packageItemForm.sortOrder" :min="0" /></el-form-item>
         <el-form-item label="必检"><el-switch v-model="packageItemForm.required" active-text="必检" inactive-text="可选" /></el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.packageItem" :disabled="!packageItemForm.packageId || !packageItemForm.itemId" @click="submitPackageItem">保存组合</el-button>
+          <el-button type="primary" :loading="loading.packageItem" :disabled="!packageItemForm.packageId || !packageItemForm.itemId || !can('admin:resource:manage')" @click="submitPackageItem">保存组合</el-button>
         </div>
       </el-form>
       <el-table :data="packageItems" stripe>
@@ -75,7 +75,7 @@
         <el-table-column label="科室" width="120"><template #default="{ row }">{{ row.item?.department || '-' }}</template></el-table-column>
         <el-table-column prop="sortOrder" label="排序" width="80" />
         <el-table-column label="属性" width="90"><template #default="{ row }"><el-tag :type="row.required ? 'success' : 'info'">{{ row.required ? '必检' : '可选' }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" type="danger" plain @click="removePackageItem(row)">移除</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain @click="removePackageItem(row)">移除</el-button></template></el-table-column>
       </el-table>
       <el-pagination
         class="table-pagination"
@@ -125,7 +125,7 @@
           </el-select>
         </el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.schedule" :disabled="!canSaveSchedule" @click="submitSchedule">保存号源</el-button>
+          <el-button type="primary" :loading="loading.schedule" :disabled="!canSaveSchedule || !can('admin:resource:manage')" @click="submitSchedule">保存号源</el-button>
           <el-button @click="editScheduleSlot(null)">清空</el-button>
         </div>
       </el-form>
@@ -138,7 +138,7 @@
         <el-table-column prop="category" label="分类" width="110" />
         <el-table-column label="库存" width="100"><template #default="{ row }">{{ row.bookedCount }}/{{ row.capacity }}</template></el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" @click="editScheduleSlot(row)">编辑</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button v-if="can('admin:resource:manage')" size="small" @click="editScheduleSlot(row)">编辑</el-button></template></el-table-column>
       </el-table>
       <el-pagination
         class="table-pagination"
@@ -171,6 +171,7 @@ const {
   scheduleForm,
   paginations,
   loading,
+  can,
   loadPackagesPage,
   loadUsersPage,
   loadCheckupItemsPage,

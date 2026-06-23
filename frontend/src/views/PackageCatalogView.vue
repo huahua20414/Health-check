@@ -36,7 +36,7 @@
           <div class="package-actions">
             <strong>￥{{ pkg.price }}</strong>
             <small v-if="bestCoupon(pkg)">活动价约 ￥{{ campaignPrice(pkg).toFixed(2) }}</small>
-            <el-button size="small" :type="isFavorite(pkg) ? 'warning' : 'primary'" plain :loading="loading.favorite" @click="toggleFavorite(pkg)">
+            <el-button v-if="can('favorite:manage')" size="small" :type="isFavorite(pkg) ? 'warning' : 'primary'" plain :loading="loading.favorite" @click="toggleFavorite(pkg)">
               {{ isFavorite(pkg) ? '已收藏' : '收藏' }}
             </el-button>
           </div>
@@ -52,7 +52,7 @@ import { useRouter } from 'vue-router'
 import { useHealthData } from '../composables/useHealthData'
 
 const router = useRouter()
-const { packages, favorites, browseHistories, popularPackages, recommendedPackages, activeCoupons, loading, selectPackage, toggleFavorite, recordPackageBrowse } = useHealthData()
+const { packages, favorites, browseHistories, popularPackages, recommendedPackages, activeCoupons, loading, can, selectPackage, toggleFavorite, recordPackageBrowse } = useHealthData()
 const activePackages = computed(() => packages.value.filter((item) => item.status !== 'disabled'))
 
 function goBooking(pkg) {

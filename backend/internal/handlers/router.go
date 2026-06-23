@@ -88,6 +88,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
 	protected.GET("/notifications", handler.notifications)
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
+	protected.GET("/permissions/me", handler.myPermissions)
 	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
 	protected.GET("/coupons", handler.requireRole("admin"), handler.coupons)
 	protected.POST("/coupons", handler.requireRole("admin"), handler.createCoupon)
@@ -111,6 +112,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/mail-logs", handler.requireRole("admin"), handler.mailLogs)
 	protected.GET("/login-logs", handler.requireRole("admin"), handler.loginLogs)
 	protected.GET("/operation-logs", handler.requireRole("admin"), handler.operationLogs)
+	protected.GET("/role-permissions", handler.requireRole("admin"), handler.rolePermissions)
+	protected.PATCH("/role-permissions/:id", handler.requireRole("admin"), handler.updateRolePermission)
 	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
 
 	return router
@@ -1265,6 +1268,45 @@ func (h *Handler) operationLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, logs)
 }
 
+func (h *Handler) myPermissions(c *gin.Context) {
+	current := currentUser(c)
+	permissions := h.permissionsForRole(current.Role)
+	c.JSON(http.StatusOK, gin.H{"role": current.Role, "permissions": permissions})
+}
+
+func (h *Handler) rolePermissions(c *gin.Context) {
+	var permissions []models.RolePermission
+	query := h.db.Model(&models.RolePermission{}).Order("role asc, permission asc")
+	if role := c.Query("role"); role != "" {
+		query = query.Where("role = ?", role)
+	}
+	if err := query.Find(&permissions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, permissions)
+}
+
+func (h *Handler) updateRolePermission(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid permission id"})
+		return
+	}
+	var req rolePermissionRequest
+	if !bind(c, &req) {
+		return
+	}
+	if err := h.db.Model(&models.RolePermission{}).Where("id = ?", id).Update("enabled", req.Enabled).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var permission models.RolePermission
+	h.db.First(&permission, id)
+	h.recordOperation(c, "update", "role_permission", strconv.Itoa(id), "success", fmt.Sprintf("%s:%s=%t", permission.Role, permission.Permission, permission.Enabled))
+	c.JSON(http.StatusOK, permission)
+}
+
 func (h *Handler) adminDashboard(c *gin.Context) {
 	var userCount, doctorCount, appointmentCount, reportCount, reviewCount int64
 	h.db.Model(&models.User{}).Where("role = ?", "user").Count(&userCount)
@@ -1962,6 +2004,31 @@ func (h *Handler) recordOperation(c *gin.Context, action, resource, resourceID, 
 	})
 }
 
+func (h *Handler) permissionsForRole(role string) []string {
+	var rows []models.RolePermission
+	if err := h.db.Where("role = ? AND enabled = ?", role, true).Find(&rows).Error; err == nil && len(rows) > 0 {
+		permissions := make([]string, 0, len(rows))
+		for _, row := range rows {
+			permissions = append(permissions, row.Permission)
+		}
+		return permissions
+	}
+	return fallbackPermissions(role)
+}
+
+func fallbackPermissions(role string) []string {
+	switch role {
+	case "user":
+		return []string{"appointment:create", "appointment:reschedule", "appointment:cancel", "review:create", "favorite:manage", "family:manage", "report:view"}
+	case "doctor":
+		return []string{"doctor:appointment:update", "report:create", "customer:view"}
+	case "admin":
+		return []string{"admin:user:manage", "admin:doctor:review", "admin:package:manage", "admin:resource:manage", "admin:operation:manage", "admin:system:manage", "admin:data:exchange", "admin:permission:manage"}
+	default:
+		return []string{}
+	}
+}
+
 func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
 	var count int64
 	h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ?", familyMemberID, userID).Count(&count)
@@ -2248,6 +2315,10 @@ type announcementRequest struct {
 
 type statusRequest struct {
 	Status string `json:"status" binding:"required"`
+}
+
+type rolePermissionRequest struct {
+	Enabled bool `json:"enabled"`
 }
 
 type doctorProfileRequest struct {
