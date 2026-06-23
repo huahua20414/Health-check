@@ -194,6 +194,19 @@ type SystemAnnouncement struct {
 	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
+type SystemSetting struct {
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	Key         string    `json:"key" gorm:"size:64;not null;uniqueIndex"`
+	Value       string    `json:"value" gorm:"type:text"`
+	ValueType   string    `json:"valueType" gorm:"size:24;not null;default:'string'"`
+	Group       string    `json:"group" gorm:"size:32;not null;default:'system';index"`
+	Label       string    `json:"label" gorm:"size:128;not null"`
+	Description string    `json:"description" gorm:"size:255"`
+	Status      string    `json:"status" gorm:"size:24;not null;default:'active';index"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type ScheduleSlot struct {
 	ID            uint               `json:"id" gorm:"primaryKey"`
 	DoctorID      uint               `json:"doctorId" gorm:"not null;index"`

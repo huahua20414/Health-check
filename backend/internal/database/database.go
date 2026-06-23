@@ -47,5 +47,6 @@ func Migrate(db *gorm.DB) error {
 		&models.RolePermission{},
 		&models.Notification{},
 		&models.SystemAnnouncement{},
+		&models.SystemSetting{},
 	)
 }

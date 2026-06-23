@@ -17,6 +17,41 @@
         <p>系统已接入 JWT、Redis Session、角色菜单和后端权限校验。</p>
       </div>
     </div>
+    <div class="panel" v-if="can('admin:system:manage')">
+      <div class="panel-head">
+        <div>
+          <h3>业务参数配置</h3>
+          <p>配置预约提醒、改期限制、通知开关和客服入口等运行参数。</p>
+        </div>
+      </div>
+      <el-table :data="systemSettings" stripe>
+        <el-table-column label="分组" width="120">
+          <template #default="{ row }">{{ settingGroupText(row.group) }}</template>
+        </el-table-column>
+        <el-table-column prop="label" label="配置项" min-width="170" />
+        <el-table-column prop="description" label="说明" min-width="220" />
+        <el-table-column label="配置值" min-width="220">
+          <template #default="{ row }">
+            <el-switch v-if="row.valueType === 'boolean'" v-model="row.value" active-value="true" inactive-value="false" />
+            <el-input-number v-else-if="row.valueType === 'number'" v-model="row.value" :min="0" />
+            <el-input v-else v-model="row.value" />
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-select v-model="row.status" size="small">
+              <el-option label="启用" value="active" />
+              <el-option label="停用" value="disabled" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" :loading="loading.systemSetting" @click="updateSystemSetting(row)">保存</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
     <div class="panel" v-if="can('admin:data:exchange')">
       <div class="panel-head">
         <div>
@@ -152,6 +187,7 @@ const {
   loginLogs,
   operationLogs,
   rolePermissions,
+  systemSettings,
   paginations,
   loading,
   can,
@@ -159,9 +195,11 @@ const {
   loadLoginLogsPage,
   loadOperationLogsPage,
   loadRolePermissions,
+  loadSystemSettings,
   exportPackages,
   importPackages,
   updateRolePermission,
+  updateSystemSetting,
 } = useHealthData()
 
 watch(() => [paginations.mailLogs.page, paginations.mailLogs.pageSize], () => {
@@ -182,6 +220,10 @@ function roleText(role) {
   return { user: '用户', doctor: '医生', admin: '管理员' }[role] || role
 }
 
+function settingGroupText(group) {
+  return { appointment: '预约', notification: '通知', security: '安全', service: '服务', system: '系统' }[group] || group
+}
+
 async function handlePackageImport(file) {
   await importPackages(file.raw)
 }
@@ -192,5 +234,6 @@ onMounted(() => {
   loadLoginLogsPage()
   loadOperationLogsPage()
   loadRolePermissions()
+  loadSystemSettings()
 })
 </script>

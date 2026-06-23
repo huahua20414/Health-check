@@ -32,6 +32,12 @@ func Run(db *gorm.DB) error {
 		}
 	}
 
+	for _, setting := range defaultSystemSettings() {
+		if err := db.Create(&setting).Error; err != nil {
+			return err
+		}
+	}
+
 	institutions := []models.CheckupInstitution{
 		{Name: "熙心健康体检中心总院", Address: "沈阳市和平区健康路 88 号", Phone: "024-88880001", OpenHours: "周一至周六 08:00-17:00", Status: "active"},
 		{Name: "熙心健康高新区分院", Address: "沈阳市浑南区创新路 19 号", Phone: "024-88880002", OpenHours: "周一至周五 08:30-16:30", Status: "active"},
@@ -99,6 +105,7 @@ func Run(db *gorm.DB) error {
 func reset(db *gorm.DB) error {
 	for _, model := range []any{
 		&models.SystemAnnouncement{},
+		&models.SystemSetting{},
 		&models.Notification{},
 		&models.ServiceReview{},
 		&models.PackageBrowseHistory{},
@@ -124,6 +131,17 @@ func reset(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func defaultSystemSettings() []models.SystemSetting {
+	return []models.SystemSetting{
+		{Key: "appointment.reminder_hours", Value: "24", ValueType: "number", Group: "appointment", Label: "体检前提醒小时数", Description: "预约体检前提前多少小时生成提醒。", Status: "active"},
+		{Key: "appointment.allow_reschedule_hours", Value: "12", ValueType: "number", Group: "appointment", Label: "改期截止小时数", Description: "距预约开始不足该小时数时不建议改期。", Status: "active"},
+		{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Description: "预约、候补和报告生成时发送站内信。", Status: "active"},
+		{Key: "notification.sms_mock_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "短信模拟通知", Description: "用站内信记录模拟短信触达结果。", Status: "active"},
+		{Key: "security.login_code_required", Value: "true", ValueType: "boolean", Group: "security", Label: "登录验证码", Description: "正式环境登录是否要求邮箱验证码。", Status: "active"},
+		{Key: "service.customer_service_url", Value: "https://example.com/support", ValueType: "string", Group: "service", Label: "在线客服入口", Description: "用户端客服入口跳转地址。", Status: "active"},
+	}
 }
 
 func defaultRolePermissions() []models.RolePermission {

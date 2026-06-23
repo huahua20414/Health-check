@@ -38,6 +38,7 @@ const loginLogs = ref([])
 const operationLogs = ref([])
 const rolePermissions = ref([])
 const permissionCodes = ref([])
+const systemSettings = ref([])
 const coupons = ref([])
 const activeCoupons = ref([])
 const reviews = ref([])
@@ -122,6 +123,7 @@ const loading = reactive({
   importPackages: false,
   exportPackages: false,
   permission: false,
+  systemSetting: false,
 })
 
 let bootstrapped = false
@@ -442,6 +444,11 @@ export function useHealthData() {
   async function loadRolePermissions() {
     if (!isAdmin.value) return
     rolePermissions.value = await request('/role-permissions')
+  }
+
+  async function loadSystemSettings() {
+    if (!isAdmin.value) return
+    systemSettings.value = await request('/system-settings')
   }
 
   async function loadPackagesPage(params = {}) {
@@ -1050,6 +1057,28 @@ export function useHealthData() {
     }
   }
 
+  async function updateSystemSetting(setting) {
+    if (loading.systemSetting) return
+    loading.systemSetting = true
+    try {
+      const updated = await request(`/system-settings/${setting.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          value: String(setting.value ?? ''),
+          valueType: setting.valueType,
+          label: setting.label,
+          description: setting.description,
+          status: setting.status,
+        }),
+      })
+      const index = systemSettings.value.findIndex((item) => item.id === updated.id)
+      if (index >= 0) systemSettings.value[index] = updated
+      ElMessage.success('系统设置已保存')
+    } finally {
+      loading.systemSetting = false
+    }
+  }
+
   async function updateUserStatus(user, status) {
     if (loading.status) return
     loading.status = true
@@ -1108,6 +1137,7 @@ export function useHealthData() {
     operationLogs,
     rolePermissions,
     permissionCodes,
+    systemSettings,
     familyMembers,
     favorites,
     browseHistories,
@@ -1166,6 +1196,7 @@ export function useHealthData() {
     loadOperationLogsPage,
     loadMyPermissions,
     loadRolePermissions,
+    loadSystemSettings,
     loadPackagesPage,
     loadNotificationsPage,
     loadCouponsPage,
@@ -1212,6 +1243,7 @@ export function useHealthData() {
     exportPackages,
     importPackages,
     updateRolePermission,
+    updateSystemSetting,
     selectPackage,
   }
 }

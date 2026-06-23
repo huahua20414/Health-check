@@ -115,6 +115,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/operation-logs", handler.requireRole("admin"), handler.operationLogs)
 	protected.GET("/role-permissions", handler.requireRole("admin"), handler.rolePermissions)
 	protected.PATCH("/role-permissions/:id", handler.requireRole("admin"), handler.updateRolePermission)
+	protected.GET("/system-settings", handler.requireRole("admin"), handler.systemSettings)
+	protected.PATCH("/system-settings/:id", handler.requireRole("admin"), handler.updateSystemSetting)
 	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
 
 	return router
@@ -1308,6 +1310,53 @@ func (h *Handler) updateRolePermission(c *gin.Context) {
 	c.JSON(http.StatusOK, permission)
 }
 
+func (h *Handler) systemSettings(c *gin.Context) {
+	var settings []models.SystemSetting
+	query := h.db.Model(&models.SystemSetting{}).Order("`group` asc, id asc")
+	if group := c.Query("group"); group != "" {
+		query = query.Where("`group` = ?", group)
+	}
+	if err := query.Find(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, settings)
+}
+
+func (h *Handler) updateSystemSetting(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid setting id"})
+		return
+	}
+	var req systemSettingRequest
+	if !bind(c, &req) {
+		return
+	}
+	value := strings.TrimSpace(req.Value)
+	if err := validateSettingValue(req.ValueType, value); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	updates := map[string]any{
+		"value":       value,
+		"value_type":  normalizeStatus(req.ValueType, "string"),
+		"description": req.Description,
+		"status":      normalizeStatus(req.Status, "active"),
+	}
+	if strings.TrimSpace(req.Label) != "" {
+		updates["label"] = strings.TrimSpace(req.Label)
+	}
+	if err := h.db.Model(&models.SystemSetting{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var setting models.SystemSetting
+	h.db.First(&setting, id)
+	h.recordOperation(c, "update", "system_setting", strconv.Itoa(id), "success", fmt.Sprintf("%s=%s", setting.Key, setting.Value))
+	c.JSON(http.StatusOK, setting)
+}
+
 func (h *Handler) adminDashboard(c *gin.Context) {
 	var userCount, doctorCount, appointmentCount, reportCount, reviewCount int64
 	h.db.Model(&models.User{}).Where("role = ?", "user").Count(&userCount)
@@ -2322,6 +2371,14 @@ type rolePermissionRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
+type systemSettingRequest struct {
+	Value       string `json:"value"`
+	ValueType   string `json:"valueType"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+}
+
 type doctorProfileRequest struct {
 	Department  string `json:"department" binding:"required"`
 	Title       string `json:"title"`
@@ -2377,6 +2434,24 @@ func trimForLog(value string, limit int) string {
 		return value
 	}
 	return value[:limit]
+}
+
+func validateSettingValue(valueType, value string) error {
+	switch normalizeStatus(valueType, "string") {
+	case "number":
+		if _, err := strconv.ParseFloat(value, 64); err != nil {
+			return fmt.Errorf("setting value must be numeric")
+		}
+	case "boolean":
+		if value != "true" && value != "false" {
+			return fmt.Errorf("setting value must be true or false")
+		}
+	case "string", "json":
+		return nil
+	default:
+		return fmt.Errorf("unsupported setting value type")
+	}
+	return nil
 }
 
 func syncDoctorAvailableSlots(tx *gorm.DB, doctorID uint, categories []string) error {
