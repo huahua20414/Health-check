@@ -37,6 +37,7 @@
           <el-option label="停用" value="disabled" />
         </el-select>
         <el-input v-model="settingKeyword" placeholder="搜索配置项/说明/值" clearable />
+        <el-button :loading="loading.exportSystemSettings" :disabled="!can('admin:data:exchange')" @click="handleSystemSettingExport">导出配置</el-button>
       </div>
       <el-table :data="systemSettingRows" stripe>
         <el-table-column label="分组" width="120">
@@ -313,6 +314,7 @@ const {
   exportMailLogs,
   exportLoginLogs,
   exportOperationLogs,
+  exportSystemSettings,
   importPackages,
   updateRolePermission,
   updateSystemSetting,
@@ -341,16 +343,24 @@ const debouncedPermissionKeyword = useDebouncedRef(permissionKeyword, 350)
 function loadSystemSettingPage(reset = false) {
   if (!isAdmin.value) return
   if (reset) paginations.systemSettings.page = 1
-  return loadSystemSettingsPage({
-    group: settingGroup.value,
-    status: settingStatus.value,
-    keyword: debouncedSettingKeyword.value,
-  })
+  return loadSystemSettingsPage(systemSettingFilters())
 }
 
 async function handleUpdateSystemSetting(row) {
   await updateSystemSetting(row)
   await loadSystemSettingPage()
+}
+
+function systemSettingFilters() {
+  return {
+    group: settingGroup.value,
+    status: settingStatus.value,
+    keyword: debouncedSettingKeyword.value,
+  }
+}
+
+function handleSystemSettingExport() {
+  return exportSystemSettings(systemSettingFilters())
 }
 
 function loadRolePermissionPage(reset = false) {

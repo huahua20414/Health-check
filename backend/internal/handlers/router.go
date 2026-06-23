@@ -158,6 +158,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/role-permissions", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.rolePermissions)
 	protected.PATCH("/role-permissions/:id", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.updateRolePermission)
 	protected.GET("/system-settings", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.systemSettings)
+	protected.GET("/system-settings/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportSystemSettings)
 	protected.PATCH("/system-settings/:id", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.updateSystemSetting)
 	protected.POST("/seed", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.seed)
 
@@ -2492,6 +2493,19 @@ func (h *Handler) updateRolePermission(c *gin.Context) {
 
 func (h *Handler) systemSettings(c *gin.Context) {
 	var settings []models.SystemSetting
+	query := h.systemSettingsQuery(c)
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &settings)
+		return
+	}
+	if err := query.Find(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, settings)
+}
+
+func (h *Handler) systemSettingsQuery(c *gin.Context) *gorm.DB {
 	query := h.db.Model(&models.SystemSetting{}).Order("system_settings.`group` asc, system_settings.id asc")
 	if group := c.Query("group"); group != "" {
 		query = query.Where("system_settings.`group` = ?", group)
@@ -2506,15 +2520,35 @@ func (h *Handler) systemSettings(c *gin.Context) {
 			pattern, pattern, pattern, pattern,
 		)
 	}
-	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &settings)
-		return
-	}
-	if err := query.Find(&settings).Error; err != nil {
+	return query
+}
+
+func (h *Handler) exportSystemSettings(c *gin.Context) {
+	var settings []models.SystemSetting
+	if err := h.systemSettingsQuery(c).Find(&settings).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, settings)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="system-settings.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "key", "group", "label", "value_type", "value", "description", "status", "created_at", "updated_at"})
+	for _, setting := range settings {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(setting.ID)),
+			setting.Key,
+			setting.Group,
+			setting.Label,
+			setting.ValueType,
+			setting.Value,
+			setting.Description,
+			setting.Status,
+			setting.CreatedAt.Format(time.RFC3339),
+			setting.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "system_setting", "", "success", fmt.Sprintf("%d settings", len(settings)))
 }
 
 func (h *Handler) updateSystemSetting(c *gin.Context) {

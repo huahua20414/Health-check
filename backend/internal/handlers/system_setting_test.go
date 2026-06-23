@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"health-checkup/backend/internal/models"
@@ -92,6 +94,41 @@ func TestSystemSettingsSupportFiltersAndPagination(t *testing.T) {
 	}
 }
 
+func TestExportSystemSettingsUsesFiltersAndAudits(t *testing.T) {
+	handler, db, _ := newSystemSettingFixture(t)
+	if err := db.Create(&models.SystemSetting{
+		ID:          11,
+		Key:         "notification.email_enabled",
+		Value:       "true",
+		ValueType:   "boolean",
+		Group:       "notification",
+		Label:       "邮件通知开关",
+		Description: "控制预约、候补和报告邮件发送",
+		Status:      "active",
+	}).Error; err != nil {
+		t.Fatalf("create setting: %v", err)
+	}
+	admin := models.User{ID: 1, Name: "管理员", Role: "admin", Status: "active"}
+	router := newSystemSettingRouter(handler, admin)
+
+	response := performSystemSettingGet(t, router, "/system-settings/export?group=notification&keyword=邮件")
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(response.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected header plus one setting, got %d rows: %#v", len(rows), rows)
+	}
+	if rows[1][1] != "notification.email_enabled" || rows[1][2] != "notification" || rows[1][7] != "active" {
+		t.Fatalf("unexpected system setting csv row: %#v", rows[1])
+	}
+	assertOperationCount(t, db, "export", "system_setting", 1)
+}
+
 func newSystemSettingFixture(t *testing.T) (*Handler, *gorm.DB, models.SystemSetting) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -126,6 +163,7 @@ func newSystemSettingRouter(handler *Handler, current models.User) *gin.Engine {
 	})
 	router.PATCH("/system-settings/:id", handler.updateSystemSetting)
 	router.GET("/system-settings", handler.systemSettings)
+	router.GET("/system-settings/export", handler.exportSystemSettings)
 	return router
 }
 

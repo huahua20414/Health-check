@@ -165,6 +165,7 @@ const loading = reactive({
   exportMailLogs: false,
   exportLoginLogs: false,
   exportOperationLogs: false,
+  exportSystemSettings: false,
   permission: false,
   systemSetting: false,
 })
@@ -1738,6 +1739,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportSystemSettings(params = {}) {
+    if (loading.exportSystemSettings) return
+    loading.exportSystemSettings = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/system-settings/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'system-settings.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('系统设置 CSV 已导出')
+    } finally {
+      loading.exportSystemSettings = false
+    }
+  }
+
   async function importPackages(file) {
     if (!file || loading.importPackages) return
     loading.importPackages = true
@@ -2037,6 +2056,7 @@ export function useHealthData() {
     exportMailLogs,
     exportLoginLogs,
     exportOperationLogs,
+    exportSystemSettings,
     importPackages,
     importCoupons,
     updateRolePermission,
