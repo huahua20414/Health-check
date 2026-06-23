@@ -76,6 +76,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/appointments/export", handler.requireRole("doctor", "admin"), handler.exportAppointments)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.POST("/schedule/slots", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createScheduleSlot)
+	protected.GET("/schedule/slots/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportScheduleSlots)
+	protected.POST("/schedule/slots/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importScheduleSlots)
 	protected.PATCH("/schedule/slots/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateScheduleSlot)
 	protected.DELETE("/schedule/slots/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveScheduleSlot)
 	protected.GET("/waitlist", handler.requireRoleAndPermission("appointment:create", "user"), handler.waitlist)
@@ -1238,6 +1240,146 @@ func (h *Handler) archiveScheduleSlot(c *gin.Context) {
 	}
 	h.recordOperation(c, "archive", "schedule_slot", strconv.Itoa(id), "success", "")
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
+func (h *Handler) exportScheduleSlots(c *gin.Context) {
+	var slots []models.ScheduleSlot
+	query := h.db.Preload("Doctor").Preload("Institution").Order("date asc, start_time asc, doctor_id asc")
+	if institutionID := c.Query("institutionId"); institutionID != "" {
+		query = query.Where("institution_id = ?", institutionID)
+	}
+	if category := c.Query("category"); category != "" {
+		query = query.Where("category = ?", category)
+	}
+	if date := c.Query("date"); date != "" {
+		query = query.Where("date = ?", date)
+	}
+	if period := c.Query("period"); period != "" {
+		query = query.Where("period = ?", period)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
+	}
+	if err := query.Find(&slots).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="schedule-slots.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"doctor_email", "doctor_name", "institution_name", "date", "period", "category", "start_time", "end_time", "capacity", "booked_count", "status"})
+	for _, slot := range slots {
+		_ = writer.Write([]string{
+			slot.Doctor.Email,
+			slot.Doctor.Name,
+			slot.Institution.Name,
+			slot.Date,
+			slot.Period,
+			slot.Category,
+			slot.StartTime,
+			slot.EndTime,
+			strconv.Itoa(slot.Capacity),
+			strconv.Itoa(slot.BookedCount),
+			slot.Status,
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "schedule_slot", "", "success", fmt.Sprintf("%d schedule slots", len(slots)))
+}
+
+func (h *Handler) importScheduleSlots(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "csv file is required"})
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "open csv file failed"})
+		return
+	}
+	defer opened.Close()
+	reader := csv.NewReader(opened)
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
+		return
+	}
+	index := csvIndex(header)
+	for _, field := range []string{"doctor_email", "institution_name", "date", "category", "start_time", "capacity"} {
+		if _, ok := index[field]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing csv column: " + field})
+			return
+		}
+	}
+	created := 0
+	updated := 0
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			slot, err := h.scheduleSlotFromCSVRecord(tx, record, index)
+			if err != nil {
+				return err
+			}
+			if slot.DoctorID == 0 {
+				continue
+			}
+			var existing models.ScheduleSlot
+			err = tx.Where("doctor_id = ? AND institution_id = ? AND date = ? AND start_time = ? AND status <> ?", slot.DoctorID, slot.InstitutionID, slot.Date, slot.StartTime, "deleted").First(&existing).Error
+			if err == nil {
+				if slot.Capacity < existing.BookedCount {
+					return fmt.Errorf("capacity cannot be lower than booked count for %s %s", slot.Date, slot.StartTime)
+				}
+				if err := ensureScheduleSlotDoesNotOverlapDB(tx, slot, existing.ID); err != nil {
+					return err
+				}
+				updates := map[string]any{
+					"doctor_id":      slot.DoctorID,
+					"institution_id": slot.InstitutionID,
+					"date":           slot.Date,
+					"period":         slot.Period,
+					"category":       slot.Category,
+					"start_time":     slot.StartTime,
+					"end_time":       slot.EndTime,
+					"capacity":       slot.Capacity,
+					"booked_count":   existing.BookedCount,
+					"status":         slot.Status,
+				}
+				if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+					return err
+				}
+				updated++
+				continue
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := ensureScheduleSlotDoesNotOverlapDB(tx, slot, 0); err != nil {
+				return err
+			}
+			if err := tx.Create(&slot).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	}); err != nil {
+		h.recordOperation(c, "import", "schedule_slot", "", "failed", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	detail := fmt.Sprintf("created=%d updated=%d", created, updated)
+	h.recordOperation(c, "import", "schedule_slot", "", "success", detail)
+	c.JSON(http.StatusOK, gin.H{"created": created, "updated": updated})
 }
 
 func (h *Handler) waitlist(c *gin.Context) {
@@ -3593,21 +3735,31 @@ func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, boo
 }
 
 func (h *Handler) ensureScheduleSlotDoesNotOverlap(c *gin.Context, slot models.ScheduleSlot, excludeID uint) bool {
-	query := h.db.Model(&models.ScheduleSlot{}).
+	if err := ensureScheduleSlotDoesNotOverlapDB(h.db, slot, excludeID); err != nil {
+		if err.Error() == "schedule slot overlaps with existing slot" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return false
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return false
+	}
+	return true
+}
+
+func ensureScheduleSlotDoesNotOverlapDB(db *gorm.DB, slot models.ScheduleSlot, excludeID uint) error {
+	query := db.Model(&models.ScheduleSlot{}).
 		Where("doctor_id = ? AND date = ? AND status <> ? AND start_time < ? AND end_time > ?", slot.DoctorID, slot.Date, "deleted", slot.EndTime, slot.StartTime)
 	if excludeID > 0 {
 		query = query.Where("id <> ?", excludeID)
 	}
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return false
+		return err
 	}
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schedule slot overlaps with existing slot"})
-		return false
+		return fmt.Errorf("schedule slot overlaps with existing slot")
 	}
-	return true
+	return nil
 }
 
 func (h *Handler) authRequired() gin.HandlerFunc {
@@ -4112,6 +4264,64 @@ func (h *Handler) packageItemFromCSVRecord(db *gorm.DB, record []string, index m
 		ItemID:    item.ID,
 		SortOrder: sortOrder,
 		Required:  required,
+	}, nil
+}
+
+func (h *Handler) scheduleSlotFromCSVRecord(db *gorm.DB, record []string, index map[string]int) (models.ScheduleSlot, error) {
+	doctorEmail := csvValue(record, index, "doctor_email")
+	institutionName := csvValue(record, index, "institution_name")
+	date := csvValue(record, index, "date")
+	startTime := csvValue(record, index, "start_time")
+	if doctorEmail == "" && institutionName == "" && date == "" && startTime == "" {
+		return models.ScheduleSlot{}, nil
+	}
+	if doctorEmail == "" || institutionName == "" || date == "" || startTime == "" {
+		return models.ScheduleSlot{}, fmt.Errorf("schedule slot doctor_email, institution_name, date and start_time are required")
+	}
+	var doctor models.User
+	if err := db.Where("email = ? AND role = ? AND status = ?", doctorEmail, "doctor", "active").First(&doctor).Error; err != nil {
+		return models.ScheduleSlot{}, fmt.Errorf("active doctor not found for schedule slot: %s", doctorEmail)
+	}
+	var institution models.CheckupInstitution
+	if err := db.Where("name = ? AND status = ?", institutionName, "active").First(&institution).Error; err != nil {
+		return models.ScheduleSlot{}, fmt.Errorf("active institution not found for schedule slot: %s", institutionName)
+	}
+	capacity, err := strconv.Atoi(csvValue(record, index, "capacity"))
+	if err != nil || capacity <= 0 {
+		return models.ScheduleSlot{}, fmt.Errorf("invalid schedule slot capacity for %s %s", date, startTime)
+	}
+	endTime := csvValue(record, index, "end_time")
+	if endTime == "" {
+		endTime, err = addMinutes(startTime, 30)
+		if err != nil {
+			return models.ScheduleSlot{}, fmt.Errorf("invalid schedule slot start time for %s %s", date, startTime)
+		}
+	}
+	if !validTimeRange(startTime, endTime) {
+		return models.ScheduleSlot{}, fmt.Errorf("end time must be after start time for %s %s", date, startTime)
+	}
+	period := csvValue(record, index, "period")
+	if period == "" {
+		period = "上午"
+		if startTime >= "12:00" {
+			period = "下午"
+		}
+	}
+	category := csvValue(record, index, "category")
+	if category == "" {
+		return models.ScheduleSlot{}, fmt.Errorf("schedule slot category is required for %s %s", date, startTime)
+	}
+	return models.ScheduleSlot{
+		DoctorID:      doctor.ID,
+		InstitutionID: institution.ID,
+		Date:          date,
+		Period:        period,
+		Category:      category,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Capacity:      capacity,
+		BookedCount:   0,
+		Status:        normalizeStatus(csvValue(record, index, "status"), "available"),
 	}, nil
 }
 

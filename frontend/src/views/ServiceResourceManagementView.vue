@@ -117,6 +117,14 @@
           <h3>医生号源与容量</h3>
           <p>按医生、机构、日期和时段维护库存，已预约数量不能被压低。</p>
         </div>
+        <div class="head-actions">
+          <el-button :loading="loading.exportScheduleSlots" :disabled="!can('admin:data:exchange')" @click="exportScheduleSlots">
+            导出号源 CSV
+          </el-button>
+          <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleScheduleSlotImport">
+            <el-button :loading="loading.importScheduleSlots" :disabled="!can('admin:data:exchange')">导入号源 CSV</el-button>
+          </el-upload>
+        </div>
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="医生">
@@ -229,6 +237,8 @@ const {
   editScheduleSlot,
   saveScheduleSlot,
   archiveScheduleSlot,
+  exportScheduleSlots,
+  importScheduleSlots,
 } = useHealthData()
 
 const activeDoctors = computed(() => users.value.filter((user) => user.role === 'doctor' && user.status === 'active'))
@@ -253,6 +263,10 @@ function handlePackageItemExport() {
 
 async function handlePackageItemImport(file) {
   await importPackageItems(file.raw)
+}
+
+async function handleScheduleSlotImport(file) {
+  await importScheduleSlots(file.raw)
 }
 
 async function removePackageItem(row) {

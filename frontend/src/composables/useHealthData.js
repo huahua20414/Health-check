@@ -141,6 +141,8 @@ const loading = reactive({
   exportCheckupItems: false,
   importPackageItems: false,
   exportPackageItems: false,
+  importScheduleSlots: false,
+  exportScheduleSlots: false,
   importCoupons: false,
   exportCoupons: false,
   exportAppointments: false,
@@ -1226,6 +1228,38 @@ export function useHealthData() {
     }
   }
 
+  async function exportScheduleSlots(params = {}) {
+    if (loading.exportScheduleSlots) return
+    loading.exportScheduleSlots = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/schedule/slots/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'schedule-slots.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('号源 CSV 已导出')
+    } finally {
+      loading.exportScheduleSlots = false
+    }
+  }
+
+  async function importScheduleSlots(file) {
+    if (!file || loading.importScheduleSlots) return
+    loading.importScheduleSlots = true
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await request('/schedule/slots/import', { method: 'POST', body: formData })
+      ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      await loadSlotsPage()
+    } finally {
+      loading.importScheduleSlots = false
+    }
+  }
+
   async function joinWaitlist(slot) {
     if (!currentUser.value || loading.appointment) return
     loading.appointment = true
@@ -1808,6 +1842,8 @@ export function useHealthData() {
     editScheduleSlot,
     saveScheduleSlot,
     archiveScheduleSlot,
+    exportScheduleSlots,
+    importScheduleSlots,
     saveProfile,
     sendEmailCode,
     updateEmail,
