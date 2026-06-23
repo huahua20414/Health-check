@@ -84,6 +84,7 @@ func TestUpdateAppointmentPaymentRespectsInAppToggle(t *testing.T) {
 }
 
 type paymentStatusFixture struct {
+	admin               models.User
 	user                models.User
 	otherUser           models.User
 	doctor              models.User
@@ -102,10 +103,11 @@ func newPaymentStatusFixture(t *testing.T) (*Handler, *gorm.DB, paymentStatusFix
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Notification{}, &models.SystemSetting{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Report{}, &models.Notification{}, &models.SystemSetting{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := paymentStatusFixture{
+		admin:               models.User{ID: 99, Name: "管理员", Phone: "13800000099", Email: "admin@example.com", Role: "admin", Status: "active", PasswordHash: "hash"},
 		user:                models.User{ID: 100, Name: "用户", Phone: "13800000100", Email: "user@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
 		otherUser:           models.User{ID: 101, Name: "其他用户", Phone: "13800000101", Email: "other@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
 		doctor:              models.User{ID: 200, Name: "医生", Phone: "13800000200", Email: "doctor@example.com", Role: "doctor", Status: "active", PasswordHash: "hash"},
@@ -117,7 +119,7 @@ func newPaymentStatusFixture(t *testing.T) (*Handler, *gorm.DB, paymentStatusFix
 		reportedAppointment: models.Appointment{ID: 42, OrderNo: "HC202607010003", UserID: 100, DoctorID: 200, InstitutionID: 10, SlotID: 30, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "reported", PaymentStatus: "unpaid"},
 	}
 	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
-	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.bookedAppointment, &fixture.otherAppointment, &fixture.reportedAppointment, &inAppSetting} {
+	for _, row := range []any{&fixture.admin, &fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.bookedAppointment, &fixture.otherAppointment, &fixture.reportedAppointment, &inAppSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}

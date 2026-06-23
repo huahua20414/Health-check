@@ -125,6 +125,10 @@
           <span>支付状态</span>
           <strong>{{ paymentStatusText(activeInvoiceAppointment.paymentStatus) }}</strong>
         </div>
+        <div>
+          <span>发票状态</span>
+          <strong>{{ statusText(activeInvoiceAppointment.invoiceStatus || 'none') }}</strong>
+        </div>
       </div>
       <el-form label-position="top">
         <el-form-item label="发票抬头">
@@ -136,7 +140,7 @@
       </el-form>
       <template #footer>
         <el-button @click="invoiceVisible = false">取消</el-button>
-        <el-button type="primary" :loading="loading.appointment" :disabled="!invoiceForm.appointmentId || !can('appointment:invoice')" @click="submitInvoice">保存发票</el-button>
+        <el-button type="primary" :loading="loading.appointment" :disabled="!invoiceForm.appointmentId || activeInvoiceAppointment?.invoiceStatus === 'issued' || !can('appointment:invoice')" @click="submitInvoice">保存发票</el-button>
       </template>
     </el-dialog>
 
@@ -161,7 +165,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
-import { appointmentDocumentHTML, appointmentPayableAmount, downloadHTML, moneyText, paymentStatusText, useHealthData } from '../composables/useHealthData'
+import { appointmentDocumentHTML, appointmentPayableAmount, downloadHTML, moneyText, paymentStatusText, statusText, useHealthData } from '../composables/useHealthData'
 
 const { myAppointments, waitlist, slots, rescheduleForm, invoiceForm, reviewForm, loading, can, cancelAppointment, cancelWaitlist, editReschedule, rescheduleAppointment, updateAppointmentPayment, editInvoice, saveInvoice, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
@@ -245,7 +249,7 @@ onMounted(() => {
 <style scoped>
 .invoice-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }

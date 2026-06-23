@@ -24,7 +24,16 @@
           <el-input v-model="keyword" placeholder="搜索客户/套餐" />
         </div>
       </div>
-      <AppointmentTable :rows="filteredAppointments" :is-doctor="isDoctor" :can-mark-done="can('doctor:appointment:update')" :loading="loading.status" @mark-done="handleMarkDone" @view-order="openOrder" />
+      <AppointmentTable
+        :rows="filteredAppointments"
+        :is-doctor="isDoctor"
+        :can-mark-done="can('doctor:appointment:update')"
+        :can-issue-invoice="can('admin:operation:manage')"
+        :loading="loading.status || loading.appointment"
+        @mark-done="handleMarkDone"
+        @view-order="openOrder"
+        @issue-invoice="handleIssueInvoice"
+      />
       <el-pagination
         class="table-pagination"
         background
@@ -59,7 +68,7 @@ const sortBy = ref('created_desc')
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const debouncedKeyword = useDebouncedRef(keyword, 350)
-const { appointments, isDoctor, loading, can, markDone, paginations, loadAppointmentsPage, exportAppointments } = useHealthData()
+const { appointments, isDoctor, loading, can, markDone, updateAppointmentInvoiceStatus, paginations, loadAppointmentsPage, exportAppointments } = useHealthData()
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
 
 const filteredAppointments = computed(() => appointments.value)
@@ -72,6 +81,10 @@ function loadPage(reset = false) {
 async function handleMarkDone(row) {
   await markDone(row)
   router.push('/reports')
+}
+
+function handleIssueInvoice(row) {
+  return updateAppointmentInvoiceStatus(row, 'issued')
 }
 
 function openOrder(row) {

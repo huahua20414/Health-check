@@ -25,6 +25,9 @@
     <el-table-column label="支付" width="90">
       <template #default="{ row }">{{ paymentStatusText(row.paymentStatus) }}</template>
     </el-table-column>
+    <el-table-column label="发票" width="100">
+      <template #default="{ row }"><StatusTag :status="row.invoiceStatus || 'none'" /></template>
+    </el-table-column>
     <el-table-column label="金额" width="130" align="right">
       <template #default="{ row }">
         <div class="amount-cell">
@@ -46,8 +49,19 @@
           <el-button v-if="canPay && row.paymentStatus === 'paid'" size="small" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('unpay', row)">
             撤销支付
           </el-button>
-          <el-button v-if="canInvoice" size="small" plain :disabled="row.status === 'canceled'" @click="$emit('invoice', row)">
+          <el-button v-if="canInvoice" size="small" plain :disabled="row.status === 'canceled' || row.invoiceStatus === 'issued'" @click="$emit('invoice', row)">
             发票
+          </el-button>
+          <el-button
+            v-if="canIssueInvoice"
+            size="small"
+            type="success"
+            plain
+            :loading="loading"
+            :disabled="row.invoiceStatus !== 'requested'"
+            @click="$emit('issue-invoice', row)"
+          >
+            开具发票
           </el-button>
           <el-button v-if="canReschedule" size="small" :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('reschedule', row)">
             改期
@@ -101,13 +115,17 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  canIssueInvoice: {
+    type: Boolean,
+    default: false,
+  },
   canMarkDone: {
     type: Boolean,
     default: false,
   },
 })
 
-defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order', 'pay', 'unpay', 'invoice'])
+defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order', 'pay', 'unpay', 'invoice', 'issue-invoice'])
 </script>
 
 <style scoped>

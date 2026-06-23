@@ -147,11 +147,11 @@ const loading = reactive({
 let bootstrapped = false
 
 export function statusText(status) {
-  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', deleted: '已归档', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读', open: '待处理', replied: '已回复', closed: '已关闭' }[status] || status
+  return { booked: '已预约', checked: '已体检', reported: '已出报告', canceled: '已取消', waiting: '候补中', promoted: '已递补', active: '启用', pending: '待审核', disabled: '停用', deleted: '已归档', available: '可预约', full: '已满', draft: '草稿', published: '已发布', hidden: '已隐藏', unread: '未读', read: '已读', open: '待处理', replied: '已回复', closed: '已关闭', none: '未申请', requested: '已申请', issued: '已开具' }[status] || status
 }
 
 export function statusType(status) {
-  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', deleted: 'info', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info', open: 'warning', replied: 'success', closed: 'info' }[status] || 'info'
+  return { booked: 'warning', checked: 'primary', reported: 'success', canceled: 'info', waiting: 'warning', promoted: 'success', active: 'success', pending: 'warning', disabled: 'danger', deleted: 'info', available: 'success', full: 'danger', draft: 'info', published: 'success', hidden: 'warning', unread: 'warning', read: 'info', open: 'warning', replied: 'success', closed: 'info', none: 'info', requested: 'warning', issued: 'success' }[status] || 'info'
 }
 
 export function paymentStatusText(status) {
@@ -225,6 +225,7 @@ export function appointmentDocumentHTML(appointment) {
     ['支付状态', paymentStatusText(appointment.paymentStatus)],
     ['发票抬头', appointment.invoiceTitle],
     ['纳税人识别号', appointment.invoiceTaxNo],
+    ['发票状态', statusText(appointment.invoiceStatus || 'none')],
     ['备注', appointment.note],
     ['状态', statusText(appointment.status)],
   ], '请按预约时间携带有效证件到检。')
@@ -733,6 +734,21 @@ export function useHealthData() {
       })
       ElMessage.success('发票信息已保存')
       editInvoice(null)
+      await loadAppointmentsPage()
+    } finally {
+      loading.appointment = false
+    }
+  }
+
+  async function updateAppointmentInvoiceStatus(appointment, invoiceStatus) {
+    if (!appointment?.id || loading.appointment) return
+    loading.appointment = true
+    try {
+      await request(`/appointments/${appointment.id}/invoice/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ invoiceStatus }),
+      })
+      ElMessage.success(invoiceStatus === 'issued' ? '发票已标记开具' : '发票状态已更新')
       await loadAppointmentsPage()
     } finally {
       loading.appointment = false
@@ -1600,6 +1616,7 @@ export function useHealthData() {
     updateAppointmentPayment,
     editInvoice,
     saveInvoice,
+    updateAppointmentInvoiceStatus,
     markNotificationRead,
     updateMyNotificationStatus,
     editCoupon,

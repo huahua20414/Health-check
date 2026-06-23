@@ -72,6 +72,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/appointments/:id/reschedule", handler.requireRoleAndPermission("appointment:reschedule", "user"), handler.rescheduleAppointment)
 	protected.PATCH("/appointments/:id/payment", handler.requireRoleAndPermission("appointment:pay", "user"), handler.updateAppointmentPayment)
 	protected.PATCH("/appointments/:id/invoice", handler.requireRoleAndPermission("appointment:invoice", "user"), handler.updateAppointmentInvoice)
+	protected.PATCH("/appointments/:id/invoice/status", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.updateAppointmentInvoiceStatus)
 	protected.GET("/appointments/export", handler.requireRole("doctor", "admin"), handler.exportAppointments)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.POST("/schedule/slots", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createScheduleSlot)
@@ -649,6 +650,10 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		if pricingErr != nil {
 			return pricingErr
 		}
+		invoiceStatus := "none"
+		if strings.TrimSpace(req.InvoiceTitle) != "" || strings.TrimSpace(req.InvoiceTaxNo) != "" {
+			invoiceStatus = "requested"
+		}
 		appointment := models.Appointment{
 			OrderNo:         generateOrderNo(),
 			UserID:          current.ID,
@@ -672,6 +677,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			PayableAmount:   pricing.PayableAmount,
 			InvoiceTitle:    req.InvoiceTitle,
 			InvoiceTaxNo:    req.InvoiceTaxNo,
+			InvoiceStatus:   invoiceStatus,
 		}
 		if err := tx.Create(&appointment).Error; err != nil {
 			return err
@@ -898,20 +904,68 @@ func (h *Handler) updateAppointmentInvoice(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invoice cannot be updated for canceled appointments"})
 		return
 	}
+	if appointment.InvoiceStatus == "issued" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "issued invoice cannot be updated"})
+		return
+	}
 	title := strings.TrimSpace(req.InvoiceTitle)
 	taxNo := strings.TrimSpace(req.InvoiceTaxNo)
 	if len(title) > 128 || len(taxNo) > 64 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invoice fields are too long"})
 		return
 	}
+	invoiceStatus := "none"
+	if title != "" || taxNo != "" {
+		invoiceStatus = "requested"
+	}
 	if err := h.db.Model(&models.Appointment{}).Where("id = ?", id).Updates(map[string]any{
 		"invoice_title":  title,
 		"invoice_tax_no": taxNo,
+		"invoice_status": invoiceStatus,
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.recordOperation(c, "update_invoice", "appointment", strconv.Itoa(id), "success", title)
+	h.recordOperation(c, "update_invoice", "appointment", strconv.Itoa(id), "success", invoiceStatus)
+	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
+	c.JSON(http.StatusOK, appointment)
+}
+
+func (h *Handler) updateAppointmentInvoiceStatus(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid appointment id")
+	if !ok {
+		return
+	}
+	var req invoiceStatusRequest
+	if !bind(c, &req) {
+		return
+	}
+	status := strings.TrimSpace(req.InvoiceStatus)
+	if status == "" {
+		status = strings.TrimSpace(req.Status)
+	}
+	if status != "none" && status != "requested" && status != "issued" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invoice status"})
+		return
+	}
+	var appointment models.Appointment
+	if err := h.db.First(&appointment, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if status == "issued" && strings.TrimSpace(appointment.InvoiceTitle) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invoice title is required before issuing"})
+		return
+	}
+	if appointment.Status == "canceled" && status != "none" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invoice cannot be issued for canceled appointments"})
+		return
+	}
+	if err := h.db.Model(&models.Appointment{}).Where("id = ?", id).Update("invoice_status", status).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "update_invoice_status", "appointment", strconv.Itoa(id), "success", appointment.InvoiceStatus+"->"+status)
 	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
 	c.JSON(http.StatusOK, appointment)
 }
@@ -928,7 +982,7 @@ func (h *Handler) exportAppointments(c *gin.Context) {
 	_ = writer.Write([]string{
 		"order_no", "user_name", "family_member", "doctor_name", "institution", "package",
 		"appointment_type", "category", "date", "period", "start_time", "end_time",
-		"status", "payment_status", "original_amount", "discount_amount", "payable_amount", "invoice_title", "invoice_tax_no", "note",
+		"status", "payment_status", "original_amount", "discount_amount", "payable_amount", "invoice_title", "invoice_tax_no", "invoice_status", "note",
 	})
 	for _, appointment := range appointments {
 		familyMember := "本人"
@@ -955,6 +1009,7 @@ func (h *Handler) exportAppointments(c *gin.Context) {
 			fmt.Sprintf("%.2f", appointment.PayableAmount),
 			appointment.InvoiceTitle,
 			appointment.InvoiceTaxNo,
+			appointment.InvoiceStatus,
 			appointment.Note,
 		})
 	}
@@ -3274,6 +3329,11 @@ type paymentStatusRequest struct {
 type invoiceRequest struct {
 	InvoiceTitle string `json:"invoiceTitle"`
 	InvoiceTaxNo string `json:"invoiceTaxNo"`
+}
+
+type invoiceStatusRequest struct {
+	InvoiceStatus string `json:"invoiceStatus"`
+	Status        string `json:"status"`
 }
 
 type supportTicketRequest struct {

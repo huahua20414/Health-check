@@ -28,7 +28,7 @@ func TestExportAppointmentsScopesDoctorRows(t *testing.T) {
 	if records[1][0] != fixture.doctorAppointment.OrderNo || records[1][3] != fixture.doctor.Name {
 		t.Fatalf("doctor export returned wrong row: %#v", records)
 	}
-	if records[1][14] != "399.00" || records[1][15] != "50.00" || records[1][16] != "349.00" {
+	if records[1][14] != "399.00" || records[1][15] != "50.00" || records[1][16] != "349.00" || records[1][19] != "requested" {
 		t.Fatalf("doctor export returned wrong pricing columns: %#v", records[1])
 	}
 	assertExportOperationLog(t, db, fixture.doctor.ID, "appointment", 1)
@@ -83,7 +83,7 @@ func newAppointmentExportFixture(t *testing.T) (*Handler, *gorm.DB, appointmentE
 		otherPackage: models.CheckupPackage{
 			ID: 21, Name: "其他套餐", Category: "影像专项", Price: 299, Items: "胸片", Status: "active",
 		},
-		doctorAppointment: models.Appointment{ID: 30, OrderNo: "HCEXPORT001", UserID: 2, DoctorID: 4, InstitutionID: 10, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-02", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked", PaymentStatus: "paid", OriginalAmount: 399, DiscountAmount: 50, PayableAmount: 349, InvoiceTitle: "用户甲", InvoiceTaxNo: "TAX001", Note: "导出测试"},
+		doctorAppointment: models.Appointment{ID: 30, OrderNo: "HCEXPORT001", UserID: 2, DoctorID: 4, InstitutionID: 10, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-02", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked", PaymentStatus: "paid", OriginalAmount: 399, DiscountAmount: 50, PayableAmount: 349, InvoiceTitle: "用户甲", InvoiceTaxNo: "TAX001", InvoiceStatus: "requested", Note: "导出测试"},
 		otherAppointment:  models.Appointment{ID: 31, OrderNo: "HCEXPORT002", UserID: 3, DoctorID: 5, InstitutionID: 10, PackageID: 21, AppointmentType: "复查体检", Category: "影像专项", Date: "2026-07-03", Period: "下午", StartTime: "14:00", EndTime: "14:30", Status: "reported", PaymentStatus: "unpaid", OriginalAmount: 299, PayableAmount: 299},
 	}
 	for _, row := range []any{&fixture.admin, &fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.otherDoctor, &fixture.institution, &fixture.pkg, &fixture.otherPackage, &fixture.doctorAppointment, &fixture.otherAppointment} {

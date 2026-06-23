@@ -112,6 +112,7 @@ type Appointment struct {
 	PayableAmount   float64            `json:"payableAmount" gorm:"not null;default:0"`
 	InvoiceTitle    string             `json:"invoiceTitle" gorm:"size:128"`
 	InvoiceTaxNo    string             `json:"invoiceTaxNo" gorm:"size:64"`
+	InvoiceStatus   string             `json:"invoiceStatus" gorm:"size:24;not null;default:'none';index"`
 	User            User               `json:"user"`
 	FamilyMember    FamilyMember       `json:"familyMember"`
 	Doctor          User               `json:"doctor"`
