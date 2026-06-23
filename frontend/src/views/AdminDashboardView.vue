@@ -31,6 +31,16 @@
         <strong>{{ Number(summary.averageRating || 0).toFixed(1) }}</strong>
         <p>{{ summary.reviews || 0 }} 条服务评价</p>
       </div>
+      <div class="metric-card">
+        <span>候补人数</span>
+        <strong>{{ summary.waitlist || 0 }}</strong>
+        <p>当前周期等待递补</p>
+      </div>
+      <div class="metric-card">
+        <span>号源利用率</span>
+        <strong>{{ percent(summary.capacityUsageRate) }}</strong>
+        <p>{{ summary.slotBooked || 0 }} / {{ summary.slotCapacity || 0 }} 个号源</p>
+      </div>
     </div>
 
     <div class="layout-two">
@@ -68,20 +78,41 @@
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head">
-        <div>
-          <h3>用户增长</h3>
-          <p>按注册日期统计新增用户。</p>
+    <div class="layout-two">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>支付状态</h3>
+            <p>按预约支付状态汇总订单数和应收金额。</p>
+          </div>
         </div>
+        <el-table :data="adminDashboard.paymentStatus" stripe>
+          <el-table-column label="状态" min-width="100">
+            <template #default="{ row }">{{ paymentStatusText(row.label) }}</template>
+          </el-table-column>
+          <el-table-column prop="count" label="订单" width="90" />
+          <el-table-column label="金额" width="120">
+            <template #default="{ row }">￥{{ Number(row.total || 0).toFixed(2) }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="adminDashboard.paymentStatus.length === 0" description="暂无支付数据" />
       </div>
-      <div class="bar-list compact-bars">
-        <div v-for="row in adminDashboard.userGrowth" :key="row.label" class="bar-row">
-          <span>{{ row.label }}</span>
-          <div><i :style="{ width: `${barWidth(row.count, maxGrowth)}%` }" /></div>
-          <strong>{{ row.count }}</strong>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>用户增长</h3>
+            <p>按注册日期统计新增用户。</p>
+          </div>
         </div>
-        <el-empty v-if="adminDashboard.userGrowth.length === 0" description="暂无增长数据" />
+        <div class="bar-list compact-bars">
+          <div v-for="row in adminDashboard.userGrowth" :key="row.label" class="bar-row">
+            <span>{{ row.label }}</span>
+            <div><i :style="{ width: `${barWidth(row.count, maxGrowth)}%` }" /></div>
+            <strong>{{ row.count }}</strong>
+          </div>
+          <el-empty v-if="adminDashboard.userGrowth.length === 0" description="暂无增长数据" />
+        </div>
       </div>
     </div>
   </section>
@@ -106,6 +137,15 @@ const maxGrowth = computed(() => Math.max(1, ...adminDashboard.value.userGrowth.
 
 function barWidth(value, max) {
   return Math.max(6, Math.round((Number(value || 0) / Number(max.value || 1)) * 100))
+}
+
+function percent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`
+}
+
+function paymentStatusText(status) {
+  const map = { paid: '已支付', unpaid: '待支付', refunded: '已退款' }
+  return map[status] || status || '未知'
 }
 
 function refreshDashboard() {

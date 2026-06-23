@@ -1781,14 +1781,42 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 		Average float64 `json:"average"`
 	}
 	h.db.Model(&models.ServiceReview{}).Select("AVG(rating) AS average").Scan(&averageRating)
+	var paymentRows []row
+	h.db.Model(&models.Appointment{}).
+		Select("appointments.payment_status AS label, COUNT(appointments.id) AS count, SUM(checkup_packages.price) AS total").
+		Joins("LEFT JOIN checkup_packages ON checkup_packages.id = appointments.package_id").
+		Where("appointments.status <> ? AND appointments.date BETWEEN ? AND ?", "canceled", appointmentStartDate, appointmentEndDate).
+		Group("appointments.payment_status").
+		Order("count desc").
+		Scan(&paymentRows)
+	var waitlistCount int64
+	h.db.Model(&models.WaitlistEntry{}).
+		Where("status = ? AND date BETWEEN ? AND ?", "waiting", appointmentStartDate, appointmentEndDate).
+		Count(&waitlistCount)
+	var capacitySummary struct {
+		Capacity int64 `json:"capacity"`
+		Booked   int64 `json:"booked"`
+	}
+	h.db.Model(&models.ScheduleSlot{}).
+		Select("COALESCE(SUM(capacity), 0) AS capacity, COALESCE(SUM(booked_count), 0) AS booked").
+		Where("status <> ? AND date BETWEEN ? AND ?", "deleted", appointmentStartDate, appointmentEndDate).
+		Scan(&capacitySummary)
+	capacityUsageRate := 0.0
+	if capacitySummary.Capacity > 0 {
+		capacityUsageRate = float64(capacitySummary.Booked) / float64(capacitySummary.Capacity)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"summary": gin.H{
-			"users":         userCount,
-			"doctors":       doctorCount,
-			"appointments":  appointmentCount,
-			"reports":       reportCount,
-			"reviews":       reviewCount,
-			"averageRating": averageRating.Average,
+			"users":             userCount,
+			"doctors":           doctorCount,
+			"appointments":      appointmentCount,
+			"reports":           reportCount,
+			"reviews":           reviewCount,
+			"averageRating":     averageRating.Average,
+			"waitlist":          waitlistCount,
+			"slotCapacity":      capacitySummary.Capacity,
+			"slotBooked":        capacitySummary.Booked,
+			"capacityUsageRate": capacityUsageRate,
 		},
 		"range": gin.H{
 			"days":                 days,
@@ -1799,6 +1827,7 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 		},
 		"appointmentTrend": appointmentTrend,
 		"packageSales":     packageSales,
+		"paymentStatus":    paymentRows,
 		"userGrowth":       userGrowth,
 	})
 }

@@ -28,6 +28,16 @@ func TestAdminDashboardFiltersTrendsByRequestedDays(t *testing.T) {
 	assertDashboardLabels(t, payload.AppointmentTrend, []string{fixture.recentAppointmentDay})
 	assertDashboardLabels(t, payload.PackageSales, []string{"近期套餐"})
 	assertDashboardLabels(t, payload.UserGrowth, []string{fixture.recentUserDay})
+	assertDashboardLabels(t, payload.PaymentStatus, []string{"paid"})
+	if payload.PaymentStatus[0].Total != 399 {
+		t.Fatalf("expected paid revenue 399, got %#v", payload.PaymentStatus)
+	}
+	if int64FromSummary(t, payload.Summary, "waitlist") != 1 {
+		t.Fatalf("expected one in-range waitlist entry, got %#v", payload.Summary)
+	}
+	if int64FromSummary(t, payload.Summary, "slotCapacity") != 3 || int64FromSummary(t, payload.Summary, "slotBooked") != 2 {
+		t.Fatalf("expected capacity 3 and booked 2, got %#v", payload.Summary)
+	}
 }
 
 func TestAdminDashboardClampsDaysRange(t *testing.T) {
@@ -50,6 +60,7 @@ type dashboardPayload struct {
 	Range            dashboardRange `json:"range"`
 	AppointmentTrend []dashboardRow `json:"appointmentTrend"`
 	PackageSales     []dashboardRow `json:"packageSales"`
+	PaymentStatus    []dashboardRow `json:"paymentStatus"`
 	UserGrowth       []dashboardRow `json:"userGrowth"`
 }
 
@@ -79,7 +90,7 @@ func newAdminDashboardFixture(t *testing.T) (*Handler, *gorm.DB, adminDashboardF
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupPackage{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Report{}, &models.ServiceReview{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupPackage{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Report{}, &models.ServiceReview{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	now := time.Now()
@@ -91,10 +102,12 @@ func newAdminDashboardFixture(t *testing.T) (*Handler, *gorm.DB, adminDashboardF
 	institution := models.CheckupInstitution{ID: 10, Name: "主院区", Address: "健康路 1 号", Status: "active"}
 	recentPackage := models.CheckupPackage{ID: 20, Name: "近期套餐", Category: "年度综合", Price: 399, Items: "血常规", Status: "active"}
 	oldPackage := models.CheckupPackage{ID: 21, Name: "历史套餐", Category: "年度综合", Price: 199, Items: "血常规", Status: "active"}
-	slot := models.ScheduleSlot{ID: 30, DoctorID: doctor.ID, InstitutionID: institution.ID, Date: recentAppointmentDay, Period: "上午", Category: "年度综合", StartTime: "09:00", EndTime: "09:30", Capacity: 2, BookedCount: 2, Status: "available"}
+	slot := models.ScheduleSlot{ID: 30, DoctorID: doctor.ID, InstitutionID: institution.ID, Date: recentAppointmentDay, Period: "上午", Category: "年度综合", StartTime: "09:00", EndTime: "09:30", Capacity: 3, BookedCount: 2, Status: "available"}
 	recentAppointment := models.Appointment{ID: 40, OrderNo: "HCRECENT", UserID: recentUser.ID, DoctorID: doctor.ID, InstitutionID: institution.ID, SlotID: slot.ID, PackageID: recentPackage.ID, AppointmentType: "个人体检", Category: "年度综合", Date: recentAppointmentDay, Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked", PaymentStatus: "paid"}
 	oldAppointment := models.Appointment{ID: 41, OrderNo: "HCOLD", UserID: oldUser.ID, DoctorID: doctor.ID, InstitutionID: institution.ID, SlotID: slot.ID, PackageID: oldPackage.ID, AppointmentType: "个人体检", Category: "年度综合", Date: outsideAppointmentDay, Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "booked", PaymentStatus: "paid"}
-	for _, row := range []any{&recentUser, &oldUser, &doctor, &institution, &recentPackage, &oldPackage, &slot, &recentAppointment, &oldAppointment} {
+	recentWaitlist := models.WaitlistEntry{ID: 50, UserID: recentUser.ID, PackageID: recentPackage.ID, InstitutionID: institution.ID, AppointmentType: "个人体检", Category: "年度综合", Date: recentAppointmentDay, Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "waiting"}
+	oldWaitlist := models.WaitlistEntry{ID: 51, UserID: oldUser.ID, PackageID: oldPackage.ID, InstitutionID: institution.ID, AppointmentType: "个人体检", Category: "年度综合", Date: outsideAppointmentDay, Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "waiting"}
+	for _, row := range []any{&recentUser, &oldUser, &doctor, &institution, &recentPackage, &oldPackage, &slot, &recentAppointment, &oldAppointment, &recentWaitlist, &oldWaitlist} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
@@ -141,4 +154,13 @@ func assertDashboardLabels(t *testing.T, rows []dashboardRow, want []string) {
 			t.Fatalf("expected label %q at %d, got %#v", want[i], i, rows)
 		}
 	}
+}
+
+func int64FromSummary(t *testing.T, summary map[string]any, key string) int64 {
+	t.Helper()
+	value, ok := summary[key].(float64)
+	if !ok {
+		t.Fatalf("summary key %s missing or not numeric: %#v", key, summary)
+	}
+	return int64(value)
 }
