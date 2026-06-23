@@ -113,14 +113,51 @@ func TestRequireRoleAllowsMatchingRole(t *testing.T) {
 	}
 }
 
-func newAuthMiddlewareTestRouter(t *testing.T, users []models.User) (*gin.Engine, *redis.Client) {
+func TestRequirePermissionReturns403WhenPermissionDisabled(t *testing.T) {
+	user := models.User{ID: 1, Name: "管理员", Email: "admin@example.com", Role: "admin", Status: "active"}
+	router, redisClient := newAuthMiddlewareTestRouter(t, []models.User{user}, models.RolePermission{Role: "admin", Permission: "admin:system:manage", Enabled: false})
+	token := issueTestToken(t, redisClient, user)
+
+	response := performAuthMiddlewareRequest(t, router, token)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", response.Code, response.Body.String())
+	}
+	assertUnifiedError(t, response.Body.Bytes(), http.StatusForbidden, "permission denied")
+}
+
+func TestRequirePermissionAllowsEnabledPermission(t *testing.T) {
+	user := models.User{ID: 1, Name: "管理员", Email: "admin@example.com", Role: "admin", Status: "active"}
+	router, redisClient := newAuthMiddlewareTestRouter(t, []models.User{user}, models.RolePermission{Role: "admin", Permission: "admin:system:manage", Enabled: true})
+	token := issueTestToken(t, redisClient, user)
+
+	response := performAuthMiddlewareRequest(t, router, token)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRequirePermissionUsesFallbackWhenPermissionTableEmpty(t *testing.T) {
+	user := models.User{ID: 1, Name: "管理员", Email: "admin@example.com", Role: "admin", Status: "active"}
+	router, redisClient := newAuthMiddlewareTestRouter(t, []models.User{user})
+	token := issueTestToken(t, redisClient, user)
+
+	response := performAuthMiddlewareRequest(t, router, token)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func newAuthMiddlewareTestRouter(t *testing.T, users []models.User, permissions ...models.RolePermission) (*gin.Engine, *redis.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.RolePermission{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	for i := range users {
@@ -129,6 +166,17 @@ func newAuthMiddlewareTestRouter(t *testing.T, users []models.User) (*gin.Engine
 		}
 		if err := db.Create(&users[i]).Error; err != nil {
 			t.Fatalf("create user: %v", err)
+		}
+	}
+	for i := range permissions {
+		row := map[string]any{
+			"role":        permissions[i].Role,
+			"permission":  permissions[i].Permission,
+			"description": permissions[i].Description,
+			"enabled":     permissions[i].Enabled,
+		}
+		if err := db.Model(&models.RolePermission{}).Create(row).Error; err != nil {
+			t.Fatalf("create permission: %v", err)
 		}
 	}
 	redisServer := miniredis.RunT(t)
@@ -140,7 +188,7 @@ func newAuthMiddlewareTestRouter(t *testing.T, users []models.User) (*gin.Engine
 	}
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.UnifiedJSONResponse(), middleware.Recovery())
-	router.GET("/admin-only", handler.authRequired(), handler.requireRole("admin"), func(c *gin.Context) {
+	router.GET("/admin-only", handler.authRequired(), handler.requireRoleAndPermission("admin:system:manage", "admin"), func(c *gin.Context) {
 		current := currentUser(c)
 		c.JSON(http.StatusOK, gin.H{"id": current.ID, "role": current.Role})
 	})

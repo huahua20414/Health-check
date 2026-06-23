@@ -110,23 +110,23 @@ const router = createRouter({
       children: [
         { path: '', name: 'dashboard', component: DashboardView, meta: { title: '用户工作台', roles: ['user'] } },
         { path: 'packages/catalog', name: 'packageCatalog', component: PackageCatalogView, meta: { title: '体检套餐', roles: ['user'] } },
-        { path: 'booking', name: 'booking', component: AppointmentCreateView, meta: { title: '预约体检', roles: ['user'] } },
+        { path: 'booking', name: 'booking', component: AppointmentCreateView, meta: { title: '预约体检', roles: ['user'], permission: 'appointment:create' } },
         { path: 'my-appointments', name: 'myAppointments', component: MyAppointmentsView, meta: { title: '我的预约', roles: ['user'] } },
-        { path: 'my-reports', name: 'myReports', component: MyReportsView, meta: { title: '我的报告', roles: ['user'] } },
+        { path: 'my-reports', name: 'myReports', component: MyReportsView, meta: { title: '我的报告', roles: ['user'], permission: 'report:view' } },
         { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人资料', roles: ['user'] } },
-        { path: 'family-members', name: 'familyMembers', component: FamilyMembersView, meta: { title: '家庭成员', roles: ['user'] } },
+        { path: 'family-members', name: 'familyMembers', component: FamilyMembersView, meta: { title: '家庭成员', roles: ['user'], permission: 'family:manage' } },
         { path: 'notifications', name: 'notifications', component: NotificationsView, meta: { title: '消息与客服', roles: ['user'] } },
         { path: 'doctor', name: 'doctorDashboard', component: DashboardView, meta: { title: '医生工作台', roles: ['doctor'] } },
-        { path: 'appointments', name: 'appointments', component: DoctorAppointmentsView, meta: { title: '预约处理', roles: ['doctor'] } },
-        { path: 'reports', name: 'reports', component: DoctorReportsView, meta: { title: '报告录入', roles: ['doctor'] } },
-        { path: 'people', name: 'people', component: PeopleView, meta: { title: '客户档案', roles: ['doctor'] } },
+        { path: 'appointments', name: 'appointments', component: DoctorAppointmentsView, meta: { title: '预约处理', roles: ['doctor'], permission: 'doctor:appointment:update' } },
+        { path: 'reports', name: 'reports', component: DoctorReportsView, meta: { title: '报告录入', roles: ['doctor'], permission: 'report:create' } },
+        { path: 'people', name: 'people', component: PeopleView, meta: { title: '客户档案', roles: ['doctor'], permission: 'customer:view' } },
         { path: 'admin', name: 'adminDashboard', component: AdminDashboardView, meta: { title: '管理工作台', roles: ['admin'] } },
-        { path: 'admin/users', name: 'adminUsers', component: PeopleView, meta: { title: '用户管理', roles: ['admin'] } },
-        { path: 'admin/doctors', name: 'doctorReview', component: DoctorReviewView, meta: { title: '医生审核', roles: ['admin'] } },
-        { path: 'admin/packages', name: 'adminPackages', component: PackageManagementView, meta: { title: '套餐管理', roles: ['admin'] } },
-        { path: 'admin/service-resources', name: 'serviceResources', component: ServiceResourceManagementView, meta: { title: '项目与排班', roles: ['admin'] } },
-        { path: 'admin/operations', name: 'adminOperations', component: OperationsManagementView, meta: { title: '运营管理', roles: ['admin'] } },
-        { path: 'admin/settings', name: 'adminSettings', component: SettingsView, meta: { title: '系统设置', roles: ['admin'] } },
+        { path: 'admin/users', name: 'adminUsers', component: PeopleView, meta: { title: '用户管理', roles: ['admin'], permission: 'admin:user:manage' } },
+        { path: 'admin/doctors', name: 'doctorReview', component: DoctorReviewView, meta: { title: '医生审核', roles: ['admin'], permission: 'admin:doctor:review' } },
+        { path: 'admin/packages', name: 'adminPackages', component: PackageManagementView, meta: { title: '套餐管理', roles: ['admin'], permission: 'admin:package:manage' } },
+        { path: 'admin/service-resources', name: 'serviceResources', component: ServiceResourceManagementView, meta: { title: '项目与排班', roles: ['admin'], permission: 'admin:resource:manage' } },
+        { path: 'admin/operations', name: 'adminOperations', component: OperationsManagementView, meta: { title: '运营管理', roles: ['admin'], permission: 'admin:operation:manage' } },
+        { path: 'admin/settings', name: 'adminSettings', component: SettingsView, meta: { title: '系统设置', roles: ['admin'], permission: 'admin:system:manage' } },
       ],
     },
   ],
@@ -142,6 +142,10 @@ router.beforeEach(async (to) => {
   if (!isAuthenticated.value) return '/login'
   const roles = to.meta.roles || []
   if (roles.length && !roles.includes(currentUser.value.role)) return homePath(currentUser.value.role)
+  if (to.meta.permission) {
+    const { can } = useHealthData()
+    if (!can(to.meta.permission)) return homePath(currentUser.value.role)
+  }
   return true
 })
 

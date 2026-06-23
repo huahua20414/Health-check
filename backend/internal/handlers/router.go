@@ -67,71 +67,71 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.POST("/profile/email-code", handler.sendEmailCode)
 	protected.PATCH("/profile/email", handler.updateEmail)
 	protected.GET("/appointments", handler.appointments)
-	protected.POST("/appointments", handler.requireRole("user"), handler.createAppointment)
-	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
-	protected.PATCH("/appointments/:id/reschedule", handler.requireRole("user"), handler.rescheduleAppointment)
-	protected.PATCH("/appointments/:id/payment", handler.requireRole("user"), handler.updateAppointmentPayment)
-	protected.PATCH("/appointments/:id/invoice", handler.requireRole("user"), handler.updateAppointmentInvoice)
+	protected.POST("/appointments", handler.requireRoleAndPermission("appointment:create", "user"), handler.createAppointment)
+	protected.PATCH("/appointments/:id/cancel", handler.requireRoleAndPermission("appointment:cancel", "user"), handler.cancelAppointment)
+	protected.PATCH("/appointments/:id/reschedule", handler.requireRoleAndPermission("appointment:reschedule", "user"), handler.rescheduleAppointment)
+	protected.PATCH("/appointments/:id/payment", handler.requireRoleAndPermission("appointment:pay", "user"), handler.updateAppointmentPayment)
+	protected.PATCH("/appointments/:id/invoice", handler.requireRoleAndPermission("appointment:invoice", "user"), handler.updateAppointmentInvoice)
 	protected.GET("/appointments/export", handler.requireRole("doctor", "admin"), handler.exportAppointments)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
-	protected.POST("/schedule/slots", handler.requireRole("admin"), handler.createScheduleSlot)
-	protected.PATCH("/schedule/slots/:id", handler.requireRole("admin"), handler.updateScheduleSlot)
-	protected.DELETE("/schedule/slots/:id", handler.requireRole("admin"), handler.archiveScheduleSlot)
-	protected.GET("/waitlist", handler.requireRole("user"), handler.waitlist)
-	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
+	protected.POST("/schedule/slots", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createScheduleSlot)
+	protected.PATCH("/schedule/slots/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateScheduleSlot)
+	protected.DELETE("/schedule/slots/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveScheduleSlot)
+	protected.GET("/waitlist", handler.requireRoleAndPermission("appointment:create", "user"), handler.waitlist)
+	protected.PATCH("/appointments/:id/status", handler.requireAnyRolePermission(map[string]string{"doctor": "doctor:appointment:update", "admin": "admin:resource:manage"}), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
-	protected.POST("/reports", handler.requireRole("doctor"), handler.createReport)
+	protected.POST("/reports", handler.requireRoleAndPermission("report:create", "doctor"), handler.createReport)
 	protected.GET("/reviews", handler.reviews)
-	protected.POST("/reviews", handler.requireRole("user"), handler.createReview)
-	protected.PATCH("/reviews/:id/reply", handler.requireRole("admin"), handler.replyReview)
-	protected.GET("/family-members", handler.requireRole("user"), handler.familyMembers)
-	protected.POST("/family-members", handler.requireRole("user"), handler.createFamilyMember)
-	protected.PATCH("/family-members/:id", handler.requireRole("user"), handler.updateFamilyMember)
-	protected.DELETE("/family-members/:id", handler.requireRole("user"), handler.deleteFamilyMember)
-	protected.GET("/package-favorites", handler.requireRole("user"), handler.packageFavorites)
-	protected.POST("/package-favorites/:id", handler.requireRole("user"), handler.favoritePackage)
-	protected.DELETE("/package-favorites/:id", handler.requireRole("user"), handler.unfavoritePackage)
+	protected.POST("/reviews", handler.requireRoleAndPermission("review:create", "user"), handler.createReview)
+	protected.PATCH("/reviews/:id/reply", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.replyReview)
+	protected.GET("/family-members", handler.requireRoleAndPermission("family:manage", "user"), handler.familyMembers)
+	protected.POST("/family-members", handler.requireRoleAndPermission("family:manage", "user"), handler.createFamilyMember)
+	protected.PATCH("/family-members/:id", handler.requireRoleAndPermission("family:manage", "user"), handler.updateFamilyMember)
+	protected.DELETE("/family-members/:id", handler.requireRoleAndPermission("family:manage", "user"), handler.deleteFamilyMember)
+	protected.GET("/package-favorites", handler.requireRoleAndPermission("favorite:manage", "user"), handler.packageFavorites)
+	protected.POST("/package-favorites/:id", handler.requireRoleAndPermission("favorite:manage", "user"), handler.favoritePackage)
+	protected.DELETE("/package-favorites/:id", handler.requireRoleAndPermission("favorite:manage", "user"), handler.unfavoritePackage)
 	protected.POST("/packages/:id/browse", handler.requireRole("user"), handler.recordPackageBrowse)
 	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
 	protected.GET("/notifications", handler.notifications)
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
-	protected.GET("/admin/notifications", handler.requireRole("admin"), handler.adminNotifications)
-	protected.POST("/admin/notifications", handler.requireRole("admin"), handler.createAdminNotification)
-	protected.POST("/admin/notifications/reminders", handler.requireRole("admin"), handler.sendCheckupReminders)
-	protected.DELETE("/admin/notifications/:id", handler.requireRole("admin"), handler.archiveAdminNotification)
+	protected.GET("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.adminNotifications)
+	protected.POST("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.createAdminNotification)
+	protected.POST("/admin/notifications/reminders", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.sendCheckupReminders)
+	protected.DELETE("/admin/notifications/:id", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.archiveAdminNotification)
 	protected.GET("/permissions/me", handler.myPermissions)
 	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
-	protected.GET("/coupons", handler.requireRole("admin"), handler.coupons)
-	protected.POST("/coupons", handler.requireRole("admin"), handler.createCoupon)
-	protected.PATCH("/coupons/:id", handler.requireRole("admin"), handler.updateCoupon)
-	protected.DELETE("/coupons/:id", handler.requireRole("admin"), handler.archiveCoupon)
-	protected.GET("/announcements", handler.requireRole("admin"), handler.announcements)
-	protected.POST("/announcements", handler.requireRole("admin"), handler.createAnnouncement)
-	protected.PATCH("/announcements/:id", handler.requireRole("admin"), handler.updateAnnouncement)
-	protected.DELETE("/announcements/:id", handler.requireRole("admin"), handler.archiveAnnouncement)
-	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
-	protected.GET("/packages/export", handler.requireRole("admin"), handler.exportPackages)
-	protected.POST("/packages/import", handler.requireRole("admin"), handler.importPackages)
-	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
-	protected.DELETE("/packages/:id", handler.requireRole("admin"), handler.archivePackage)
-	protected.GET("/checkup-items", handler.requireRole("admin"), handler.checkupItems)
-	protected.POST("/checkup-items", handler.requireRole("admin"), handler.createCheckupItem)
-	protected.PATCH("/checkup-items/:id", handler.requireRole("admin"), handler.updateCheckupItem)
-	protected.DELETE("/checkup-items/:id", handler.requireRole("admin"), handler.archiveCheckupItem)
-	protected.GET("/package-items", handler.requireRole("admin"), handler.packageItems)
-	protected.POST("/package-items", handler.requireRole("admin"), handler.upsertPackageItem)
-	protected.DELETE("/package-items/:id", handler.requireRole("admin"), handler.deletePackageItem)
+	protected.GET("/coupons", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.coupons)
+	protected.POST("/coupons", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.createCoupon)
+	protected.PATCH("/coupons/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.updateCoupon)
+	protected.DELETE("/coupons/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.archiveCoupon)
+	protected.GET("/announcements", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.announcements)
+	protected.POST("/announcements", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.createAnnouncement)
+	protected.PATCH("/announcements/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.updateAnnouncement)
+	protected.DELETE("/announcements/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.archiveAnnouncement)
+	protected.POST("/packages", handler.requireRoleAndPermission("admin:package:manage", "admin"), handler.createPackage)
+	protected.GET("/packages/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportPackages)
+	protected.POST("/packages/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importPackages)
+	protected.PATCH("/packages/:id", handler.requireRoleAndPermission("admin:package:manage", "admin"), handler.updatePackage)
+	protected.DELETE("/packages/:id", handler.requireRoleAndPermission("admin:package:manage", "admin"), handler.archivePackage)
+	protected.GET("/checkup-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.checkupItems)
+	protected.POST("/checkup-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createCheckupItem)
+	protected.PATCH("/checkup-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateCheckupItem)
+	protected.DELETE("/checkup-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveCheckupItem)
+	protected.GET("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.packageItems)
+	protected.POST("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.upsertPackageItem)
+	protected.DELETE("/package-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.deletePackageItem)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
-	protected.PATCH("/users/:id/status", handler.requireRole("admin"), handler.updateUserStatus)
-	protected.PATCH("/users/:id/doctor-profile", handler.requireRole("admin"), handler.updateDoctorProfile)
-	protected.GET("/mail-logs", handler.requireRole("admin"), handler.mailLogs)
-	protected.GET("/login-logs", handler.requireRole("admin"), handler.loginLogs)
-	protected.GET("/operation-logs", handler.requireRole("admin"), handler.operationLogs)
-	protected.GET("/role-permissions", handler.requireRole("admin"), handler.rolePermissions)
-	protected.PATCH("/role-permissions/:id", handler.requireRole("admin"), handler.updateRolePermission)
-	protected.GET("/system-settings", handler.requireRole("admin"), handler.systemSettings)
-	protected.PATCH("/system-settings/:id", handler.requireRole("admin"), handler.updateSystemSetting)
-	protected.POST("/seed", handler.requireRole("admin"), handler.seed)
+	protected.PATCH("/users/:id/status", handler.requireRoleAndPermission("admin:user:manage", "admin"), handler.updateUserStatus)
+	protected.PATCH("/users/:id/doctor-profile", handler.requireRoleAndPermission("admin:doctor:review", "admin"), handler.updateDoctorProfile)
+	protected.GET("/mail-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.mailLogs)
+	protected.GET("/login-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.loginLogs)
+	protected.GET("/operation-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.operationLogs)
+	protected.GET("/role-permissions", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.rolePermissions)
+	protected.PATCH("/role-permissions/:id", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.updateRolePermission)
+	protected.GET("/system-settings", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.systemSettings)
+	protected.PATCH("/system-settings/:id", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.updateSystemSetting)
+	protected.POST("/seed", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.seed)
 
 	return router
 }
@@ -2522,9 +2522,15 @@ func (h *Handler) recordOperation(c *gin.Context, action, resource, resourceID, 
 
 func (h *Handler) permissionsForRole(role string) []string {
 	var rows []models.RolePermission
-	if err := h.db.Where("role = ? AND enabled = ?", role, true).Find(&rows).Error; err == nil && len(rows) > 0 {
+	if err := h.db.Where("role = ?", role).Find(&rows).Error; err != nil {
+		return []string{}
+	}
+	if len(rows) > 0 {
 		permissions := make([]string, 0, len(rows))
 		for _, row := range rows {
+			if !row.Enabled {
+				continue
+			}
 			permissions = append(permissions, row.Permission)
 		}
 		return permissions
@@ -2535,14 +2541,23 @@ func (h *Handler) permissionsForRole(role string) []string {
 func fallbackPermissions(role string) []string {
 	switch role {
 	case "user":
-		return []string{"appointment:create", "appointment:reschedule", "appointment:cancel", "review:create", "favorite:manage", "family:manage", "report:view"}
+		return []string{"appointment:create", "appointment:reschedule", "appointment:cancel", "appointment:pay", "appointment:invoice", "review:create", "favorite:manage", "family:manage", "report:view"}
 	case "doctor":
 		return []string{"doctor:appointment:update", "report:create", "customer:view"}
 	case "admin":
-		return []string{"admin:user:manage", "admin:doctor:review", "admin:package:manage", "admin:resource:manage", "admin:operation:manage", "admin:system:manage", "admin:data:exchange", "admin:permission:manage"}
+		return []string{"admin:user:manage", "admin:doctor:review", "admin:package:manage", "admin:resource:manage", "admin:operation:manage", "admin:notification:manage", "admin:system:manage", "admin:data:exchange", "admin:permission:manage"}
 	default:
 		return []string{}
 	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
@@ -2720,6 +2735,48 @@ func (h *Handler) requireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := currentUser(c)
 		if !allowed[user.Role] {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (h *Handler) requireRoleAndPermission(permission string, roles ...string) gin.HandlerFunc {
+	allowed := map[string]bool{}
+	for _, role := range roles {
+		allowed[role] = true
+	}
+	return func(c *gin.Context) {
+		current := currentUser(c)
+		if !allowed[current.Role] {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+			return
+		}
+		if !containsString(h.permissionsForRole(current.Role), permission) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (h *Handler) requireAnyRolePermission(rolePermissions map[string]string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		current := currentUser(c)
+		permission, ok := rolePermissions[current.Role]
+		if !ok || !containsString(h.permissionsForRole(current.Role), permission) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (h *Handler) requirePermission(permission string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		current := currentUser(c)
+		if !containsString(h.permissionsForRole(current.Role), permission) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission denied"})
 			return
 		}
