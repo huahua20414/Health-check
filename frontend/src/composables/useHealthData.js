@@ -150,6 +150,30 @@ export function paymentStatusText(status) {
   return { paid: '已支付', unpaid: '未支付', refunded: '已退款' }[status] || status || '-'
 }
 
+export function moneyText(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return '-'
+  return `￥${amount.toFixed(2)}`
+}
+
+export function appointmentOriginalAmount(appointment) {
+  const amount = Number(appointment?.originalAmount)
+  if (Number.isFinite(amount) && amount > 0) return amount
+  const packagePrice = Number(appointment?.package?.price)
+  return Number.isFinite(packagePrice) ? packagePrice : 0
+}
+
+export function appointmentDiscountAmount(appointment) {
+  const amount = Number(appointment?.discountAmount)
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
+export function appointmentPayableAmount(appointment) {
+  const amount = Number(appointment?.payableAmount)
+  if (Number.isFinite(amount) && (amount > 0 || appointmentDiscountAmount(appointment) > 0)) return amount
+  return Math.max(0, appointmentOriginalAmount(appointment) - appointmentDiscountAmount(appointment))
+}
+
 export function formatDate(value) {
   if (!value) return '-'
   return new Date(value).toLocaleDateString('zh-CN')
@@ -186,6 +210,10 @@ export function appointmentDocumentHTML(appointment) {
     ['医生', `${appointment.doctor?.name || ''} ${appointment.doctor?.title || ''}`],
     ['日期', appointment.date],
     ['时间', `${appointment.startTime}-${appointment.endTime}`],
+    ['订单原价', moneyText(appointmentOriginalAmount(appointment))],
+    ['优惠券', appointment.coupon?.name || '-'],
+    ['优惠金额', moneyText(appointmentDiscountAmount(appointment))],
+    ['应付金额', moneyText(appointmentPayableAmount(appointment))],
     ['支付状态', paymentStatusText(appointment.paymentStatus)],
     ['发票抬头', appointment.invoiceTitle],
     ['纳税人识别号', appointment.invoiceTaxNo],

@@ -107,6 +107,20 @@
     </el-dialog>
 
     <el-dialog v-model="invoiceVisible" title="发票信息" width="640px">
+      <div v-if="activeInvoiceAppointment" class="invoice-summary">
+        <div>
+          <span>订单号</span>
+          <strong>{{ activeInvoiceAppointment.orderNo }}</strong>
+        </div>
+        <div>
+          <span>开票金额</span>
+          <strong>{{ moneyText(appointmentPayableAmount(activeInvoiceAppointment)) }}</strong>
+        </div>
+        <div>
+          <span>支付状态</span>
+          <strong>{{ paymentStatusText(activeInvoiceAppointment.paymentStatus) }}</strong>
+        </div>
+      </div>
       <el-form label-position="top">
         <el-form-item label="发票抬头">
           <el-input v-model="invoiceForm.invoiceTitle" maxlength="128" show-word-limit placeholder="个人或企业名称" />
@@ -142,7 +156,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
-import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
+import { appointmentDocumentHTML, appointmentPayableAmount, downloadHTML, moneyText, paymentStatusText, useHealthData } from '../composables/useHealthData'
 
 const { myAppointments, waitlist, slots, rescheduleForm, invoiceForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, updateAppointmentPayment, editInvoice, saveInvoice, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
@@ -152,6 +166,7 @@ const invoiceVisible = ref(false)
 const reviewVisible = ref(false)
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
 const activeRescheduleAppointment = computed(() => myAppointments.value.find((item) => item.id === rescheduleForm.appointmentId))
+const activeInvoiceAppointment = computed(() => myAppointments.value.find((item) => item.id === invoiceForm.appointmentId))
 const compatibleSlots = computed(() => slots.value.filter((slot) => (
   slot.institutionId === rescheduleForm.institutionId &&
   slot.category === activeRescheduleAppointment.value?.category &&
@@ -221,3 +236,38 @@ onMounted(() => {
   loadWaitlistPage()
 })
 </script>
+
+<style scoped>
+.invoice-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.invoice-summary div {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.invoice-summary span {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.invoice-summary strong {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .invoice-summary {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

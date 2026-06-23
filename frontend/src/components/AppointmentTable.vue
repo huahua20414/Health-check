@@ -25,6 +25,14 @@
     <el-table-column label="支付" width="90">
       <template #default="{ row }">{{ paymentStatusText(row.paymentStatus) }}</template>
     </el-table-column>
+    <el-table-column label="金额" width="130" align="right">
+      <template #default="{ row }">
+        <div class="amount-cell">
+          <strong>{{ moneyText(appointmentPayableAmount(row)) }}</strong>
+          <span v-if="appointmentDiscountAmount(row) > 0">已优惠 {{ moneyText(appointmentDiscountAmount(row)) }}</span>
+        </div>
+      </template>
+    </el-table-column>
     <el-table-column label="操作" width="250">
       <template #default="{ row }">
         <el-button size="small" @click="$emit('view-order', row)">查看订单</el-button>
@@ -58,10 +66,7 @@
 
 <script setup>
 import StatusTag from './StatusTag.vue'
-
-function paymentStatusText(status) {
-  return { paid: '已支付', unpaid: '未支付', refunded: '已退款' }[status] || status || '-'
-}
+import { appointmentDiscountAmount, appointmentPayableAmount, moneyText, paymentStatusText } from '../composables/useHealthData'
 
 defineProps({
   rows: {
@@ -104,3 +109,17 @@ defineProps({
 
 defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order', 'pay', 'unpay', 'invoice'])
 </script>
+
+<style scoped>
+.amount-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+}
+
+.amount-cell span {
+  color: #67c23a;
+  font-size: 12px;
+}
+</style>
