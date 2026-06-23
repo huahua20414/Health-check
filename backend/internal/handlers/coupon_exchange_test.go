@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -22,7 +23,7 @@ func TestExportCouponsSupportsStatusFilterAndAudits(t *testing.T) {
 	handler, db, fixture := newCouponExchangeFixture(t)
 	router := newCouponExchangeRouter(handler, fixture.admin)
 
-	response := performCouponExchangeRequest(t, router, http.MethodGet, "/coupons/export?status=active", nil, "")
+	response := performCouponExchangeRequest(t, router, http.MethodGet, "/coupons/export?status=active&keyword=save", nil, "")
 
 	records := decodeCouponCSV(t, response)
 	if len(records) != 2 {
@@ -32,6 +33,21 @@ func TestExportCouponsSupportsStatusFilterAndAudits(t *testing.T) {
 		t.Fatalf("export returned wrong coupon row: %#v", records[1])
 	}
 	assertCouponOperationLogCount(t, db, fixture.admin.ID, "export", 1)
+}
+
+func TestCouponsSupportKeywordAndPagination(t *testing.T) {
+	handler, _, fixture := newCouponExchangeFixture(t)
+	router := newCouponExchangeRouter(handler, fixture.admin)
+
+	response := performCouponExchangeRequest(t, router, http.MethodGet, "/coupons?keyword=立减&page=1&pageSize=1", nil, "")
+	page := decodeCouponPage(t, response)
+
+	if page.Total != 1 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Code != "SAVE50" {
+		t.Fatalf("unexpected paginated coupons: %#v", page.Items)
+	}
 }
 
 func TestImportCouponsCreatesAndUpdatesByCode(t *testing.T) {
@@ -109,6 +125,7 @@ func newCouponExchangeRouter(handler *Handler, current models.User) *gin.Engine 
 		c.Set("user", current)
 		c.Next()
 	})
+	router.GET("/coupons", handler.coupons)
 	router.GET("/coupons/export", handler.exportCoupons)
 	router.POST("/coupons/import", handler.importCoupons)
 	return router
@@ -154,6 +171,25 @@ func decodeCouponCSV(t *testing.T, response *httptest.ResponseRecorder) [][]stri
 		t.Fatalf("decode coupon csv: %v", err)
 	}
 	return records
+}
+
+type couponPageResponse struct {
+	Items    []models.Coupon `json:"items"`
+	Total    int64           `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"pageSize"`
+}
+
+func decodeCouponPage(t *testing.T, response *httptest.ResponseRecorder) couponPageResponse {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page couponPageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode coupon page: %v", err)
+	}
+	return page
 }
 
 func assertCouponImportResult(t *testing.T, body string, parts ...string) {

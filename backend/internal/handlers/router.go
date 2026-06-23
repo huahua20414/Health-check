@@ -2580,12 +2580,7 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 
 func (h *Handler) coupons(c *gin.Context) {
 	var coupons []models.Coupon
-	query := h.db.Model(&models.Coupon{}).Order("created_at desc")
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	} else {
-		query = query.Where("status <> ?", "deleted")
-	}
+	query := h.couponsQuery(c).Order("created_at desc")
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &coupons)
 		return
@@ -2669,10 +2664,7 @@ func (h *Handler) archiveCoupon(c *gin.Context) {
 
 func (h *Handler) exportCoupons(c *gin.Context) {
 	var coupons []models.Coupon
-	query := h.db.Order("id asc")
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
+	query := h.couponsQuery(c).Order("id asc")
 	if err := query.Find(&coupons).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2697,6 +2689,20 @@ func (h *Handler) exportCoupons(c *gin.Context) {
 	}
 	writer.Flush()
 	h.recordOperation(c, "export", "coupon", "", "success", fmt.Sprintf("%d coupons", len(coupons)))
+}
+
+func (h *Handler) couponsQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.Coupon{})
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", "deleted")
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + strings.ToUpper(keyword) + "%"
+		query = query.Where("UPPER(code) LIKE ? OR UPPER(name) LIKE ? OR UPPER(description) LIKE ?", pattern, pattern, pattern)
+	}
+	return query
 }
 
 func (h *Handler) importCoupons(c *gin.Context) {

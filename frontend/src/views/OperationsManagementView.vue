@@ -34,13 +34,21 @@
           <p>用于活动价、满减和特定套餐促销。</p>
         </div>
         <div class="head-actions">
-          <el-button :loading="loading.exportCoupons" :disabled="!can('admin:data:exchange')" @click="exportCoupons">
+          <el-button :loading="loading.exportCoupons" :disabled="!can('admin:data:exchange')" @click="handleCouponExport">
             导出优惠券 CSV
           </el-button>
           <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleCouponImport">
             <el-button :loading="loading.importCoupons" :disabled="!can('admin:data:exchange')">导入优惠券 CSV</el-button>
           </el-upload>
         </div>
+      </div>
+      <div class="filter-bar operation-filter-bar">
+        <el-select v-model="couponStatusFilter" placeholder="优惠券状态" clearable>
+          <el-option label="启用" value="active" />
+          <el-option label="停用" value="disabled" />
+          <el-option label="已归档" value="deleted" />
+        </el-select>
+        <el-input v-model="couponKeyword" placeholder="搜索券名/券码/说明" clearable />
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="名称"><el-input v-model="couponForm.name" /></el-form-item>
@@ -68,7 +76,7 @@
         </el-form-item>
         <el-form-item label="说明"><el-input v-model="couponForm.description" type="textarea" :rows="3" /></el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.coupon" :disabled="!couponForm.name || !couponForm.code || !can('admin:operation:manage')" @click="saveCoupon">保存优惠券</el-button>
+          <el-button type="primary" :loading="loading.coupon" :disabled="!couponForm.name || !couponForm.code || !can('admin:operation:manage')" @click="handleSaveCoupon">保存优惠券</el-button>
           <el-button @click="editCoupon(null)">清空</el-button>
         </div>
       </el-form>
@@ -83,11 +91,20 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-if="can('admin:operation:manage')" size="small" @click="editCoupon(row)">编辑</el-button>
-              <el-button v-if="can('admin:operation:manage')" size="small" type="danger" plain :loading="loading.coupon" @click="archiveCoupon(row)">归档</el-button>
+              <el-button v-if="can('admin:operation:manage')" size="small" type="danger" plain :loading="loading.coupon" @click="handleArchiveCoupon(row)">归档</el-button>
             </div>
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.coupons.total"
+        v-model:current-page="paginations.coupons.page"
+        v-model:page-size="paginations.coupons.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
 
     <div class="panel">
@@ -376,9 +393,12 @@ const appointmentExportStatus = ref('')
 const appointmentExportKeyword = ref('')
 const supportTicketStatusFilter = ref('')
 const supportTicketKeyword = ref('')
+const couponStatusFilter = ref('')
+const couponKeyword = ref('')
 const debouncedNotificationKeyword = useDebouncedRef(notificationKeyword, 350)
 const debouncedAppointmentExportKeyword = useDebouncedRef(appointmentExportKeyword, 350)
 const debouncedSupportTicketKeyword = useDebouncedRef(supportTicketKeyword, 350)
+const debouncedCouponKeyword = useDebouncedRef(couponKeyword, 350)
 
 function loadNotificationPage(reset = false) {
   if (reset) paginations.adminNotifications.page = 1
@@ -396,8 +416,35 @@ function handleAppointmentExport() {
   })
 }
 
+function couponFilters() {
+  return {
+    status: couponStatusFilter.value,
+    keyword: debouncedCouponKeyword.value,
+  }
+}
+
+function loadCouponPage(reset = false) {
+  if (reset) paginations.coupons.page = 1
+  return loadCouponsPage(couponFilters())
+}
+
+function handleCouponExport() {
+  return exportCoupons(couponFilters())
+}
+
+async function handleSaveCoupon() {
+  await saveCoupon()
+  await loadCouponPage()
+}
+
+async function handleArchiveCoupon(row) {
+  await archiveCoupon(row)
+  await loadCouponPage()
+}
+
 async function handleCouponImport(file) {
   await importCoupons(file.raw)
+  await loadCouponPage()
 }
 
 function handleSupportTicketExport() {
@@ -419,11 +466,13 @@ watch([notificationStatusFilter, notificationChannelFilter, debouncedNotificatio
 watch(() => [paginations.adminNotifications.page, paginations.adminNotifications.pageSize], () => loadNotificationPage())
 watch([supportTicketStatusFilter, debouncedSupportTicketKeyword], () => loadSupportTicketPage(true))
 watch(() => [paginations.adminSupportTickets.page, paginations.adminSupportTickets.pageSize], () => loadSupportTicketPage())
+watch([couponStatusFilter, debouncedCouponKeyword], () => loadCouponPage(true))
+watch(() => [paginations.coupons.page, paginations.coupons.pageSize], () => loadCouponPage())
 
 onMounted(() => {
   loadPackagesPage()
   loadUsersPage({ role: 'user', status: 'active' })
-  loadCouponsPage()
+  loadCouponPage()
   loadReviewsPage()
   loadAnnouncementsPage()
   loadNotificationPage()
