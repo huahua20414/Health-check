@@ -7,6 +7,7 @@
           <p>医生只处理客户预约状态，不在此页面录入报告。</p>
         </div>
         <div class="filter-bar">
+          <el-button :loading="loading.exportAppointments" @click="handleExport">导出 CSV</el-button>
           <el-select v-model="statusFilter" placeholder="状态筛选" clearable>
             <el-option label="已预约" value="booked" />
             <el-option label="已体检" value="checked" />
@@ -50,7 +51,7 @@ const keyword = ref('')
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const debouncedKeyword = useDebouncedRef(keyword, 350)
-const { appointments, isDoctor, loading, can, markDone, paginations, loadAppointmentsPage } = useHealthData()
+const { appointments, isDoctor, loading, can, markDone, paginations, loadAppointmentsPage, exportAppointments } = useHealthData()
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
 
 const filteredAppointments = computed(() => appointments.value)
@@ -73,6 +74,10 @@ function openOrder(row) {
 function downloadOrder() {
   if (!selectedOrder.value) return
   downloadHTML(`${selectedOrder.value.orderNo || 'appointment-order'}.html`, orderHTML.value)
+}
+
+function handleExport() {
+  return exportAppointments({ status: statusFilter.value, keyword: debouncedKeyword.value })
 }
 
 watch([statusFilter, debouncedKeyword], () => loadPage(true))

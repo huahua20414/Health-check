@@ -128,6 +128,7 @@ const loading = reactive({
   schedule: false,
   importPackages: false,
   exportPackages: false,
+  exportAppointments: false,
   permission: false,
   systemSetting: false,
 })
@@ -1183,6 +1184,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportAppointments(params = {}) {
+    if (loading.exportAppointments) return
+    loading.exportAppointments = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/appointments/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'appointments.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('预约 CSV 已导出')
+    } finally {
+      loading.exportAppointments = false
+    }
+  }
+
   async function importPackages(file) {
     if (!file || loading.importPackages) return
     loading.importPackages = true
@@ -1415,6 +1434,7 @@ export function useHealthData() {
     savePackage,
     archivePackage,
     exportPackages,
+    exportAppointments,
     importPackages,
     updateRolePermission,
     updateSystemSetting,

@@ -72,6 +72,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/appointments/:id/reschedule", handler.requireRole("user"), handler.rescheduleAppointment)
 	protected.PATCH("/appointments/:id/payment", handler.requireRole("user"), handler.updateAppointmentPayment)
 	protected.PATCH("/appointments/:id/invoice", handler.requireRole("user"), handler.updateAppointmentInvoice)
+	protected.GET("/appointments/export", handler.requireRole("doctor", "admin"), handler.exportAppointments)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.POST("/schedule/slots", handler.requireRole("admin"), handler.createScheduleSlot)
 	protected.PATCH("/schedule/slots/:id", handler.requireRole("admin"), handler.updateScheduleSlot)
@@ -510,25 +511,8 @@ func (h *Handler) supportInfo(c *gin.Context) {
 }
 
 func (h *Handler) appointments(c *gin.Context) {
-	current := currentUser(c)
 	var appointments []models.Appointment
-	query := h.db.Model(&models.Appointment{}).Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").Order("created_at desc")
-	if current.Role == "user" {
-		query = query.Where("user_id = ?", current.ID)
-	} else if current.Role == "doctor" {
-		query = query.Where("doctor_id = ?", current.ID)
-	} else if userID := c.Query("userId"); userID != "" {
-		query = query.Where("user_id = ?", userID)
-	}
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		pattern := "%" + keyword + "%"
-		query = query.Joins("LEFT JOIN users appointment_users ON appointment_users.id = appointments.user_id").
-			Joins("LEFT JOIN checkup_packages appointment_packages ON appointment_packages.id = appointments.package_id").
-			Where("appointment_users.name LIKE ? OR appointment_packages.name LIKE ? OR appointments.order_no LIKE ? OR appointments.date LIKE ?", pattern, pattern, pattern, pattern)
-	}
+	query := h.appointmentQuery(c).Order("created_at desc")
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &appointments)
 		return
@@ -538,6 +522,39 @@ func (h *Handler) appointments(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, appointments)
+}
+
+func (h *Handler) appointmentQuery(c *gin.Context) *gorm.DB {
+	return h.buildAppointmentQuery(c, true)
+}
+
+func (h *Handler) appointmentExportQuery(c *gin.Context) *gorm.DB {
+	return h.buildAppointmentQuery(c, false)
+}
+
+func (h *Handler) buildAppointmentQuery(c *gin.Context, withReport bool) *gorm.DB {
+	current := currentUser(c)
+	query := h.db.Model(&models.Appointment{}).Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot")
+	if withReport {
+		query = query.Preload("Report")
+	}
+	if current.Role == "user" {
+		query = query.Where("user_id = ?", current.ID)
+	} else if current.Role == "doctor" {
+		query = query.Where("doctor_id = ?", current.ID)
+	} else if userID := c.Query("userId"); userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("appointments.status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Joins("LEFT JOIN users appointment_users ON appointment_users.id = appointments.user_id").
+			Joins("LEFT JOIN checkup_packages appointment_packages ON appointment_packages.id = appointments.package_id").
+			Where("appointment_users.name LIKE ? OR appointment_packages.name LIKE ? OR appointments.order_no LIKE ? OR appointments.date LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	return query
 }
 
 func (h *Handler) createAppointment(c *gin.Context) {
@@ -849,6 +866,49 @@ func (h *Handler) updateAppointmentInvoice(c *gin.Context) {
 	}
 	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
 	c.JSON(http.StatusOK, appointment)
+}
+
+func (h *Handler) exportAppointments(c *gin.Context) {
+	var appointments []models.Appointment
+	if err := h.appointmentExportQuery(c).Order("date asc, start_time asc, order_no asc").Find(&appointments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="appointments.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{
+		"order_no", "user_name", "family_member", "doctor_name", "institution", "package",
+		"appointment_type", "category", "date", "period", "start_time", "end_time",
+		"status", "payment_status", "invoice_title", "invoice_tax_no", "note",
+	})
+	for _, appointment := range appointments {
+		familyMember := "本人"
+		if appointment.FamilyMember.Name != "" {
+			familyMember = appointment.FamilyMember.Name
+		}
+		_ = writer.Write([]string{
+			appointment.OrderNo,
+			appointment.User.Name,
+			familyMember,
+			appointment.Doctor.Name,
+			appointment.Institution.Name,
+			appointment.Package.Name,
+			appointment.AppointmentType,
+			appointment.Category,
+			appointment.Date,
+			appointment.Period,
+			appointment.StartTime,
+			appointment.EndTime,
+			appointment.Status,
+			appointment.PaymentStatus,
+			appointment.InvoiceTitle,
+			appointment.InvoiceTaxNo,
+			appointment.Note,
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "appointment", "", "success", fmt.Sprintf("%d appointments", len(appointments)))
 }
 
 func (h *Handler) updateAppointmentStatus(c *gin.Context) {
