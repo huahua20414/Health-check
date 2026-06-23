@@ -27,6 +27,7 @@ const users = ref([])
 const institutions = ref([])
 const institutionRows = ref([])
 const slots = ref([])
+const scheduleSlotRows = ref([])
 const waitlist = ref([])
 const mailLogs = ref([])
 const familyMembers = ref([])
@@ -589,7 +590,7 @@ export function useHealthData() {
   }
 
   async function loadSlotsPage(params = {}) {
-    slots.value = await requestPage('/schedule/slots', paginations.slots, params)
+    scheduleSlotRows.value = await requestPage('/schedule/slots', paginations.slots, params)
   }
 
   async function ensureBootstrapped() {
@@ -1228,6 +1229,7 @@ export function useHealthData() {
       else await request('/schedule/slots', { method: 'POST', body })
       ElMessage.success('排班号源已保存')
       editScheduleSlot(null)
+      slots.value = await request('/schedule/slots')
       await loadSlotsPage()
     } finally {
       loading.schedule = false
@@ -1240,6 +1242,7 @@ export function useHealthData() {
     try {
       await request(`/schedule/slots/${slot.id}`, { method: 'DELETE' })
       ElMessage.success('排班号源已归档')
+      slots.value = await request('/schedule/slots')
       await loadSlotsPage()
     } finally {
       loading.schedule = false
@@ -1351,6 +1354,7 @@ export function useHealthData() {
       formData.append('file', file)
       const result = await request('/schedule/slots/import', { method: 'POST', body: formData })
       ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      slots.value = await request('/schedule/slots')
       await loadSlotsPage()
     } finally {
       loading.importScheduleSlots = false
@@ -1805,6 +1809,7 @@ export function useHealthData() {
     institutions,
     institutionRows,
     slots,
+    scheduleSlotRows,
     waitlist,
     mailLogs,
     loginLogs,

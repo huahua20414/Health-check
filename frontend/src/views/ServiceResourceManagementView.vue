@@ -194,13 +194,30 @@
           <p>按医生、机构、日期和时段维护库存，已预约数量不能被压低。</p>
         </div>
         <div class="head-actions">
-          <el-button :loading="loading.exportScheduleSlots" :disabled="!can('admin:data:exchange')" @click="exportScheduleSlots">
+          <el-button :loading="loading.exportScheduleSlots" :disabled="!can('admin:data:exchange')" @click="handleScheduleSlotExport">
             导出号源 CSV
           </el-button>
           <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleScheduleSlotImport">
             <el-button :loading="loading.importScheduleSlots" :disabled="!can('admin:data:exchange')">导入号源 CSV</el-button>
           </el-upload>
         </div>
+      </div>
+      <div class="filter-bar resource-filter-bar">
+        <el-select v-model="slotStatusFilter" placeholder="号源状态" clearable>
+          <el-option label="可预约" value="available" />
+          <el-option label="已满" value="full" />
+          <el-option label="停用" value="disabled" />
+          <el-option label="已归档" value="deleted" />
+        </el-select>
+        <el-select v-model="slotInstitutionFilter" placeholder="机构" clearable filterable>
+          <el-option v-for="institution in institutions" :key="institution.id" :label="institution.name" :value="institution.id" />
+        </el-select>
+        <el-date-picker v-model="slotDateFilter" value-format="YYYY-MM-DD" type="date" placeholder="日期" />
+        <el-select v-model="slotPeriodFilter" placeholder="时段" clearable>
+          <el-option label="上午" value="上午" />
+          <el-option label="下午" value="下午" />
+        </el-select>
+        <el-input v-model="slotKeyword" placeholder="搜索医生/机构/分类" clearable />
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="医生">
@@ -236,7 +253,7 @@
           <el-button @click="editScheduleSlot(null)">清空</el-button>
         </div>
       </el-form>
-      <el-table :data="slots" stripe>
+      <el-table :data="scheduleSlotRows" stripe>
         <el-table-column prop="date" label="日期" width="110" />
         <el-table-column prop="period" label="时段" width="80" />
         <el-table-column label="时间" width="120"><template #default="{ row }">{{ row.startTime }}-{{ row.endTime }}</template></el-table-column>
@@ -256,7 +273,7 @@
                 plain
                 :loading="loading.schedule"
                 :disabled="row.bookedCount > 0"
-                @click="archiveScheduleSlot(row)"
+                @click="handleArchiveScheduleSlot(row)"
               >
                 归档
               </el-button>
@@ -289,7 +306,7 @@ const {
   users,
   institutions,
   institutionRows,
-  slots,
+  scheduleSlotRows,
   checkupItems,
   checkupItemRows,
   packageItems,
@@ -339,6 +356,12 @@ const canSaveSchedule = computed(() => scheduleForm.doctorId && scheduleForm.ins
 const institutionStatusFilter = ref('')
 const institutionKeyword = ref('')
 const debouncedInstitutionKeyword = useDebouncedRef(institutionKeyword, 350)
+const slotStatusFilter = ref('')
+const slotInstitutionFilter = ref(null)
+const slotDateFilter = ref('')
+const slotPeriodFilter = ref('')
+const slotKeyword = ref('')
+const debouncedSlotKeyword = useDebouncedRef(slotKeyword, 350)
 
 const submitCheckupItem = useDebouncedFn(async () => {
   await saveCheckupItem()
@@ -352,7 +375,10 @@ const submitInstitution = useDebouncedFn(async () => {
   await saveInstitution()
   await reloadInstitutions()
 }, 350)
-const submitSchedule = useDebouncedFn(saveScheduleSlot, 350)
+const submitSchedule = useDebouncedFn(async () => {
+  await saveScheduleSlot()
+  await reloadScheduleSlots()
+}, 350)
 
 function checkupItemFilters() {
   return {
@@ -388,6 +414,21 @@ function packageItemFilters() {
     packageId: packageItemForm.packageId,
     keyword: debouncedPackageItemKeyword.value,
   }
+}
+
+function scheduleSlotFilters() {
+  return {
+    status: slotStatusFilter.value,
+    institutionId: slotInstitutionFilter.value,
+    date: slotDateFilter.value,
+    period: slotPeriodFilter.value,
+    keyword: debouncedSlotKeyword.value,
+  }
+}
+
+function reloadScheduleSlots(reset = false) {
+  if (reset) paginations.slots.page = 1
+  return loadSlotsPage(scheduleSlotFilters())
 }
 
 async function handleCheckupItemImport(file) {
@@ -429,6 +470,16 @@ async function handleArchiveInstitution(row) {
 
 async function handleScheduleSlotImport(file) {
   await importScheduleSlots(file.raw)
+  await reloadScheduleSlots()
+}
+
+function handleScheduleSlotExport() {
+  return exportScheduleSlots(scheduleSlotFilters())
+}
+
+async function handleArchiveScheduleSlot(row) {
+  await archiveScheduleSlot(row)
+  await reloadScheduleSlots()
 }
 
 async function removePackageItem(row) {
@@ -441,7 +492,8 @@ watch(debouncedPackageItemKeyword, () => reloadPackageItems())
 watch(() => [paginations.packageItems.page, paginations.packageItems.pageSize], () => loadPackageItemsPage(packageItemFilters()))
 watch([institutionStatusFilter, debouncedInstitutionKeyword], () => reloadInstitutions(true))
 watch(() => [paginations.institutions.page, paginations.institutions.pageSize], () => reloadInstitutions())
-watch(() => [paginations.slots.page, paginations.slots.pageSize], () => loadSlotsPage())
+watch([slotStatusFilter, slotInstitutionFilter, slotDateFilter, slotPeriodFilter, debouncedSlotKeyword], () => reloadScheduleSlots(true))
+watch(() => [paginations.slots.page, paginations.slots.pageSize], () => reloadScheduleSlots())
 
 onMounted(() => {
   loadPackagesPage()
@@ -450,6 +502,6 @@ onMounted(() => {
   reloadInstitutions()
   reloadCheckupItems()
   loadPackageItemsPage()
-  loadSlotsPage()
+  reloadScheduleSlots()
 })
 </script>

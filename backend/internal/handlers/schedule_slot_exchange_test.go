@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -22,7 +23,7 @@ func TestExportScheduleSlotsUsesFiltersAndAudits(t *testing.T) {
 	handler, db, fixture := newScheduleSlotExchangeFixture(t)
 	router := newScheduleSlotExchangeRouter(handler, fixture.admin)
 
-	response := performScheduleSlotExchangeRequest(t, router, http.MethodGet, "/schedule/slots/export?date=2026-07-01&category=年度综合", nil, "")
+	response := performScheduleSlotExchangeRequest(t, router, http.MethodGet, "/schedule/slots/export?date=2026-07-01&category=年度综合&keyword=医生", nil, "")
 
 	records := decodeScheduleSlotCSV(t, response)
 	if len(records) != 2 {
@@ -32,6 +33,21 @@ func TestExportScheduleSlotsUsesFiltersAndAudits(t *testing.T) {
 		t.Fatalf("export returned wrong schedule slot row: %#v", records[1])
 	}
 	assertScheduleSlotExchangeOperationLogCount(t, db, fixture.admin.ID, "export", 1)
+}
+
+func TestScheduleSlotsSupportKeywordAndPagination(t *testing.T) {
+	handler, _, fixture := newScheduleSlotExchangeFixture(t)
+	router := newScheduleSlotExchangeRouter(handler, fixture.admin)
+
+	response := performScheduleSlotExchangeRequest(t, router, http.MethodGet, "/schedule/slots?keyword=主院区&page=1&pageSize=1", nil, "")
+	page := decodeScheduleSlotPage(t, response)
+
+	if page.Total != 2 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Doctor.Name != fixture.doctor.Name || page.Items[0].Institution.Name != fixture.institution.Name {
+		t.Fatalf("unexpected paginated schedule slots: %#v", page.Items)
+	}
 }
 
 func TestImportScheduleSlotsCreatesAndUpdatesByDoctorInstitutionDateStartTime(t *testing.T) {
@@ -115,6 +131,7 @@ func newScheduleSlotExchangeRouter(handler *Handler, current models.User) *gin.E
 		c.Set("user", current)
 		c.Next()
 	})
+	router.GET("/schedule/slots", handler.scheduleSlots)
 	router.GET("/schedule/slots/export", handler.exportScheduleSlots)
 	router.POST("/schedule/slots/import", handler.importScheduleSlots)
 	return router
@@ -159,6 +176,25 @@ func decodeScheduleSlotCSV(t *testing.T, response *httptest.ResponseRecorder) []
 		t.Fatalf("decode schedule slot csv: %v", err)
 	}
 	return records
+}
+
+type scheduleSlotPageResponse struct {
+	Items    []models.ScheduleSlot `json:"items"`
+	Total    int64                 `json:"total"`
+	Page     int                   `json:"page"`
+	PageSize int                   `json:"pageSize"`
+}
+
+func decodeScheduleSlotPage(t *testing.T, response *httptest.ResponseRecorder) scheduleSlotPageResponse {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page scheduleSlotPageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode schedule slot page: %v", err)
+	}
+	return page
 }
 
 func assertScheduleSlotImportResult(t *testing.T, body string, parts ...string) {

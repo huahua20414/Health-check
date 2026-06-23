@@ -1321,24 +1321,7 @@ func (h *Handler) createReport(c *gin.Context) {
 
 func (h *Handler) scheduleSlots(c *gin.Context) {
 	var slots []models.ScheduleSlot
-	query := h.db.Preload("Doctor").Preload("Institution").Order("date asc, start_time asc, doctor_id asc")
-	if institutionID := c.Query("institutionId"); institutionID != "" {
-		query = query.Where("institution_id = ?", institutionID)
-	}
-	if category := c.Query("category"); category != "" {
-		query = query.Where("category = ?", category)
-	}
-	if date := c.Query("date"); date != "" {
-		query = query.Where("date = ?", date)
-	}
-	if period := c.Query("period"); period != "" {
-		query = query.Where("period = ?", period)
-	}
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	} else {
-		query = query.Where("status <> ?", "deleted")
-	}
+	query := h.scheduleSlotsQuery(c)
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &slots)
 		return
@@ -1439,24 +1422,7 @@ func (h *Handler) archiveScheduleSlot(c *gin.Context) {
 
 func (h *Handler) exportScheduleSlots(c *gin.Context) {
 	var slots []models.ScheduleSlot
-	query := h.db.Preload("Doctor").Preload("Institution").Order("date asc, start_time asc, doctor_id asc")
-	if institutionID := c.Query("institutionId"); institutionID != "" {
-		query = query.Where("institution_id = ?", institutionID)
-	}
-	if category := c.Query("category"); category != "" {
-		query = query.Where("category = ?", category)
-	}
-	if date := c.Query("date"); date != "" {
-		query = query.Where("date = ?", date)
-	}
-	if period := c.Query("period"); period != "" {
-		query = query.Where("period = ?", period)
-	}
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	} else {
-		query = query.Where("status <> ?", "deleted")
-	}
+	query := h.scheduleSlotsQuery(c)
 	if err := query.Find(&slots).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1482,6 +1448,37 @@ func (h *Handler) exportScheduleSlots(c *gin.Context) {
 	}
 	writer.Flush()
 	h.recordOperation(c, "export", "schedule_slot", "", "success", fmt.Sprintf("%d schedule slots", len(slots)))
+}
+
+func (h *Handler) scheduleSlotsQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.ScheduleSlot{}).
+		Preload("Doctor").
+		Preload("Institution").
+		Joins("LEFT JOIN users doctor_filter ON doctor_filter.id = schedule_slots.doctor_id").
+		Joins("LEFT JOIN checkup_institutions institution_filter ON institution_filter.id = schedule_slots.institution_id").
+		Order("schedule_slots.date asc, schedule_slots.start_time asc, schedule_slots.doctor_id asc")
+	if institutionID := c.Query("institutionId"); institutionID != "" {
+		query = query.Where("schedule_slots.institution_id = ?", institutionID)
+	}
+	if category := c.Query("category"); category != "" {
+		query = query.Where("schedule_slots.category = ?", category)
+	}
+	if date := c.Query("date"); date != "" {
+		query = query.Where("schedule_slots.date = ?", date)
+	}
+	if period := c.Query("period"); period != "" {
+		query = query.Where("schedule_slots.period = ?", period)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("schedule_slots.status = ?", status)
+	} else {
+		query = query.Where("schedule_slots.status <> ?", "deleted")
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("doctor_filter.name LIKE ? OR doctor_filter.email LIKE ? OR institution_filter.name LIKE ? OR schedule_slots.category LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	return query
 }
 
 func (h *Handler) importScheduleSlots(c *gin.Context) {
