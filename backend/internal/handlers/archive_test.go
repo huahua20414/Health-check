@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -120,6 +121,30 @@ func TestAnnouncementsSupportKeywordAndPagination(t *testing.T) {
 	}
 }
 
+func TestExportAnnouncementsUsesFiltersAndAudits(t *testing.T) {
+	handler, db := newArchiveTestHandler(t)
+	seedArchiveRows(t, db)
+	admin := models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"}
+	router := newArchiveUserRouter(handler.exportAnnouncements, http.MethodGet, "/api/announcements/export", admin)
+
+	response := performArchiveRouterRequest(t, router, http.MethodGet, "/api/announcements/export?status=published&keyword=启用")
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(response.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected header plus one announcement, got %d rows: %#v", len(rows), rows)
+	}
+	if rows[1][1] != "启用公告" || rows[1][2] != "all" || rows[1][3] != "published" {
+		t.Fatalf("unexpected announcement csv row: %#v", rows[1])
+	}
+	assertArchiveOperationLogCount(t, db, admin.ID, "export", "announcement", 1)
+}
+
 func newArchiveTestHandler(t *testing.T) (*Handler, *gorm.DB) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -135,6 +160,7 @@ func newArchiveTestHandler(t *testing.T) (*Handler, *gorm.DB) {
 		&models.Coupon{},
 		&models.SystemAnnouncement{},
 		&models.ScheduleSlot{},
+		&models.OperationLog{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -189,6 +215,35 @@ func performArchiveRequest(t *testing.T, handler gin.HandlerFunc, method, path s
 		t.Fatalf("decode response %s: %v", rec.Body.String(), err)
 	}
 	return body
+}
+
+func newArchiveUserRouter(handler gin.HandlerFunc, method, path string, current models.User) *gin.Engine {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user", current)
+		c.Next()
+	})
+	router.Handle(method, path, handler)
+	return router
+}
+
+func performArchiveRouterRequest(t *testing.T, router *gin.Engine, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func assertArchiveOperationLogCount(t *testing.T, db *gorm.DB, userID uint, action, resource string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).Where("user_id = ? AND action = ? AND resource = ?", userID, action, resource).Count(&count).Error; err != nil {
+		t.Fatalf("count operation logs: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected %d operation logs, got %d", want, count)
+	}
 }
 
 type archivePageResponse struct {

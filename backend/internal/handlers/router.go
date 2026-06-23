@@ -125,6 +125,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/coupons/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.updateCoupon)
 	protected.DELETE("/coupons/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.archiveCoupon)
 	protected.GET("/announcements", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.announcements)
+	protected.GET("/announcements/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportAnnouncements)
 	protected.POST("/announcements", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.createAnnouncement)
 	protected.PATCH("/announcements/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.updateAnnouncement)
 	protected.DELETE("/announcements/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.archiveAnnouncement)
@@ -2859,6 +2860,19 @@ func (h *Handler) importCoupons(c *gin.Context) {
 
 func (h *Handler) announcements(c *gin.Context) {
 	var announcements []models.SystemAnnouncement
+	query := h.announcementsQuery(c)
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &announcements)
+		return
+	}
+	if err := query.Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, announcements)
+}
+
+func (h *Handler) announcementsQuery(c *gin.Context) *gorm.DB {
 	query := h.db.Model(&models.SystemAnnouncement{}).Order("system_announcements.created_at desc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("system_announcements.status = ?", status)
@@ -2872,15 +2886,37 @@ func (h *Handler) announcements(c *gin.Context) {
 			pattern, pattern, pattern,
 		)
 	}
-	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &announcements)
-		return
-	}
-	if err := query.Find(&announcements).Error; err != nil {
+	return query
+}
+
+func (h *Handler) exportAnnouncements(c *gin.Context) {
+	var announcements []models.SystemAnnouncement
+	if err := h.announcementsQuery(c).Find(&announcements).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, announcements)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="announcements.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "title", "audience", "status", "content", "published_at", "created_at", "updated_at"})
+	for _, announcement := range announcements {
+		publishedAt := ""
+		if announcement.PublishedAt != nil {
+			publishedAt = announcement.PublishedAt.Format(time.RFC3339)
+		}
+		_ = writer.Write([]string{
+			strconv.Itoa(int(announcement.ID)),
+			announcement.Title,
+			announcement.Audience,
+			announcement.Status,
+			announcement.Content,
+			publishedAt,
+			announcement.CreatedAt.Format(time.RFC3339),
+			announcement.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "announcement", "", "success", fmt.Sprintf("%d announcements", len(announcements)))
 }
 
 func (h *Handler) createAnnouncement(c *gin.Context) {

@@ -158,6 +158,7 @@ const loading = reactive({
   importCoupons: false,
   exportCoupons: false,
   exportReviews: false,
+  exportAnnouncements: false,
   exportAppointments: false,
   exportSupportTickets: false,
   exportUsers: false,
@@ -1629,6 +1630,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportAnnouncements(params = {}) {
+    if (loading.exportAnnouncements) return
+    loading.exportAnnouncements = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/announcements/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'announcements.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('系统公告 CSV 已导出')
+    } finally {
+      loading.exportAnnouncements = false
+    }
+  }
+
   async function exportSupportTickets(params = {}) {
     if (loading.exportSupportTickets) return
     loading.exportSupportTickets = true
@@ -1972,6 +1991,7 @@ export function useHealthData() {
     editAnnouncement,
     saveAnnouncement,
     archiveAnnouncement,
+    exportAnnouncements,
     resetNotificationForm,
     sendAdminNotification,
     sendCheckupReminders,

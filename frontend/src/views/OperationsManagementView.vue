@@ -168,6 +168,7 @@
           <el-option label="已归档" value="deleted" />
         </el-select>
         <el-input v-model="announcementKeyword" placeholder="搜索标题/内容/受众" clearable />
+        <el-button :loading="loading.exportAnnouncements" :disabled="!can('admin:data:exchange')" @click="handleAnnouncementExport">导出公告</el-button>
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="标题"><el-input v-model="announcementForm.title" /></el-form-item>
@@ -416,6 +417,7 @@ const {
   editAnnouncement,
   saveAnnouncement,
   archiveAnnouncement,
+  exportAnnouncements,
   resetNotificationForm,
   sendAdminNotification,
   sendCheckupReminders,
@@ -532,6 +534,10 @@ async function handleSaveAnnouncement() {
 
 async function handleArchiveAnnouncement(row) {
   await archiveAnnouncement(row, announcementFilters())
+}
+
+function handleAnnouncementExport() {
+  return exportAnnouncements(announcementFilters())
 }
 
 function handleSupportTicketExport() {
