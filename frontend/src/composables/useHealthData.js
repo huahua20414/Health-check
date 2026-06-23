@@ -51,6 +51,7 @@ const activeAnnouncements = ref([])
 const supportInfo = ref({ customerServiceUrl: '', customerServiceHours: '', faq: [] })
 const adminDashboard = ref({ summary: {}, appointmentTrend: [], packageSales: [], userGrowth: [] })
 const checkupItems = ref([])
+const checkupItemRows = ref([])
 const packageItems = ref([])
 const paginations = reactive({
   appointments: { page: 1, pageSize: 10, total: 0 },
@@ -580,7 +581,7 @@ export function useHealthData() {
   }
 
   async function loadCheckupItemsPage(params = {}) {
-    checkupItems.value = await requestPage('/checkup-items', paginations.checkupItems, params)
+    checkupItemRows.value = await requestPage('/checkup-items', paginations.checkupItems, params)
   }
 
   async function loadPackageItemsPage(params = {}) {
@@ -1076,6 +1077,7 @@ export function useHealthData() {
       else await request('/checkup-items', { method: 'POST', body })
       ElMessage.success('体检项目已保存')
       editCheckupItem(null)
+      checkupItems.value = await request('/checkup-items')
       await loadCheckupItemsPage()
     } finally {
       loading.checkupItem = false
@@ -1088,6 +1090,7 @@ export function useHealthData() {
     try {
       await request(`/checkup-items/${item.id}`, { method: 'DELETE' })
       ElMessage.success('体检项目已归档')
+      checkupItems.value = await request('/checkup-items')
       await loadCheckupItemsPage()
     } finally {
       loading.checkupItem = false
@@ -1120,6 +1123,7 @@ export function useHealthData() {
       formData.append('file', file)
       const result = await request('/checkup-items/import', { method: 'POST', body: formData })
       ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      checkupItems.value = await request('/checkup-items')
       await loadCheckupItemsPage()
     } finally {
       loading.importCheckupItems = false
@@ -1825,6 +1829,7 @@ export function useHealthData() {
     supportInfo,
     adminDashboard,
     checkupItems,
+    checkupItemRows,
     packageItems,
     paginations,
     appointmentForm,

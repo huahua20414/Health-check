@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -22,7 +23,7 @@ func TestExportCheckupItemsSupportsStatusFilterAndAudits(t *testing.T) {
 	handler, db, fixture := newCheckupItemExchangeFixture(t)
 	router := newCheckupItemExchangeRouter(handler, fixture.admin)
 
-	response := performCheckupItemExchangeRequest(t, router, http.MethodGet, "/checkup-items/export?status=active", nil, "")
+	response := performCheckupItemExchangeRequest(t, router, http.MethodGet, "/checkup-items/export?status=active&keyword=血", nil, "")
 
 	records := decodeCheckupItemCSV(t, response)
 	if len(records) != 2 {
@@ -32,6 +33,21 @@ func TestExportCheckupItemsSupportsStatusFilterAndAudits(t *testing.T) {
 		t.Fatalf("export returned wrong item row: %#v", records[1])
 	}
 	assertCheckupItemOperationLogCount(t, db, fixture.admin.ID, "export", 1)
+}
+
+func TestCheckupItemsSupportKeywordAndPagination(t *testing.T) {
+	handler, _, fixture := newCheckupItemExchangeFixture(t)
+	router := newCheckupItemExchangeRouter(handler, fixture.admin)
+
+	response := performCheckupItemExchangeRequest(t, router, http.MethodGet, "/checkup-items?keyword=科&page=1&pageSize=1", nil, "")
+	page := decodeCheckupItemPage(t, response)
+
+	if page.Total != 1 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "血常规" {
+		t.Fatalf("unexpected paginated checkup items: %#v", page.Items)
+	}
 }
 
 func TestImportCheckupItemsCreatesAndUpdatesByName(t *testing.T) {
@@ -109,6 +125,7 @@ func newCheckupItemExchangeRouter(handler *Handler, current models.User) *gin.En
 		c.Set("user", current)
 		c.Next()
 	})
+	router.GET("/checkup-items", handler.checkupItems)
 	router.GET("/checkup-items/export", handler.exportCheckupItems)
 	router.POST("/checkup-items/import", handler.importCheckupItems)
 	return router
@@ -153,6 +170,25 @@ func decodeCheckupItemCSV(t *testing.T, response *httptest.ResponseRecorder) [][
 		t.Fatalf("decode checkup item csv: %v", err)
 	}
 	return records
+}
+
+type checkupItemPageResponse struct {
+	Items    []models.CheckupItem `json:"items"`
+	Total    int64                `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"pageSize"`
+}
+
+func decodeCheckupItemPage(t *testing.T, response *httptest.ResponseRecorder) checkupItemPageResponse {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page checkupItemPageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode checkup item page: %v", err)
+	}
+	return page
 }
 
 func assertCheckupItemImportResult(t *testing.T, body string, parts ...string) {

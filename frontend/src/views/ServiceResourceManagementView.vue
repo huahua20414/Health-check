@@ -7,13 +7,21 @@
           <p>维护检查项目、科室、价格和预计时长，供套餐组合复用。</p>
         </div>
         <div class="head-actions">
-          <el-button :loading="loading.exportCheckupItems" :disabled="!can('admin:data:exchange')" @click="exportCheckupItems">
+          <el-button :loading="loading.exportCheckupItems" :disabled="!can('admin:data:exchange')" @click="handleCheckupItemExport">
             导出项目 CSV
           </el-button>
           <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleCheckupItemImport">
             <el-button :loading="loading.importCheckupItems" :disabled="!can('admin:data:exchange')">导入项目 CSV</el-button>
           </el-upload>
         </div>
+      </div>
+      <div class="filter-bar resource-filter-bar">
+        <el-select v-model="checkupItemStatusFilter" placeholder="项目状态" clearable>
+          <el-option label="启用" value="active" />
+          <el-option label="停用" value="disabled" />
+          <el-option label="已归档" value="deleted" />
+        </el-select>
+        <el-input v-model="checkupItemKeyword" placeholder="搜索项目/分类/科室" clearable />
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="项目名称"><el-input v-model="checkupItemForm.name" /></el-form-item>
@@ -33,7 +41,7 @@
           <el-button @click="editCheckupItem(null)">清空</el-button>
         </div>
       </el-form>
-      <el-table :data="checkupItems" stripe>
+      <el-table :data="checkupItemRows" stripe>
         <el-table-column prop="name" label="项目" min-width="150" />
         <el-table-column prop="category" label="分类" width="120" />
         <el-table-column prop="department" label="科室" width="120" />
@@ -44,7 +52,7 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-if="can('admin:resource:manage')" size="small" @click="editCheckupItem(row)">编辑</el-button>
-              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.checkupItem" @click="archiveCheckupItem(row)">归档</el-button>
+              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.checkupItem" @click="handleArchiveCheckupItem(row)">归档</el-button>
             </div>
           </template>
         </el-table-column>
@@ -280,6 +288,7 @@ const {
   institutionRows,
   slots,
   checkupItems,
+  checkupItemRows,
   packageItems,
   checkupItemForm,
   packageItemForm,
@@ -317,19 +326,37 @@ const {
 } = useHealthData()
 
 const activeDoctors = computed(() => users.value.filter((user) => user.role === 'doctor' && user.status === 'active'))
+const checkupItemStatusFilter = ref('')
+const checkupItemKeyword = ref('')
+const debouncedCheckupItemKeyword = useDebouncedRef(checkupItemKeyword, 350)
 const canSaveInstitution = computed(() => institutionForm.name && institutionForm.address)
 const canSaveSchedule = computed(() => scheduleForm.doctorId && scheduleForm.institutionId && scheduleForm.date && scheduleForm.period && scheduleForm.startTime)
 const institutionStatusFilter = ref('')
 const institutionKeyword = ref('')
 const debouncedInstitutionKeyword = useDebouncedRef(institutionKeyword, 350)
 
-const submitCheckupItem = useDebouncedFn(saveCheckupItem, 350)
+const submitCheckupItem = useDebouncedFn(async () => {
+  await saveCheckupItem()
+  await reloadCheckupItems()
+}, 350)
 const submitPackageItem = useDebouncedFn(savePackageItem, 350)
 const submitInstitution = useDebouncedFn(async () => {
   await saveInstitution()
   await reloadInstitutions()
 }, 350)
 const submitSchedule = useDebouncedFn(saveScheduleSlot, 350)
+
+function checkupItemFilters() {
+  return {
+    status: checkupItemStatusFilter.value,
+    keyword: debouncedCheckupItemKeyword.value,
+  }
+}
+
+function reloadCheckupItems(reset = false) {
+  if (reset) paginations.checkupItems.page = 1
+  return loadCheckupItemsPage(checkupItemFilters())
+}
 
 function institutionFilters() {
   return {
@@ -350,6 +377,16 @@ function reloadPackageItems() {
 
 async function handleCheckupItemImport(file) {
   await importCheckupItems(file.raw)
+  await reloadCheckupItems()
+}
+
+function handleCheckupItemExport() {
+  return exportCheckupItems(checkupItemFilters())
+}
+
+async function handleArchiveCheckupItem(row) {
+  await archiveCheckupItem(row)
+  await reloadCheckupItems()
 }
 
 function handlePackageItemExport() {
@@ -382,7 +419,8 @@ async function removePackageItem(row) {
   await deletePackageItem(row)
 }
 
-watch(() => [paginations.checkupItems.page, paginations.checkupItems.pageSize], () => loadCheckupItemsPage())
+watch([checkupItemStatusFilter, debouncedCheckupItemKeyword], () => reloadCheckupItems(true))
+watch(() => [paginations.checkupItems.page, paginations.checkupItems.pageSize], () => reloadCheckupItems())
 watch(() => [paginations.packageItems.page, paginations.packageItems.pageSize], () => loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {}))
 watch([institutionStatusFilter, debouncedInstitutionKeyword], () => reloadInstitutions(true))
 watch(() => [paginations.institutions.page, paginations.institutions.pageSize], () => reloadInstitutions())
@@ -393,7 +431,7 @@ onMounted(() => {
   loadUsersPage({ role: 'doctor', status: 'active' })
   loadInstitutions()
   reloadInstitutions()
-  loadCheckupItemsPage()
+  reloadCheckupItems()
   loadPackageItemsPage()
   loadSlotsPage()
 })

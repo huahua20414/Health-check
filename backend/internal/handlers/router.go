@@ -3117,9 +3117,13 @@ func (h *Handler) archiveCheckupItem(c *gin.Context) {
 
 func (h *Handler) exportCheckupItems(c *gin.Context) {
 	var items []models.CheckupItem
-	query := h.db.Order("id asc")
+	query := h.db.Model(&models.CheckupItem{}).Order("id asc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("name LIKE ? OR category LIKE ? OR department LIKE ?", pattern, pattern, pattern)
 	}
 	if err := query.Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
