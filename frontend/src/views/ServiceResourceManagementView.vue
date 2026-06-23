@@ -117,6 +117,14 @@
           <h3>体检机构管理</h3>
           <p>维护可预约院区、地址、联系方式和营业时间，号源排班会引用这些机构。</p>
         </div>
+        <div class="head-actions">
+          <el-button :loading="loading.exportInstitutions" :disabled="!can('admin:data:exchange')" @click="exportInstitutions">
+            导出机构 CSV
+          </el-button>
+          <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleInstitutionImport">
+            <el-button :loading="loading.importInstitutions" :disabled="!can('admin:data:exchange')">导入机构 CSV</el-button>
+          </el-upload>
+        </div>
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="机构名称"><el-input v-model="institutionForm.name" /></el-form-item>
@@ -279,6 +287,8 @@ const {
   editInstitution,
   saveInstitution,
   archiveInstitution,
+  exportInstitutions,
+  importInstitutions,
   editScheduleSlot,
   saveScheduleSlot,
   archiveScheduleSlot,
@@ -310,6 +320,10 @@ function handlePackageItemExport() {
 
 async function handlePackageItemImport(file) {
   await importPackageItems(file.raw)
+}
+
+async function handleInstitutionImport(file) {
+  await importInstitutions(file.raw)
 }
 
 async function handleScheduleSlotImport(file) {

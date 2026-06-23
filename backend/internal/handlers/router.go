@@ -67,6 +67,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.POST("/profile/email-code", handler.sendEmailCode)
 	protected.PATCH("/profile/email", handler.updateEmail)
 	protected.POST("/institutions", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createInstitution)
+	protected.GET("/institutions/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportInstitutions)
+	protected.POST("/institutions/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importInstitutions)
 	protected.PATCH("/institutions/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateInstitution)
 	protected.DELETE("/institutions/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveInstitution)
 	protected.GET("/appointments", handler.appointments)
@@ -567,6 +569,111 @@ func (h *Handler) archiveInstitution(c *gin.Context) {
 	}
 	h.recordOperation(c, "archive", "institution", strconv.Itoa(id), "success", "")
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
+func (h *Handler) exportInstitutions(c *gin.Context) {
+	var institutions []models.CheckupInstitution
+	query := h.db.Order("id asc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if err := query.Find(&institutions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="institutions.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"name", "address", "phone", "open_hours", "status"})
+	for _, institution := range institutions {
+		_ = writer.Write([]string{
+			institution.Name,
+			institution.Address,
+			institution.Phone,
+			institution.OpenHours,
+			institution.Status,
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "institution", "", "success", fmt.Sprintf("%d institutions", len(institutions)))
+}
+
+func (h *Handler) importInstitutions(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "csv file is required"})
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "open csv file failed"})
+		return
+	}
+	defer opened.Close()
+	reader := csv.NewReader(opened)
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
+		return
+	}
+	index := csvIndex(header)
+	for _, field := range []string{"name", "address"} {
+		if _, ok := index[field]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing csv column: " + field})
+			return
+		}
+	}
+	created := 0
+	updated := 0
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			institution, err := institutionFromCSVRecord(record, index)
+			if err != nil {
+				return err
+			}
+			if institution.Name == "" {
+				continue
+			}
+			var existing models.CheckupInstitution
+			err = tx.Where("name = ?", institution.Name).First(&existing).Error
+			if err == nil {
+				updates := map[string]any{
+					"address":    institution.Address,
+					"phone":      institution.Phone,
+					"open_hours": institution.OpenHours,
+					"status":     institution.Status,
+				}
+				if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+					return err
+				}
+				updated++
+				continue
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := tx.Create(&institution).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	}); err != nil {
+		h.recordOperation(c, "import", "institution", "", "failed", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	detail := fmt.Sprintf("created=%d updated=%d", created, updated)
+	h.recordOperation(c, "import", "institution", "", "success", detail)
+	c.JSON(http.StatusOK, gin.H{"created": created, "updated": updated})
 }
 
 func (h *Handler) activeCoupons(c *gin.Context) {
@@ -4243,6 +4350,24 @@ func csvIndex(header []string) map[string]int {
 		index[strings.ToLower(strings.TrimSpace(name))] = i
 	}
 	return index
+}
+
+func institutionFromCSVRecord(record []string, index map[string]int) (models.CheckupInstitution, error) {
+	name := csvValue(record, index, "name")
+	address := csvValue(record, index, "address")
+	if name == "" && address == "" {
+		return models.CheckupInstitution{}, nil
+	}
+	if name == "" || address == "" {
+		return models.CheckupInstitution{}, fmt.Errorf("institution name and address are required")
+	}
+	return models.CheckupInstitution{
+		Name:      name,
+		Address:   address,
+		Phone:     csvValue(record, index, "phone"),
+		OpenHours: csvValue(record, index, "open_hours"),
+		Status:    normalizeStatus(csvValue(record, index, "status"), "active"),
+	}, nil
 }
 
 func couponFromCSVRecord(record []string, index map[string]int) (models.Coupon, error) {

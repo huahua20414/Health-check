@@ -143,6 +143,8 @@ const loading = reactive({
   exportCheckupItems: false,
   importPackageItems: false,
   exportPackageItems: false,
+  importInstitutions: false,
+  exportInstitutions: false,
   importScheduleSlots: false,
   exportScheduleSlots: false,
   importCoupons: false,
@@ -1278,6 +1280,38 @@ export function useHealthData() {
     }
   }
 
+  async function exportInstitutions(params = {}) {
+    if (loading.exportInstitutions) return
+    loading.exportInstitutions = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/institutions/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'institutions.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('体检机构 CSV 已导出')
+    } finally {
+      loading.exportInstitutions = false
+    }
+  }
+
+  async function importInstitutions(file) {
+    if (!file || loading.importInstitutions) return
+    loading.importInstitutions = true
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await request('/institutions/import', { method: 'POST', body: formData })
+      ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      await loadInstitutions()
+    } finally {
+      loading.importInstitutions = false
+    }
+  }
+
   async function exportScheduleSlots(params = {}) {
     if (loading.exportScheduleSlots) return
     loading.exportScheduleSlots = true
@@ -1899,6 +1933,8 @@ export function useHealthData() {
     editInstitution,
     saveInstitution,
     archiveInstitution,
+    exportInstitutions,
+    importInstitutions,
     saveProfile,
     sendEmailCode,
     updateEmail,
