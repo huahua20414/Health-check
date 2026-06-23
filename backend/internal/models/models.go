@@ -159,6 +159,7 @@ type Notification struct {
 	Title     string     `json:"title" gorm:"size:128;not null"`
 	Content   string     `json:"content" gorm:"type:text"`
 	Status    string     `json:"status" gorm:"size:24;not null;default:'unread';index"`
+	User      User       `json:"user"`
 	CreatedAt time.Time  `json:"createdAt"`
 	ReadAt    *time.Time `json:"readAt"`
 }

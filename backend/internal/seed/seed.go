@@ -163,6 +163,7 @@ func defaultRolePermissions() []models.RolePermission {
 		"admin:package:manage":      "管理体检套餐",
 		"admin:resource:manage":     "管理项目和排班",
 		"admin:operation:manage":    "管理优惠券、评价和公告",
+		"admin:notification:manage": "管理消息通知",
 		"admin:system:manage":       "管理系统设置和日志",
 		"admin:data:exchange":       "导入导出业务数据",
 		"admin:permission:manage":   "管理角色权限",
@@ -175,7 +176,7 @@ func defaultRolePermissions() []models.RolePermission {
 		"doctor": {"doctor:appointment:update", "report:create", "customer:view"},
 		"admin": {
 			"admin:user:manage", "admin:doctor:review", "admin:package:manage", "admin:resource:manage",
-			"admin:operation:manage", "admin:system:manage", "admin:data:exchange", "admin:permission:manage",
+			"admin:operation:manage", "admin:notification:manage", "admin:system:manage", "admin:data:exchange", "admin:permission:manage",
 		},
 	}
 	var permissions []models.RolePermission

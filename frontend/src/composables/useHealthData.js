@@ -34,6 +34,7 @@ const browseHistories = ref([])
 const popularPackages = ref([])
 const recommendedPackages = ref([])
 const notifications = ref([])
+const adminNotifications = ref([])
 const loginLogs = ref([])
 const operationLogs = ref([])
 const rolePermissions = ref([])
@@ -59,6 +60,7 @@ const paginations = reactive({
   operationLogs: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
   notifications: { page: 1, pageSize: 10, total: 0 },
+  adminNotifications: { page: 1, pageSize: 10, total: 0 },
   coupons: { page: 1, pageSize: 10, total: 0 },
   reviews: { page: 1, pageSize: 10, total: 0 },
   announcements: { page: 1, pageSize: 10, total: 0 },
@@ -89,6 +91,7 @@ const couponForm = reactive({ id: null, name: '', code: '', type: 'amount', valu
 const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
 const reviewReplyForm = reactive({ id: null, reply: '', status: 'published' })
 const announcementForm = reactive({ id: null, title: '', content: '', audience: 'all', status: 'draft' })
+const notificationForm = reactive({ userId: null, role: 'user', channel: 'in_app', type: 'admin_notice', title: '', content: '' })
 const checkupItemForm = reactive({ id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' })
 const packageItemForm = reactive({ packageId: null, itemId: null, sortOrder: 0, required: true })
 const scheduleForm = reactive({ id: null, doctorId: null, institutionId: null, date: '', period: '上午', category: '', startTime: '08:30', endTime: '', capacity: 1, status: 'available' })
@@ -115,6 +118,7 @@ const loading = reactive({
   familyMember: false,
   favorite: false,
   notification: false,
+  adminNotification: false,
   coupon: false,
   review: false,
   announcement: false,
@@ -465,6 +469,11 @@ export function useHealthData() {
     notifications.value = await requestPage('/notifications', paginations.notifications, params)
   }
 
+  async function loadAdminNotificationsPage(params = {}) {
+    if (!isAdmin.value) return
+    adminNotifications.value = await requestPage('/admin/notifications', paginations.adminNotifications, params)
+  }
+
   async function loadCouponsPage(params = {}) {
     coupons.value = await requestPage('/coupons', paginations.coupons, params)
   }
@@ -771,6 +780,43 @@ export function useHealthData() {
       await loadAnnouncementsPage()
     } finally {
       loading.announcement = false
+    }
+  }
+
+  function resetNotificationForm() {
+    Object.assign(notificationForm, { userId: null, role: 'user', channel: 'in_app', type: 'admin_notice', title: '', content: '' })
+  }
+
+  async function sendAdminNotification() {
+    if (loading.adminNotification) return
+    loading.adminNotification = true
+    try {
+      const body = JSON.stringify({
+        userId: Number(notificationForm.userId || 0),
+        role: notificationForm.userId ? '' : notificationForm.role,
+        channel: notificationForm.channel,
+        type: notificationForm.type,
+        title: notificationForm.title,
+        content: notificationForm.content,
+      })
+      const result = await request('/admin/notifications', { method: 'POST', body })
+      ElMessage.success(`通知已发送给 ${result.created || 0} 人`)
+      resetNotificationForm()
+      await loadAdminNotificationsPage()
+    } finally {
+      loading.adminNotification = false
+    }
+  }
+
+  async function archiveAdminNotification(notification) {
+    if (loading.adminNotification) return
+    loading.adminNotification = true
+    try {
+      await request(`/admin/notifications/${notification.id}`, { method: 'DELETE' })
+      ElMessage.success('通知已归档')
+      await loadAdminNotificationsPage()
+    } finally {
+      loading.adminNotification = false
     }
   }
 
@@ -1210,6 +1256,7 @@ export function useHealthData() {
     popularPackages,
     recommendedPackages,
     notifications,
+    adminNotifications,
     coupons,
     activeCoupons,
     reviews,
@@ -1231,6 +1278,7 @@ export function useHealthData() {
     reviewForm,
     reviewReplyForm,
     announcementForm,
+    notificationForm,
     checkupItemForm,
     packageItemForm,
     scheduleForm,
@@ -1267,6 +1315,7 @@ export function useHealthData() {
     loadSupportInfo,
     loadPackagesPage,
     loadNotificationsPage,
+    loadAdminNotificationsPage,
     loadCouponsPage,
     loadReviewsPage,
     loadAnnouncementsPage,
@@ -1295,6 +1344,9 @@ export function useHealthData() {
     editAnnouncement,
     saveAnnouncement,
     archiveAnnouncement,
+    resetNotificationForm,
+    sendAdminNotification,
+    archiveAdminNotification,
     editCheckupItem,
     saveCheckupItem,
     archiveCheckupItem,

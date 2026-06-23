@@ -126,28 +126,106 @@
         </el-table-column>
       </el-table>
     </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>消息通知管理</h3>
+          <p>向指定用户或角色发送站内信，也可维护历史通知状态。</p>
+        </div>
+        <div class="filter-bar">
+          <el-select v-model="notificationStatusFilter" placeholder="状态" clearable>
+            <el-option label="未读" value="unread" />
+            <el-option label="已读" value="read" />
+            <el-option label="已归档" value="archived" />
+          </el-select>
+          <el-select v-model="notificationChannelFilter" placeholder="渠道" clearable>
+            <el-option label="站内信" value="in_app" />
+            <el-option label="短信模拟" value="sms_mock" />
+          </el-select>
+          <el-input v-model="notificationKeyword" placeholder="搜索标题/用户" clearable />
+        </div>
+      </div>
+      <el-form label-position="top" class="form-grid spacious-form">
+        <el-form-item label="指定用户">
+          <el-select v-model="notificationForm.userId" clearable filterable placeholder="不选则按角色群发">
+            <el-option v-for="user in users" :key="user.id" :label="`${user.name}（${user.email || user.role}）`" :value="user.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="群发角色">
+          <el-select v-model="notificationForm.role" :disabled="Boolean(notificationForm.userId)">
+            <el-option label="用户" value="user" />
+            <el-option label="医生" value="doctor" />
+            <el-option label="管理员" value="admin" />
+            <el-option label="全员" value="all" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="渠道">
+          <el-select v-model="notificationForm.channel">
+            <el-option label="站内信" value="in_app" />
+            <el-option label="短信模拟" value="sms_mock" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型"><el-input v-model="notificationForm.type" /></el-form-item>
+        <el-form-item label="标题"><el-input v-model="notificationForm.title" /></el-form-item>
+        <el-form-item label="内容"><el-input v-model="notificationForm.content" type="textarea" :rows="3" /></el-form-item>
+        <div class="actions">
+          <el-button type="primary" :loading="loading.adminNotification" :disabled="!notificationForm.title || !notificationForm.content || !can('admin:notification:manage')" @click="sendAdminNotification">发送通知</el-button>
+          <el-button @click="resetNotificationForm">清空</el-button>
+        </div>
+      </el-form>
+      <el-table :data="adminNotifications" stripe>
+        <el-table-column label="用户" width="140"><template #default="{ row }">{{ row.user?.name || row.userId }}</template></el-table-column>
+        <el-table-column prop="channel" label="渠道" width="100" />
+        <el-table-column prop="type" label="类型" width="130" />
+        <el-table-column prop="title" label="标题" />
+        <el-table-column prop="content" label="内容" />
+        <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
+        <el-table-column label="操作" width="100">
+          <template #default="{ row }">
+            <el-button v-if="can('admin:notification:manage')" size="small" type="danger" plain :loading="loading.adminNotification" @click="archiveAdminNotification(row)">归档</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.adminNotifications.total"
+        v-model:current-page="paginations.adminNotifications.page"
+        v-model:page-size="paginations.adminNotifications.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
+    </div>
   </section>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import StatusTag from '../components/StatusTag.vue'
+import { useDebouncedRef } from '../composables/useDebouncedRef'
 import { useHealthData } from '../composables/useHealthData'
 
 const {
   packages,
+  users,
   coupons,
   reviews,
   announcements,
+  adminNotifications,
   couponForm,
   reviewReplyForm,
   announcementForm,
+  notificationForm,
   loading,
   can,
+  paginations,
   loadPackagesPage,
+  loadUsersPage,
   loadCouponsPage,
   loadReviewsPage,
   loadAnnouncementsPage,
+  loadAdminNotificationsPage,
   editCoupon,
   saveCoupon,
   archiveCoupon,
@@ -156,12 +234,34 @@ const {
   editAnnouncement,
   saveAnnouncement,
   archiveAnnouncement,
+  resetNotificationForm,
+  sendAdminNotification,
+  archiveAdminNotification,
 } = useHealthData()
+
+const notificationStatusFilter = ref('')
+const notificationChannelFilter = ref('')
+const notificationKeyword = ref('')
+const debouncedNotificationKeyword = useDebouncedRef(notificationKeyword, 350)
+
+function loadNotificationPage(reset = false) {
+  if (reset) paginations.adminNotifications.page = 1
+  return loadAdminNotificationsPage({
+    status: notificationStatusFilter.value,
+    channel: notificationChannelFilter.value,
+    keyword: debouncedNotificationKeyword.value,
+  })
+}
+
+watch([notificationStatusFilter, notificationChannelFilter, debouncedNotificationKeyword], () => loadNotificationPage(true))
+watch(() => [paginations.adminNotifications.page, paginations.adminNotifications.pageSize], () => loadNotificationPage())
 
 onMounted(() => {
   loadPackagesPage()
+  loadUsersPage({ role: 'user', status: 'active' })
   loadCouponsPage()
   loadReviewsPage()
   loadAnnouncementsPage()
+  loadNotificationPage()
 })
 </script>

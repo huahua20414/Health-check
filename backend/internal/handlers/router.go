@@ -92,6 +92,9 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
 	protected.GET("/notifications", handler.notifications)
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
+	protected.GET("/admin/notifications", handler.requireRole("admin"), handler.adminNotifications)
+	protected.POST("/admin/notifications", handler.requireRole("admin"), handler.createAdminNotification)
+	protected.DELETE("/admin/notifications/:id", handler.requireRole("admin"), handler.archiveAdminNotification)
 	protected.GET("/permissions/me", handler.myPermissions)
 	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
 	protected.GET("/coupons", handler.requireRole("admin"), handler.coupons)
@@ -1229,7 +1232,7 @@ func (h *Handler) packageBrowses(c *gin.Context) {
 func (h *Handler) notifications(c *gin.Context) {
 	current := currentUser(c)
 	var notifications []models.Notification
-	query := h.db.Where("user_id = ?", current.ID).Order("created_at desc")
+	query := h.db.Where("user_id = ? AND status <> ?", current.ID, "archived").Order("created_at desc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -1262,6 +1265,97 @@ func (h *Handler) markNotificationRead(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "read"})
+}
+
+func (h *Handler) adminNotifications(c *gin.Context) {
+	var notifications []models.Notification
+	query := h.db.Model(&models.Notification{}).Preload("User").Order("notifications.created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("notifications.status = ?", status)
+	} else {
+		query = query.Where("notifications.status <> ?", "archived")
+	}
+	if channel := c.Query("channel"); channel != "" {
+		query = query.Where("notifications.channel = ?", channel)
+	}
+	if userID := c.Query("userId"); userID != "" {
+		query = query.Where("notifications.user_id = ?", userID)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Joins("LEFT JOIN users ON users.id = notifications.user_id").
+			Where("notifications.title LIKE ? OR notifications.content LIKE ? OR notifications.type LIKE ? OR users.name LIKE ? OR users.email LIKE ?", pattern, pattern, pattern, pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &notifications)
+		return
+	}
+	if err := query.Limit(100).Find(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, notifications)
+}
+
+func (h *Handler) createAdminNotification(c *gin.Context) {
+	var req notificationRequest
+	if !bind(c, &req) {
+		return
+	}
+	channel := normalizeStatus(strings.TrimSpace(req.Channel), "in_app")
+	if channel != "in_app" && channel != "sms_mock" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid notification channel"})
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	content := strings.TrimSpace(req.Content)
+	if title == "" || content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title and content are required"})
+		return
+	}
+	users, ok := h.notificationRecipients(c, req)
+	if !ok {
+		return
+	}
+	if len(users) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no active recipients"})
+		return
+	}
+	notifications := make([]models.Notification, 0, len(users))
+	for _, user := range users {
+		notifications = append(notifications, models.Notification{
+			UserID:  user.ID,
+			Channel: channel,
+			Type:    normalizeStatus(strings.TrimSpace(req.Type), "admin_notice"),
+			Title:   title,
+			Content: content,
+			Status:  "unread",
+		})
+	}
+	if err := h.db.Create(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "create", "notification", "", "success", fmt.Sprintf("%d recipients channel=%s", len(notifications), channel))
+	c.JSON(http.StatusCreated, gin.H{"created": len(notifications), "items": notifications})
+}
+
+func (h *Handler) archiveAdminNotification(c *gin.Context) {
+	id, ok := parseIDParam(c, "id", "invalid notification id")
+	if !ok {
+		return
+	}
+	result := h.db.Model(&models.Notification{}).Where("id = ? AND status <> ?", id, "archived").Update("status", "archived")
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		return
+	}
+	h.recordOperation(c, "archive", "notification", strconv.Itoa(id), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "archived"})
 }
 
 func (h *Handler) mailLogs(c *gin.Context) {
@@ -2489,6 +2583,15 @@ type systemSettingRequest struct {
 	Status      string `json:"status"`
 }
 
+type notificationRequest struct {
+	UserID  uint   `json:"userId"`
+	Role    string `json:"role"`
+	Channel string `json:"channel"`
+	Type    string `json:"type"`
+	Title   string `json:"title" binding:"required"`
+	Content string `json:"content" binding:"required"`
+}
+
 type doctorProfileRequest struct {
 	Department  string `json:"department" binding:"required"`
 	Title       string `json:"title"`
@@ -2585,6 +2688,34 @@ func defaultFAQItems() []faqItem {
 		{Question: "可以为家人预约吗？", Answer: "可以。先在家庭成员中维护家人档案，提交预约时选择对应成员。"},
 		{Question: "预约成功后会有什么提醒？", Answer: "系统会生成站内信，并模拟短信通知；邮件通知按 SMTP 配置实际发送。"},
 	}
+}
+
+func (h *Handler) notificationRecipients(c *gin.Context, req notificationRequest) ([]models.User, bool) {
+	var users []models.User
+	if req.UserID != 0 {
+		if err := h.db.Where("id = ? AND status = ?", req.UserID, "active").Find(&users).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return nil, false
+		}
+		if len(users) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "active recipient not found"})
+			return nil, false
+		}
+		return users, true
+	}
+	query := h.db.Where("status = ?", "active")
+	if role := strings.TrimSpace(req.Role); role != "" && role != "all" {
+		if role != "user" && role != "doctor" && role != "admin" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipient role"})
+			return nil, false
+		}
+		query = query.Where("role = ?", role)
+	}
+	if err := query.Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return nil, false
+	}
+	return users, true
 }
 
 func packageSortClause(value string) string {
