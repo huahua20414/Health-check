@@ -137,6 +137,8 @@ const loading = reactive({
   schedule: false,
   importPackages: false,
   exportPackages: false,
+  importCoupons: false,
+  exportCoupons: false,
   exportAppointments: false,
   exportSupportTickets: false,
   exportUsers: false,
@@ -1369,6 +1371,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportCoupons(params = {}) {
+    if (loading.exportCoupons) return
+    loading.exportCoupons = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/coupons/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'coupons.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('优惠券 CSV 已导出')
+    } finally {
+      loading.exportCoupons = false
+    }
+  }
+
   async function exportSupportTickets(params = {}) {
     if (loading.exportSupportTickets) return
     loading.exportSupportTickets = true
@@ -1416,6 +1436,21 @@ export function useHealthData() {
       await loadPackagesPage()
     } finally {
       loading.importPackages = false
+    }
+  }
+
+  async function importCoupons(file) {
+    if (!file || loading.importCoupons) return
+    loading.importCoupons = true
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await request('/coupons/import', { method: 'POST', body: formData })
+      ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      await loadCouponsPage()
+      activeCoupons.value = await request('/coupons/active')
+    } finally {
+      loading.importCoupons = false
     }
   }
 
@@ -1655,10 +1690,12 @@ export function useHealthData() {
     savePackage,
     archivePackage,
     exportPackages,
+    exportCoupons,
     exportAppointments,
     exportSupportTickets,
     exportUsers,
     importPackages,
+    importCoupons,
     updateRolePermission,
     updateSystemSetting,
     selectPackage,

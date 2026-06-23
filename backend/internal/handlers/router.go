@@ -112,6 +112,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
 	protected.GET("/coupons", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.coupons)
 	protected.POST("/coupons", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.createCoupon)
+	protected.GET("/coupons/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportCoupons)
+	protected.POST("/coupons/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importCoupons)
 	protected.PATCH("/coupons/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.updateCoupon)
 	protected.DELETE("/coupons/:id", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.archiveCoupon)
 	protected.GET("/announcements", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.announcements)
@@ -2226,6 +2228,110 @@ func (h *Handler) archiveCoupon(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
+func (h *Handler) exportCoupons(c *gin.Context) {
+	var coupons []models.Coupon
+	query := h.db.Order("id asc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if err := query.Find(&coupons).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="coupons.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"code", "name", "type", "value", "min_amount", "package_id", "start_date", "end_date", "status", "description"})
+	for _, coupon := range coupons {
+		_ = writer.Write([]string{
+			coupon.Code,
+			coupon.Name,
+			coupon.Type,
+			fmt.Sprintf("%.2f", coupon.Value),
+			fmt.Sprintf("%.2f", coupon.MinAmount),
+			strconv.Itoa(int(coupon.PackageID)),
+			coupon.StartDate,
+			coupon.EndDate,
+			coupon.Status,
+			coupon.Description,
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "coupon", "", "success", fmt.Sprintf("%d coupons", len(coupons)))
+}
+
+func (h *Handler) importCoupons(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "csv file is required"})
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "open csv file failed"})
+		return
+	}
+	defer opened.Close()
+	reader := csv.NewReader(opened)
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
+		return
+	}
+	index := csvIndex(header)
+	for _, field := range []string{"code", "name", "value"} {
+		if _, ok := index[field]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing csv column: " + field})
+			return
+		}
+	}
+	created := 0
+	updated := 0
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			coupon, err := couponFromCSVRecord(record, index)
+			if err != nil {
+				return err
+			}
+			if coupon.Code == "" {
+				continue
+			}
+			var existing models.Coupon
+			err = tx.Where("code = ?", coupon.Code).First(&existing).Error
+			if err == nil {
+				if err := tx.Model(&existing).Updates(coupon).Error; err != nil {
+					return err
+				}
+				updated++
+				continue
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := tx.Create(&coupon).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	}); err != nil {
+		h.recordOperation(c, "import", "coupon", "", "failed", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	detail := fmt.Sprintf("created=%d updated=%d", created, updated)
+	h.recordOperation(c, "import", "coupon", "", "success", detail)
+	c.JSON(http.StatusOK, gin.H{"created": created, "updated": updated})
+}
+
 func (h *Handler) announcements(c *gin.Context) {
 	var announcements []models.SystemAnnouncement
 	query := h.db.Model(&models.SystemAnnouncement{}).Order("created_at desc")
@@ -2410,10 +2516,7 @@ func (h *Handler) importPackages(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
 		return
 	}
-	index := map[string]int{}
-	for i, name := range header {
-		index[strings.ToLower(strings.TrimSpace(name))] = i
-	}
+	index := csvIndex(header)
 	required := []string{"name", "category", "price"}
 	for _, field := range required {
 		if _, ok := index[field]; !ok {
@@ -3582,6 +3685,56 @@ func csvValue(record []string, index map[string]int, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(record[i])
+}
+
+func csvIndex(header []string) map[string]int {
+	index := map[string]int{}
+	for i, name := range header {
+		index[strings.ToLower(strings.TrimSpace(name))] = i
+	}
+	return index
+}
+
+func couponFromCSVRecord(record []string, index map[string]int) (models.Coupon, error) {
+	code := strings.ToUpper(csvValue(record, index, "code"))
+	name := csvValue(record, index, "name")
+	if code == "" && name == "" {
+		return models.Coupon{Code: code}, nil
+	}
+	if code == "" || name == "" {
+		return models.Coupon{}, fmt.Errorf("coupon code and name are required")
+	}
+	value, err := strconv.ParseFloat(csvValue(record, index, "value"), 64)
+	if err != nil {
+		return models.Coupon{}, fmt.Errorf("invalid coupon value for %s", code)
+	}
+	minAmount := 0.0
+	if raw := csvValue(record, index, "min_amount"); raw != "" {
+		minAmount, err = strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return models.Coupon{}, fmt.Errorf("invalid coupon minimum amount for %s", code)
+		}
+	}
+	packageID := uint(0)
+	if raw := csvValue(record, index, "package_id"); raw != "" && raw != "0" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return models.Coupon{}, fmt.Errorf("invalid coupon package id for %s", code)
+		}
+		packageID = uint(parsed)
+	}
+	return models.Coupon{
+		Code:        code,
+		Name:        name,
+		Type:        normalizeStatus(csvValue(record, index, "type"), "amount"),
+		Value:       value,
+		MinAmount:   minAmount,
+		PackageID:   packageID,
+		StartDate:   csvValue(record, index, "start_date"),
+		EndDate:     csvValue(record, index, "end_date"),
+		Status:      normalizeStatus(csvValue(record, index, "status"), "active"),
+		Description: csvValue(record, index, "description"),
+	}, nil
 }
 
 func (h *Handler) settingsByKeys(keys ...string) (map[string]string, error) {

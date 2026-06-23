@@ -33,6 +33,14 @@
           <h3>优惠券管理</h3>
           <p>用于活动价、满减和特定套餐促销。</p>
         </div>
+        <div class="head-actions">
+          <el-button :loading="loading.exportCoupons" :disabled="!can('admin:data:exchange')" @click="exportCoupons">
+            导出优惠券 CSV
+          </el-button>
+          <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleCouponImport">
+            <el-button :loading="loading.importCoupons" :disabled="!can('admin:data:exchange')">导入优惠券 CSV</el-button>
+          </el-upload>
+        </div>
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="名称"><el-input v-model="couponForm.name" /></el-form-item>
@@ -341,6 +349,8 @@ const {
   loadAdminNotificationsPage,
   loadAdminSupportTicketsPage,
   exportAppointments,
+  exportCoupons,
+  importCoupons,
   exportSupportTickets,
   editCoupon,
   saveCoupon,
@@ -384,6 +394,10 @@ function handleAppointmentExport() {
     status: appointmentExportStatus.value,
     keyword: debouncedAppointmentExportKeyword.value,
   })
+}
+
+async function handleCouponImport(file) {
+  await importCoupons(file.raw)
 }
 
 function handleSupportTicketExport() {
