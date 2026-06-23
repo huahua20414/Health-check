@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"health-checkup/backend/internal/models"
@@ -25,6 +26,8 @@ func TestCancelAppointmentRefundsPaidAppointment(t *testing.T) {
 	}
 	assertCanceledAppointmentState(t, db, fixture.paidAppointment.ID, "refunded")
 	assertCancelSlotBookedCount(t, db, fixture.slot.ID, 1)
+	assertCancellationNotification(t, db, fixture.user.ID, "模拟退款")
+	assertCancelOperationLog(t, db, fixture.user.ID, fixture.paidAppointment.ID, "payment=refunded")
 }
 
 func TestCancelAppointmentKeepsUnpaidAppointmentUnpaid(t *testing.T) {
@@ -37,6 +40,8 @@ func TestCancelAppointmentKeepsUnpaidAppointmentUnpaid(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
 	assertCanceledAppointmentState(t, db, fixture.unpaidAppointment.ID, "unpaid")
+	assertCancellationNotification(t, db, fixture.user.ID, "已取消")
+	assertCancelOperationLog(t, db, fixture.user.ID, fixture.unpaidAppointment.ID, "payment=unpaid")
 }
 
 func TestCancelAppointmentRejectsOtherUsersAppointment(t *testing.T) {
@@ -70,7 +75,7 @@ func newAppointmentCancelFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Notification{}, &models.OperationLog{}, &models.SystemSetting{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := appointmentCancelFixture{
@@ -84,7 +89,8 @@ func newAppointmentCancelFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 		unpaidAppointment: models.Appointment{ID: 41, OrderNo: "HCCANCEL002", UserID: 100, DoctorID: 200, InstitutionID: 10, SlotID: 0, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-02", Period: "上午", StartTime: "09:30", EndTime: "10:00", Status: "booked", PaymentStatus: "unpaid", OriginalAmount: 399, PayableAmount: 399},
 		otherAppointment:  models.Appointment{ID: 42, OrderNo: "HCCANCEL003", UserID: 101, DoctorID: 200, InstitutionID: 10, SlotID: 0, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-02", Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "booked", PaymentStatus: "paid", OriginalAmount: 399, PayableAmount: 399},
 	}
-	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.paidAppointment, &fixture.unpaidAppointment, &fixture.otherAppointment} {
+	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
+	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.paidAppointment, &fixture.unpaidAppointment, &fixture.otherAppointment, &inAppSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
@@ -134,5 +140,27 @@ func assertCancelSlotBookedCount(t *testing.T, db *gorm.DB, slotID uint, want in
 	}
 	if slot.BookedCount != want {
 		t.Fatalf("expected slot booked count %d, got %d", want, slot.BookedCount)
+	}
+}
+
+func assertCancellationNotification(t *testing.T, db *gorm.DB, userID uint, contentContains string) {
+	t.Helper()
+	var notification models.Notification
+	if err := db.Where("user_id = ? AND type = ?", userID, "appointment_canceled").Order("id desc").First(&notification).Error; err != nil {
+		t.Fatalf("load cancellation notification: %v", err)
+	}
+	if !strings.Contains(notification.Content, contentContains) {
+		t.Fatalf("expected notification content to contain %q, got %q", contentContains, notification.Content)
+	}
+}
+
+func assertCancelOperationLog(t *testing.T, db *gorm.DB, userID, appointmentID uint, detail string) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).Where("user_id = ? AND action = ? AND resource = ? AND resource_id = ? AND detail = ?", userID, "cancel", "appointment", strconv.Itoa(int(appointmentID)), detail).Count(&count).Error; err != nil {
+		t.Fatalf("count cancel operation log: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one cancel operation log with detail %q, got %d", detail, count)
 	}
 }

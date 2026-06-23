@@ -706,9 +706,10 @@ func (h *Handler) cancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only booked appointments can be canceled"})
 		return
 	}
+	wasPaid := appointment.PaymentStatus == "paid"
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{"status": "canceled"}
-		if appointment.PaymentStatus == "paid" {
+		if wasPaid {
 			updates["payment_status"] = "refunded"
 		}
 		if err := tx.Model(&appointment).Updates(updates).Error; err != nil {
@@ -725,10 +726,14 @@ func (h *Handler) cancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	paymentStatus := appointment.PaymentStatus
 	response := gin.H{"id": id, "status": "canceled"}
-	if appointment.PaymentStatus == "paid" {
+	if wasPaid {
+		paymentStatus = "refunded"
 		response["paymentStatus"] = "refunded"
 	}
+	h.createCancellationNotification(current.ID, wasPaid)
+	h.recordOperation(c, "cancel", "appointment", strconv.Itoa(id), "success", fmt.Sprintf("payment=%s", paymentStatus))
 	c.JSON(http.StatusOK, response)
 }
 
@@ -2687,6 +2692,17 @@ func (h *Handler) createAppointmentNotifications(appointment models.Appointment,
 	if appointment.Status == "booked" && h.inAppNotificationsEnabled() {
 		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: "请携带有效证件，按预约时间到达体检机构。体检前一天建议清淡饮食，部分项目需空腹。", Status: "unread"})
 	}
+}
+
+func (h *Handler) createCancellationNotification(userID uint, refunded bool) {
+	if userID == 0 || !h.inAppNotificationsEnabled() {
+		return
+	}
+	content := "您的体检预约已取消。"
+	if refunded {
+		content = "您的体检预约已取消，支付状态已模拟退款。"
+	}
+	h.db.Create(&models.Notification{UserID: userID, Channel: "in_app", Type: "appointment_canceled", Title: "预约已取消", Content: content, Status: "unread"})
 }
 
 func canTransitionAppointmentStatus(current, next string) bool {
