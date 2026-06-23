@@ -30,6 +30,7 @@ func Migrate(db *gorm.DB) error {
 		&models.User{},
 		&models.CheckupInstitution{},
 		&models.CheckupPackage{},
+		&models.Coupon{},
 		&models.FamilyMember{},
 		&models.PackageFavorite{},
 		&models.PackageBrowseHistory{},
@@ -37,7 +38,9 @@ func Migrate(db *gorm.DB) error {
 		&models.Appointment{},
 		&models.WaitlistEntry{},
 		&models.Report{},
+		&models.ServiceReview{},
 		&models.MailLog{},
 		&models.Notification{},
+		&models.SystemAnnouncement{},
 	)
 }

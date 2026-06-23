@@ -35,6 +35,7 @@
           </button>
           <div class="package-actions">
             <strong>￥{{ pkg.price }}</strong>
+            <small v-if="bestCoupon(pkg)">活动价约 ￥{{ campaignPrice(pkg).toFixed(2) }}</small>
             <el-button size="small" :type="isFavorite(pkg) ? 'warning' : 'primary'" plain :loading="loading.favorite" @click="toggleFavorite(pkg)">
               {{ isFavorite(pkg) ? '已收藏' : '收藏' }}
             </el-button>
@@ -51,7 +52,7 @@ import { useRouter } from 'vue-router'
 import { useHealthData } from '../composables/useHealthData'
 
 const router = useRouter()
-const { packages, favorites, browseHistories, popularPackages, recommendedPackages, loading, selectPackage, toggleFavorite, recordPackageBrowse } = useHealthData()
+const { packages, favorites, browseHistories, popularPackages, recommendedPackages, activeCoupons, loading, selectPackage, toggleFavorite, recordPackageBrowse } = useHealthData()
 const activePackages = computed(() => packages.value.filter((item) => item.status !== 'disabled'))
 
 function goBooking(pkg) {
@@ -62,5 +63,21 @@ function goBooking(pkg) {
 
 function isFavorite(pkg) {
   return favorites.value.some((item) => item.packageId === pkg.id)
+}
+
+function bestCoupon(pkg) {
+  return activeCoupons.value
+    .filter((item) => (!item.packageId || item.packageId === pkg.id) && Number(pkg.price) >= Number(item.minAmount || 0))
+    .sort((a, b) => discountValue(pkg, b) - discountValue(pkg, a))[0]
+}
+
+function discountValue(pkg, coupon) {
+  if (!coupon) return 0
+  if (coupon.type === 'percent') return Number(pkg.price || 0) * Number(coupon.value || 0) / 100
+  return Number(coupon.value || 0)
+}
+
+function campaignPrice(pkg) {
+  return Math.max(0, Number(pkg.price || 0) - discountValue(pkg, bestCoupon(pkg)))
 }
 </script>

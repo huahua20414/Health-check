@@ -43,6 +43,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	api.GET("/packages", handler.packages)
 	api.GET("/packages/popular", handler.popularPackages)
 	api.GET("/packages/recommended", handler.recommendedPackages)
+	api.GET("/coupons/active", handler.activeCoupons)
+	api.GET("/announcements/active", handler.activeAnnouncements)
 	api.GET("/institutions", handler.institutions)
 
 	authGroup := api.Group("/auth")
@@ -68,6 +70,9 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/appointments/:id/status", handler.requireRole("doctor", "admin"), handler.updateAppointmentStatus)
 	protected.GET("/reports", handler.reports)
 	protected.POST("/reports", handler.requireRole("doctor"), handler.createReport)
+	protected.GET("/reviews", handler.reviews)
+	protected.POST("/reviews", handler.requireRole("user"), handler.createReview)
+	protected.PATCH("/reviews/:id/reply", handler.requireRole("admin"), handler.replyReview)
 	protected.GET("/family-members", handler.requireRole("user"), handler.familyMembers)
 	protected.POST("/family-members", handler.requireRole("user"), handler.createFamilyMember)
 	protected.PATCH("/family-members/:id", handler.requireRole("user"), handler.updateFamilyMember)
@@ -79,6 +84,13 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
 	protected.GET("/notifications", handler.notifications)
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
+	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
+	protected.GET("/coupons", handler.requireRole("admin"), handler.coupons)
+	protected.POST("/coupons", handler.requireRole("admin"), handler.createCoupon)
+	protected.PATCH("/coupons/:id", handler.requireRole("admin"), handler.updateCoupon)
+	protected.GET("/announcements", handler.requireRole("admin"), handler.announcements)
+	protected.POST("/announcements", handler.requireRole("admin"), handler.createAnnouncement)
+	protected.PATCH("/announcements/:id", handler.requireRole("admin"), handler.updateAnnouncement)
 	protected.POST("/packages", handler.requireRole("admin"), handler.createPackage)
 	protected.PATCH("/packages/:id", handler.requireRole("admin"), handler.updatePackage)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
@@ -403,6 +415,36 @@ func (h *Handler) institutions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, institutions)
+}
+
+func (h *Handler) activeCoupons(c *gin.Context) {
+	var coupons []models.Coupon
+	today := time.Now().Format("2006-01-02")
+	query := h.db.Where("status = ?", "active").
+		Where("(start_date = '' OR start_date <= ?) AND (end_date = '' OR end_date >= ?)", today, today).
+		Order("value desc, created_at desc").
+		Limit(20)
+	if packageID := c.Query("packageId"); packageID != "" {
+		query = query.Where("package_id = 0 OR package_id = ?", packageID)
+	}
+	if err := query.Find(&coupons).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, coupons)
+}
+
+func (h *Handler) activeAnnouncements(c *gin.Context) {
+	var announcements []models.SystemAnnouncement
+	query := h.db.Where("status = ?", "published").Order("published_at desc, created_at desc").Limit(10)
+	if audience := c.Query("audience"); audience != "" {
+		query = query.Where("audience = ? OR audience = ?", audience, "all")
+	}
+	if err := query.Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, announcements)
 }
 
 func (h *Handler) appointments(c *gin.Context) {
@@ -788,6 +830,95 @@ func (h *Handler) waitlist(c *gin.Context) {
 	c.JSON(http.StatusOK, entries)
 }
 
+func (h *Handler) reviews(c *gin.Context) {
+	current := currentUser(c)
+	var reviews []models.ServiceReview
+	query := h.db.Model(&models.ServiceReview{}).
+		Preload("User").Preload("Appointment").Preload("Package").Preload("Institution").Preload("Doctor").
+		Order("created_at desc")
+	if current.Role == "user" {
+		query = query.Where("user_id = ?", current.ID)
+	} else if current.Role != "admin" {
+		query = query.Where("doctor_id = ?", current.ID)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &reviews)
+		return
+	}
+	if err := query.Limit(100).Find(&reviews).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, reviews)
+}
+
+func (h *Handler) createReview(c *gin.Context) {
+	var req reviewRequest
+	if !bind(c, &req) {
+		return
+	}
+	if req.Rating < 1 || req.Rating > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rating must be between 1 and 5"})
+		return
+	}
+	current := currentUser(c)
+	var appointment models.Appointment
+	if err := h.db.Where("id = ? AND user_id = ?", req.AppointmentID, current.ID).First(&appointment).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if appointment.Status != "reported" && appointment.Status != "checked" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "review can only be created after checkup"})
+		return
+	}
+	review := models.ServiceReview{
+		UserID:        current.ID,
+		AppointmentID: appointment.ID,
+		PackageID:     appointment.PackageID,
+		InstitutionID: appointment.InstitutionID,
+		DoctorID:      appointment.DoctorID,
+		Rating:        req.Rating,
+		Content:       strings.TrimSpace(req.Content),
+		Status:        "published",
+	}
+	if err := h.db.Create(&review).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "appointment has already been reviewed"})
+		return
+	}
+	h.db.Preload("User").Preload("Appointment").Preload("Package").Preload("Institution").Preload("Doctor").First(&review, review.ID)
+	c.JSON(http.StatusCreated, review)
+}
+
+func (h *Handler) replyReview(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid review id"})
+		return
+	}
+	var req reviewReplyRequest
+	if !bind(c, &req) {
+		return
+	}
+	updates := map[string]any{
+		"reply":  strings.TrimSpace(req.Reply),
+		"status": normalizeStatus(req.Status, "published"),
+	}
+	if updates["status"] != "published" && updates["status"] != "hidden" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid review status"})
+		return
+	}
+	if err := h.db.Model(&models.ServiceReview{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var review models.ServiceReview
+	h.db.Preload("User").Preload("Appointment").Preload("Package").Preload("Institution").Preload("Doctor").First(&review, id)
+	c.JSON(http.StatusOK, review)
+}
+
 func (h *Handler) familyMembers(c *gin.Context) {
 	current := currentUser(c)
 	var members []models.FamilyMember
@@ -1005,6 +1136,203 @@ func (h *Handler) mailLogs(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, logs)
+}
+
+func (h *Handler) adminDashboard(c *gin.Context) {
+	var userCount, doctorCount, appointmentCount, reportCount, reviewCount int64
+	h.db.Model(&models.User{}).Where("role = ?", "user").Count(&userCount)
+	h.db.Model(&models.User{}).Where("role = ?", "doctor").Count(&doctorCount)
+	h.db.Model(&models.Appointment{}).Count(&appointmentCount)
+	h.db.Model(&models.Report{}).Count(&reportCount)
+	h.db.Model(&models.ServiceReview{}).Count(&reviewCount)
+
+	type row struct {
+		Label string  `json:"label"`
+		Count int64   `json:"count"`
+		Total float64 `json:"total,omitempty"`
+	}
+	var appointmentTrend []row
+	h.db.Model(&models.Appointment{}).
+		Select("date AS label, COUNT(*) AS count").
+		Group("date").
+		Order("date asc").
+		Limit(14).
+		Scan(&appointmentTrend)
+	var packageSales []row
+	h.db.Model(&models.Appointment{}).
+		Select("checkup_packages.name AS label, COUNT(appointments.id) AS count, SUM(checkup_packages.price) AS total").
+		Joins("LEFT JOIN checkup_packages ON checkup_packages.id = appointments.package_id").
+		Where("appointments.status <> ?", "canceled").
+		Group("checkup_packages.id, checkup_packages.name").
+		Order("count desc").
+		Limit(10).
+		Scan(&packageSales)
+	var userGrowth []row
+	h.db.Model(&models.User{}).
+		Select("DATE(created_at) AS label, COUNT(*) AS count").
+		Where("role = ?", "user").
+		Group("DATE(created_at)").
+		Order("label asc").
+		Limit(14).
+		Scan(&userGrowth)
+	var averageRating struct {
+		Average float64 `json:"average"`
+	}
+	h.db.Model(&models.ServiceReview{}).Select("AVG(rating) AS average").Scan(&averageRating)
+	c.JSON(http.StatusOK, gin.H{
+		"summary": gin.H{
+			"users":         userCount,
+			"doctors":       doctorCount,
+			"appointments":  appointmentCount,
+			"reports":       reportCount,
+			"reviews":       reviewCount,
+			"averageRating": averageRating.Average,
+		},
+		"appointmentTrend": appointmentTrend,
+		"packageSales":     packageSales,
+		"userGrowth":       userGrowth,
+	})
+}
+
+func (h *Handler) coupons(c *gin.Context) {
+	var coupons []models.Coupon
+	query := h.db.Model(&models.Coupon{}).Order("created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &coupons)
+		return
+	}
+	if err := query.Find(&coupons).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, coupons)
+}
+
+func (h *Handler) createCoupon(c *gin.Context) {
+	var req couponRequest
+	if !bind(c, &req) {
+		return
+	}
+	coupon := models.Coupon{
+		Name:        strings.TrimSpace(req.Name),
+		Code:        strings.ToUpper(strings.TrimSpace(req.Code)),
+		Type:        normalizeStatus(req.Type, "amount"),
+		Value:       req.Value,
+		MinAmount:   req.MinAmount,
+		PackageID:   req.PackageID,
+		Status:      normalizeStatus(req.Status, "active"),
+		StartDate:   req.StartDate,
+		EndDate:     req.EndDate,
+		Description: req.Description,
+	}
+	if err := h.db.Create(&coupon).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, coupon)
+}
+
+func (h *Handler) updateCoupon(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid coupon id"})
+		return
+	}
+	var req couponRequest
+	if !bind(c, &req) {
+		return
+	}
+	updates := map[string]any{
+		"name":        strings.TrimSpace(req.Name),
+		"code":        strings.ToUpper(strings.TrimSpace(req.Code)),
+		"type":        normalizeStatus(req.Type, "amount"),
+		"value":       req.Value,
+		"min_amount":  req.MinAmount,
+		"package_id":  req.PackageID,
+		"status":      normalizeStatus(req.Status, "active"),
+		"start_date":  req.StartDate,
+		"end_date":    req.EndDate,
+		"description": req.Description,
+	}
+	if err := h.db.Model(&models.Coupon{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var coupon models.Coupon
+	h.db.First(&coupon, id)
+	c.JSON(http.StatusOK, coupon)
+}
+
+func (h *Handler) announcements(c *gin.Context) {
+	var announcements []models.SystemAnnouncement
+	query := h.db.Model(&models.SystemAnnouncement{}).Order("created_at desc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &announcements)
+		return
+	}
+	if err := query.Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, announcements)
+}
+
+func (h *Handler) createAnnouncement(c *gin.Context) {
+	var req announcementRequest
+	if !bind(c, &req) {
+		return
+	}
+	announcement := models.SystemAnnouncement{
+		Title:    strings.TrimSpace(req.Title),
+		Content:  strings.TrimSpace(req.Content),
+		Audience: normalizeStatus(req.Audience, "all"),
+		Status:   normalizeStatus(req.Status, "draft"),
+	}
+	if announcement.Status == "published" {
+		now := time.Now()
+		announcement.PublishedAt = &now
+	}
+	if err := h.db.Create(&announcement).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, announcement)
+}
+
+func (h *Handler) updateAnnouncement(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid announcement id"})
+		return
+	}
+	var req announcementRequest
+	if !bind(c, &req) {
+		return
+	}
+	status := normalizeStatus(req.Status, "draft")
+	updates := map[string]any{
+		"title":    strings.TrimSpace(req.Title),
+		"content":  strings.TrimSpace(req.Content),
+		"audience": normalizeStatus(req.Audience, "all"),
+		"status":   status,
+	}
+	if status == "published" {
+		now := time.Now()
+		updates["published_at"] = &now
+	}
+	if err := h.db.Model(&models.SystemAnnouncement{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var announcement models.SystemAnnouncement
+	h.db.First(&announcement, id)
+	c.JSON(http.StatusOK, announcement)
 }
 
 func (h *Handler) createPackage(c *gin.Context) {
@@ -1404,6 +1732,37 @@ type reportRequest struct {
 	Summary        string `json:"summary" binding:"required"`
 	Conclusion     string `json:"conclusion" binding:"required"`
 	Recommendation string `json:"recommendation"`
+}
+
+type reviewRequest struct {
+	AppointmentID uint   `json:"appointmentId" binding:"required"`
+	Rating        int    `json:"rating" binding:"required"`
+	Content       string `json:"content"`
+}
+
+type reviewReplyRequest struct {
+	Reply  string `json:"reply"`
+	Status string `json:"status"`
+}
+
+type couponRequest struct {
+	Name        string  `json:"name" binding:"required"`
+	Code        string  `json:"code" binding:"required"`
+	Type        string  `json:"type"`
+	Value       float64 `json:"value" binding:"required"`
+	MinAmount   float64 `json:"minAmount"`
+	PackageID   uint    `json:"packageId"`
+	Status      string  `json:"status"`
+	StartDate   string  `json:"startDate"`
+	EndDate     string  `json:"endDate"`
+	Description string  `json:"description"`
+}
+
+type announcementRequest struct {
+	Title    string `json:"title" binding:"required"`
+	Content  string `json:"content" binding:"required"`
+	Audience string `json:"audience"`
+	Status   string `json:"status"`
 }
 
 type statusRequest struct {

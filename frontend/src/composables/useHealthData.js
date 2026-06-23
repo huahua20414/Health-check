@@ -34,6 +34,12 @@ const browseHistories = ref([])
 const popularPackages = ref([])
 const recommendedPackages = ref([])
 const notifications = ref([])
+const coupons = ref([])
+const activeCoupons = ref([])
+const reviews = ref([])
+const announcements = ref([])
+const activeAnnouncements = ref([])
+const adminDashboard = ref({ summary: {}, appointmentTrend: [], packageSales: [], userGrowth: [] })
 const paginations = reactive({
   appointments: { page: 1, pageSize: 10, total: 0 },
   users: { page: 1, pageSize: 10, total: 0 },
@@ -43,6 +49,9 @@ const paginations = reactive({
   mailLogs: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
   notifications: { page: 1, pageSize: 10, total: 0 },
+  coupons: { page: 1, pageSize: 10, total: 0 },
+  reviews: { page: 1, pageSize: 10, total: 0 },
+  announcements: { page: 1, pageSize: 10, total: 0 },
 })
 const appointmentForm = reactive({
   appointmentType: '个人体检',
@@ -63,6 +72,10 @@ const emailForm = reactive({ email: '', code: '' })
 const familyMemberForm = reactive({ id: null, name: '', relation: '', gender: '', age: null, idCard: '', phone: '' })
 const rescheduleForm = reactive({ appointmentId: null, institutionId: null, slotId: null, date: '', period: '', note: '' })
 const packageForm = reactive({ id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' })
+const couponForm = reactive({ id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: null, status: 'active', startDate: '', endDate: '', description: '' })
+const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
+const reviewReplyForm = reactive({ id: null, reply: '', status: 'published' })
+const announcementForm = reactive({ id: null, title: '', content: '', audience: 'all', status: 'draft' })
 const reportForm = reactive({
   appointmentId: null,
   summary: '',
@@ -86,6 +99,9 @@ const loading = reactive({
   familyMember: false,
   favorite: false,
   notification: false,
+  coupon: false,
+  review: false,
+  announcement: false,
 })
 
 let bootstrapped = false
@@ -335,6 +351,8 @@ export function useHealthData() {
       packages.value = await request('/packages')
       popularPackages.value = await request('/packages/popular')
       recommendedPackages.value = await request('/packages/recommended')
+      activeCoupons.value = await request('/coupons/active')
+      activeAnnouncements.value = await request('/announcements/active')
       institutions.value = await request('/institutions')
       if (!getAuthToken()) return
       appointments.value = await request('/appointments')
@@ -350,6 +368,7 @@ export function useHealthData() {
       if (isDoctor.value || isAdmin.value) users.value = await request('/users')
       else users.value = currentUser.value ? [currentUser.value] : []
       if (isAdmin.value) mailLogs.value = await request('/mail-logs')
+      if (isAdmin.value) adminDashboard.value = await request('/admin/dashboard')
       if (!appointmentForm.institutionId && institutions.value[0]) appointmentForm.institutionId = institutions.value[0].id
       if (!appointmentForm.packageId && packages.value[0]) appointmentForm.packageId = packages.value[0].id
       if (!reportForm.appointmentId && appointments.value[0]) reportForm.appointmentId = appointments.value[0].id
@@ -384,6 +403,23 @@ export function useHealthData() {
 
   async function loadNotificationsPage(params = {}) {
     notifications.value = await requestPage('/notifications', paginations.notifications, params)
+  }
+
+  async function loadCouponsPage(params = {}) {
+    coupons.value = await requestPage('/coupons', paginations.coupons, params)
+  }
+
+  async function loadReviewsPage(params = {}) {
+    reviews.value = await requestPage('/reviews', paginations.reviews, params)
+  }
+
+  async function loadAnnouncementsPage(params = {}) {
+    announcements.value = await requestPage('/announcements', paginations.announcements, params)
+  }
+
+  async function loadAdminDashboard() {
+    if (!isAdmin.value) return
+    adminDashboard.value = await request('/admin/dashboard')
   }
 
   async function ensureBootstrapped() {
@@ -522,6 +558,120 @@ export function useHealthData() {
       notification.status = 'read'
     } finally {
       loading.notification = false
+    }
+  }
+
+  function editCoupon(coupon) {
+    Object.assign(couponForm, {
+      id: coupon?.id || null,
+      name: coupon?.name || '',
+      code: coupon?.code || '',
+      type: coupon?.type || 'amount',
+      value: Number(coupon?.value || 0),
+      minAmount: Number(coupon?.minAmount || 0),
+      packageId: coupon?.packageId || null,
+      status: coupon?.status || 'active',
+      startDate: coupon?.startDate || '',
+      endDate: coupon?.endDate || '',
+      description: coupon?.description || '',
+    })
+  }
+
+  async function saveCoupon() {
+    if (loading.coupon) return
+    loading.coupon = true
+    try {
+      const body = JSON.stringify({
+        name: couponForm.name,
+        code: couponForm.code,
+        type: couponForm.type,
+        value: Number(couponForm.value || 0),
+        minAmount: Number(couponForm.minAmount || 0),
+        packageId: Number(couponForm.packageId || 0),
+        status: couponForm.status,
+        startDate: couponForm.startDate,
+        endDate: couponForm.endDate,
+        description: couponForm.description,
+      })
+      if (couponForm.id) await request(`/coupons/${couponForm.id}`, { method: 'PATCH', body })
+      else await request('/coupons', { method: 'POST', body })
+      ElMessage.success('优惠券已保存')
+      editCoupon(null)
+      await loadCouponsPage()
+      activeCoupons.value = await request('/coupons/active')
+    } finally {
+      loading.coupon = false
+    }
+  }
+
+  async function createReview() {
+    if (loading.review) return
+    loading.review = true
+    try {
+      await request('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          appointmentId: reviewForm.appointmentId,
+          rating: Number(reviewForm.rating || 5),
+          content: reviewForm.content,
+        }),
+      })
+      ElMessage.success('评价已提交')
+      Object.assign(reviewForm, { appointmentId: null, rating: 5, content: '' })
+      await loadReviewsPage()
+    } finally {
+      loading.review = false
+    }
+  }
+
+  function editReviewReply(review) {
+    Object.assign(reviewReplyForm, { id: review?.id || null, reply: review?.reply || '', status: review?.status || 'published' })
+  }
+
+  async function saveReviewReply() {
+    if (!reviewReplyForm.id || loading.review) return
+    loading.review = true
+    try {
+      await request(`/reviews/${reviewReplyForm.id}/reply`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reply: reviewReplyForm.reply, status: reviewReplyForm.status }),
+      })
+      ElMessage.success('评价处理已保存')
+      editReviewReply(null)
+      await loadReviewsPage()
+    } finally {
+      loading.review = false
+    }
+  }
+
+  function editAnnouncement(announcement) {
+    Object.assign(announcementForm, {
+      id: announcement?.id || null,
+      title: announcement?.title || '',
+      content: announcement?.content || '',
+      audience: announcement?.audience || 'all',
+      status: announcement?.status || 'draft',
+    })
+  }
+
+  async function saveAnnouncement() {
+    if (loading.announcement) return
+    loading.announcement = true
+    try {
+      const body = JSON.stringify({
+        title: announcementForm.title,
+        content: announcementForm.content,
+        audience: announcementForm.audience,
+        status: announcementForm.status,
+      })
+      if (announcementForm.id) await request(`/announcements/${announcementForm.id}`, { method: 'PATCH', body })
+      else await request('/announcements', { method: 'POST', body })
+      ElMessage.success('公告已保存')
+      editAnnouncement(null)
+      await loadAnnouncementsPage()
+      activeAnnouncements.value = await request('/announcements/active')
+    } finally {
+      loading.announcement = false
     }
   }
 
@@ -742,6 +892,12 @@ export function useHealthData() {
     popularPackages,
     recommendedPackages,
     notifications,
+    coupons,
+    activeCoupons,
+    reviews,
+    announcements,
+    activeAnnouncements,
+    adminDashboard,
     paginations,
     appointmentForm,
     waitlistForm,
@@ -750,6 +906,10 @@ export function useHealthData() {
     familyMemberForm,
     rescheduleForm,
     packageForm,
+    couponForm,
+    reviewForm,
+    reviewReplyForm,
+    announcementForm,
     reportForm,
     loading,
     role,
@@ -776,6 +936,10 @@ export function useHealthData() {
     loadMailLogsPage,
     loadPackagesPage,
     loadNotificationsPage,
+    loadCouponsPage,
+    loadReviewsPage,
+    loadAnnouncementsPage,
+    loadAdminDashboard,
     ensureBootstrapped,
     createAppointment,
     joinWaitlist,
@@ -788,6 +952,13 @@ export function useHealthData() {
     editReschedule,
     rescheduleAppointment,
     markNotificationRead,
+    editCoupon,
+    saveCoupon,
+    createReview,
+    editReviewReply,
+    saveReviewReply,
+    editAnnouncement,
+    saveAnnouncement,
     saveProfile,
     sendEmailCode,
     updateEmail,

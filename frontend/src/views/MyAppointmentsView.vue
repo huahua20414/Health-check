@@ -12,9 +12,11 @@
         :is-doctor="false"
         :can-cancel="true"
         :can-reschedule="true"
+        :can-review="true"
         :loading="loading.status || loading.appointment"
         @cancel="cancelAppointment"
         @reschedule="openReschedule"
+        @review="openReview"
         @view-order="openOrder"
       />
       <el-pagination
@@ -98,6 +100,21 @@
         <el-button type="primary" :loading="loading.appointment" :disabled="!rescheduleForm.slotId" @click="submitReschedule">确认改期</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="reviewVisible" title="评价体检服务" width="640px">
+      <el-form label-position="top">
+        <el-form-item label="评分">
+          <el-rate v-model="reviewForm.rating" />
+        </el-form-item>
+        <el-form-item label="评价内容">
+          <el-input v-model="reviewForm.content" type="textarea" :rows="4" placeholder="请描述服务体验、环境或报告质量" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="reviewVisible = false">取消</el-button>
+        <el-button type="primary" :loading="loading.review" :disabled="!reviewForm.appointmentId" @click="submitReview">提交评价</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
@@ -107,10 +124,11 @@ import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, slots, rescheduleForm, loading, cancelAppointment, editReschedule, rescheduleAppointment, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
+const { myAppointments, waitlist, slots, rescheduleForm, reviewForm, loading, cancelAppointment, editReschedule, rescheduleAppointment, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const rescheduleVisible = ref(false)
+const reviewVisible = ref(false)
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
 const activeRescheduleAppointment = computed(() => myAppointments.value.find((item) => item.id === rescheduleForm.appointmentId))
 const compatibleSlots = computed(() => slots.value.filter((slot) => (
@@ -151,6 +169,18 @@ function syncSelectedSlot(slotId) {
 async function submitReschedule() {
   await rescheduleAppointment()
   rescheduleVisible.value = false
+}
+
+function openReview(row) {
+  reviewForm.appointmentId = row.id
+  reviewForm.rating = 5
+  reviewForm.content = ''
+  reviewVisible.value = true
+}
+
+async function submitReview() {
+  await createReview()
+  reviewVisible.value = false
 }
 
 watch(() => [paginations.appointments.page, paginations.appointments.pageSize], () => loadAppointmentsPage())

@@ -35,6 +35,9 @@
           <el-button v-if="canReschedule" size="small" :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('reschedule', row)">
             改期
           </el-button>
+          <el-button v-if="canReview" size="small" type="success" plain :disabled="row.status !== 'reported' && row.status !== 'checked'" @click="$emit('review', row)">
+            评价
+          </el-button>
           <el-button v-if="canCancel" size="small" type="danger" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('cancel', row)">
             取消预约
           </el-button>
@@ -68,7 +71,11 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  canReview: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['mark-done', 'cancel', 'reschedule', 'view-order'])
+defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order'])
 </script>

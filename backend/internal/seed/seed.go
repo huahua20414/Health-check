@@ -1,6 +1,8 @@
 package seed
 
 import (
+	"time"
+
 	"health-checkup/backend/internal/auth"
 	"health-checkup/backend/internal/models"
 
@@ -49,14 +51,39 @@ func Run(db *gorm.DB) error {
 		}
 	}
 
+	coupons := []models.Coupon{
+		{Name: "新客体检立减", Code: "NEW50", Type: "amount", Value: 50, MinAmount: 199, Status: "active", Description: "新用户预约体检可用，结算页展示活动价。"},
+		{Name: "年度综合九折", Code: "YEAR10", Type: "percent", Value: 10, MinAmount: 500, Status: "active", Description: "年度综合类套餐活动优惠。"},
+	}
+	for _, coupon := range coupons {
+		if err := db.Create(&coupon).Error; err != nil {
+			return err
+		}
+	}
+
+	now := time.Now()
+	announcement := models.SystemAnnouncement{
+		Title:       "体检服务预约须知",
+		Content:     "请按预约时间携带有效证件到达体检机构，部分抽血项目建议空腹。",
+		Audience:    "all",
+		Status:      "published",
+		PublishedAt: &now,
+	}
+	if err := db.Create(&announcement).Error; err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func reset(db *gorm.DB) error {
 	for _, model := range []any{
+		&models.SystemAnnouncement{},
 		&models.Notification{},
+		&models.ServiceReview{},
 		&models.PackageBrowseHistory{},
 		&models.PackageFavorite{},
+		&models.Coupon{},
 		&models.MailLog{},
 		&models.Report{},
 		&models.Appointment{},

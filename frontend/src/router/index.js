@@ -16,6 +16,8 @@ import FamilyMembersView from '../views/FamilyMembersView.vue'
 import NotificationsView from '../views/NotificationsView.vue'
 import DoctorReviewView from '../views/DoctorReviewView.vue'
 import SettingsView from '../views/SettingsView.vue'
+import AdminDashboardView from '../views/AdminDashboardView.vue'
+import OperationsManagementView from '../views/OperationsManagementView.vue'
 import { useHealthData } from '../composables/useHealthData'
 
 export const menuItems = [
@@ -84,7 +86,10 @@ export const menuItems = [
     label: '系统管理',
     icon: 'Setting',
     roles: ['admin'],
-    children: [{ path: '/admin/settings', name: 'adminSettings', label: '系统设置', icon: 'Setting', roles: ['admin'] }],
+    children: [
+      { path: '/admin/operations', name: 'adminOperations', label: '运营管理', icon: 'Operation', roles: ['admin'] },
+      { path: '/admin/settings', name: 'adminSettings', label: '系统设置', icon: 'Setting', roles: ['admin'] },
+    ],
   },
 ]
 
@@ -111,10 +116,11 @@ const router = createRouter({
         { path: 'appointments', name: 'appointments', component: DoctorAppointmentsView, meta: { title: '预约处理', roles: ['doctor'] } },
         { path: 'reports', name: 'reports', component: DoctorReportsView, meta: { title: '报告录入', roles: ['doctor'] } },
         { path: 'people', name: 'people', component: PeopleView, meta: { title: '客户档案', roles: ['doctor'] } },
-        { path: 'admin', name: 'adminDashboard', component: DashboardView, meta: { title: '管理工作台', roles: ['admin'] } },
+        { path: 'admin', name: 'adminDashboard', component: AdminDashboardView, meta: { title: '管理工作台', roles: ['admin'] } },
         { path: 'admin/users', name: 'adminUsers', component: PeopleView, meta: { title: '用户管理', roles: ['admin'] } },
         { path: 'admin/doctors', name: 'doctorReview', component: DoctorReviewView, meta: { title: '医生审核', roles: ['admin'] } },
         { path: 'admin/packages', name: 'adminPackages', component: PackageManagementView, meta: { title: '套餐管理', roles: ['admin'] } },
+        { path: 'admin/operations', name: 'adminOperations', component: OperationsManagementView, meta: { title: '运营管理', roles: ['admin'] } },
         { path: 'admin/settings', name: 'adminSettings', component: SettingsView, meta: { title: '系统设置', roles: ['admin'] } },
       ],
     },

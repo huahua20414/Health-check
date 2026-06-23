@@ -47,6 +47,25 @@
         </div>
       </div>
     </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>系统公告</h3>
+          <p>由管理端发布的服务通知。</p>
+        </div>
+      </div>
+      <div class="notice-list">
+        <article v-for="item in activeAnnouncements" :key="item.id" class="notice-item">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.content }}</p>
+            <span>{{ item.audience }} · {{ formatDate(item.publishedAt || item.createdAt) }}</span>
+          </div>
+        </article>
+        <el-empty v-if="activeAnnouncements.length === 0" description="暂无公告" />
+      </div>
+    </div>
   </section>
 </template>
 
@@ -56,7 +75,7 @@ import { onMounted } from 'vue'
 import StatusTag from '../components/StatusTag.vue'
 import { formatDate, useHealthData } from '../composables/useHealthData'
 
-const { notifications, loading, loadAll, markNotificationRead } = useHealthData()
+const { notifications, activeAnnouncements, loading, loadAll, markNotificationRead } = useHealthData()
 
 function openSupport() {
   ElMessage.info('客服入口已记录，真实环境可接入企业 IM 或工单系统')

@@ -723,6 +723,11 @@ textarea {
   gap: 0.75rem;
 }
 
+.package-actions small {
+  color: #dc2626;
+  font-weight: 700;
+}
+
 .insight-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1083,6 +1088,54 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 0.75rem;
   background: rgba(248, 250, 252, 0.82);
+}
+
+.bar-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.bar-list.compact-bars {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr) 3rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.bar-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bar-row div {
+  height: 0.7rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.bar-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #2563eb);
+}
+
+.bar-row strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.review-reply-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10rem auto;
+  gap: 0.75rem;
+  align-items: start;
+  margin-top: 1rem;
 }
 
 .document-preview {
