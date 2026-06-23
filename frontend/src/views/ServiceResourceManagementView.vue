@@ -149,7 +149,17 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-if="can('admin:resource:manage')" size="small" @click="editScheduleSlot(row)">编辑</el-button>
-              <el-button v-if="can('admin:resource:manage')" size="small" type="danger" plain :loading="loading.schedule" @click="archiveScheduleSlot(row)">归档</el-button>
+              <el-button
+                v-if="can('admin:resource:manage')"
+                size="small"
+                type="danger"
+                plain
+                :loading="loading.schedule"
+                :disabled="row.bookedCount > 0"
+                @click="archiveScheduleSlot(row)"
+              >
+                归档
+              </el-button>
             </div>
           </template>
         </el-table-column>

@@ -1208,6 +1208,15 @@ func (h *Handler) archiveScheduleSlot(c *gin.Context) {
 	if !ok {
 		return
 	}
+	var slot models.ScheduleSlot
+	if err := h.db.First(&slot, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "schedule slot not found"})
+		return
+	}
+	if slot.BookedCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "schedule slot has booked appointments"})
+		return
+	}
 	if err := h.archiveByID(&models.ScheduleSlot{}, id, "schedule_slot"); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
