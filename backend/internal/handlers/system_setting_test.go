@@ -65,6 +65,33 @@ func TestUpdateSystemSettingRejectsInvalidFAQ(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsSupportFiltersAndPagination(t *testing.T) {
+	handler, db, _ := newSystemSettingFixture(t)
+	if err := db.Create(&models.SystemSetting{
+		ID:          11,
+		Key:         "notification.email_enabled",
+		Value:       "true",
+		ValueType:   "boolean",
+		Group:       "notification",
+		Label:       "邮件通知开关",
+		Description: "控制预约、候补和报告邮件发送",
+		Status:      "active",
+	}).Error; err != nil {
+		t.Fatalf("create setting: %v", err)
+	}
+	router := newSystemSettingRouter(handler, models.User{ID: 1, Name: "管理员", Role: "admin", Status: "active"})
+
+	response := performSystemSettingGet(t, router, "/system-settings?status=active&keyword=邮件&page=1&pageSize=1")
+	page := decodeSystemSettingPage(t, response)
+
+	if page.Total != 1 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Key != "notification.email_enabled" {
+		t.Fatalf("unexpected settings page: %#v", page.Items)
+	}
+}
+
 func newSystemSettingFixture(t *testing.T) (*Handler, *gorm.DB, models.SystemSetting) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -98,7 +125,35 @@ func newSystemSettingRouter(handler *Handler, current models.User) *gin.Engine {
 		c.Next()
 	})
 	router.PATCH("/system-settings/:id", handler.updateSystemSetting)
+	router.GET("/system-settings", handler.systemSettings)
 	return router
+}
+
+type systemSettingPage struct {
+	Items    []models.SystemSetting `json:"items"`
+	Total    int64                  `json:"total"`
+	Page     int                    `json:"page"`
+	PageSize int                    `json:"pageSize"`
+}
+
+func performSystemSettingGet(t *testing.T, router *gin.Engine, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeSystemSettingPage(t *testing.T, response *httptest.ResponseRecorder) systemSettingPage {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var page systemSettingPage
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode settings page: %v", err)
+	}
+	return page
 }
 
 func performSystemSettingPatch(t *testing.T, router *gin.Engine, id uint, body systemSettingRequest) *httptest.ResponseRecorder {

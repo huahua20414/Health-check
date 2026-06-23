@@ -24,7 +24,21 @@
           <p>配置预约提醒、改期限制、通知开关和客服入口等运行参数。</p>
         </div>
       </div>
-      <el-table :data="systemSettings" stripe>
+      <div class="filter-bar log-filter-bar">
+        <el-select v-model="settingGroup" placeholder="配置分组" clearable>
+          <el-option label="预约" value="appointment" />
+          <el-option label="通知" value="notification" />
+          <el-option label="安全" value="security" />
+          <el-option label="服务" value="service" />
+          <el-option label="系统" value="system" />
+        </el-select>
+        <el-select v-model="settingStatus" placeholder="状态" clearable>
+          <el-option label="启用" value="active" />
+          <el-option label="停用" value="disabled" />
+        </el-select>
+        <el-input v-model="settingKeyword" placeholder="搜索配置项/说明/值" clearable />
+      </div>
+      <el-table :data="systemSettingRows" stripe>
         <el-table-column label="分组" width="120">
           <template #default="{ row }">{{ settingGroupText(row.group) }}</template>
         </el-table-column>
@@ -47,10 +61,19 @@
         </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button size="small" type="primary" :loading="loading.systemSetting" @click="updateSystemSetting(row)">保存</el-button>
+            <el-button size="small" type="primary" :loading="loading.systemSetting" @click="handleUpdateSystemSetting(row)">保存</el-button>
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.systemSettings.total"
+        v-model:current-page="paginations.systemSettings.page"
+        v-model:page-size="paginations.systemSettings.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
     <div class="panel" v-if="can('admin:system:manage')">
       <div class="panel-head">
@@ -255,6 +278,7 @@ const {
   operationLogs,
   rolePermissions,
   systemSettings,
+  systemSettingRows,
   paginations,
   loading,
   can,
@@ -263,6 +287,7 @@ const {
   loadOperationLogsPage,
   loadRolePermissions,
   loadSystemSettings,
+  loadSystemSettingsPage,
   exportPackages,
   exportMailLogs,
   exportLoginLogs,
@@ -274,6 +299,9 @@ const {
 
 const faqDraft = reactive([])
 const faqSetting = computed(() => systemSettings.value.find((item) => item.key === 'service.faq'))
+const settingGroup = ref('')
+const settingStatus = ref('')
+const settingKeyword = ref('')
 const mailLogStatus = ref('')
 const mailLogKeyword = ref('')
 const loginLogStatus = ref('')
@@ -283,6 +311,22 @@ const operationKeyword = ref('')
 const debouncedMailLogKeyword = useDebouncedRef(mailLogKeyword, 350)
 const debouncedLoginLogKeyword = useDebouncedRef(loginLogKeyword, 350)
 const debouncedOperationKeyword = useDebouncedRef(operationKeyword, 350)
+const debouncedSettingKeyword = useDebouncedRef(settingKeyword, 350)
+
+function loadSystemSettingPage(reset = false) {
+  if (!isAdmin.value) return
+  if (reset) paginations.systemSettings.page = 1
+  return loadSystemSettingsPage({
+    group: settingGroup.value,
+    status: settingStatus.value,
+    keyword: debouncedSettingKeyword.value,
+  })
+}
+
+async function handleUpdateSystemSetting(row) {
+  await updateSystemSetting(row)
+  await loadSystemSettingPage()
+}
 
 function loadMailLogPage(reset = false) {
   if (!isAdmin.value) return
@@ -323,6 +367,10 @@ watch(() => [paginations.loginLogs.page, paginations.loginLogs.pageSize], () => 
 watch(() => [paginations.operationLogs.page, paginations.operationLogs.pageSize], () => {
   loadOperationLogPage()
 })
+watch(() => [paginations.systemSettings.page, paginations.systemSettings.pageSize], () => {
+  loadSystemSettingPage()
+})
+watch([settingGroup, settingStatus, debouncedSettingKeyword], () => loadSystemSettingPage(true))
 watch([mailLogStatus, debouncedMailLogKeyword], () => loadMailLogPage(true))
 watch([loginLogStatus, debouncedLoginLogKeyword], () => loadLoginLogPage(true))
 watch([operationResource, debouncedOperationKeyword], () => loadOperationLogPage(true))
@@ -389,5 +437,6 @@ onMounted(() => {
   loadOperationLogPage()
   loadRolePermissions()
   loadSystemSettings()
+  loadSystemSettingPage()
 })
 </script>

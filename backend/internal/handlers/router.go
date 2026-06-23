@@ -2439,9 +2439,23 @@ func (h *Handler) updateRolePermission(c *gin.Context) {
 
 func (h *Handler) systemSettings(c *gin.Context) {
 	var settings []models.SystemSetting
-	query := h.db.Model(&models.SystemSetting{}).Order("`group` asc, id asc")
+	query := h.db.Model(&models.SystemSetting{}).Order("system_settings.`group` asc, system_settings.id asc")
 	if group := c.Query("group"); group != "" {
-		query = query.Where("`group` = ?", group)
+		query = query.Where("system_settings.`group` = ?", group)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("system_settings.status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where(
+			"system_settings.`key` LIKE ? OR system_settings.label LIKE ? OR system_settings.description LIKE ? OR system_settings.value LIKE ?",
+			pattern, pattern, pattern, pattern,
+		)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &settings)
+		return
 	}
 	if err := query.Find(&settings).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

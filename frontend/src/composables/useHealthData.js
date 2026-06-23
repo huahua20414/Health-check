@@ -44,6 +44,7 @@ const operationLogs = ref([])
 const rolePermissions = ref([])
 const permissionCodes = ref([])
 const systemSettings = ref([])
+const systemSettingRows = ref([])
 const coupons = ref([])
 const activeCoupons = ref([])
 const reviews = ref([])
@@ -63,6 +64,7 @@ const paginations = reactive({
   mailLogs: { page: 1, pageSize: 10, total: 0 },
   loginLogs: { page: 1, pageSize: 10, total: 0 },
   operationLogs: { page: 1, pageSize: 10, total: 0 },
+  systemSettings: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
   institutions: { page: 1, pageSize: 10, total: 0 },
   notifications: { page: 1, pageSize: 10, total: 0 },
@@ -527,6 +529,11 @@ export function useHealthData() {
   async function loadSystemSettings() {
     if (!isAdmin.value) return
     systemSettings.value = await request('/system-settings')
+  }
+
+  async function loadSystemSettingsPage(params = {}) {
+    if (!isAdmin.value) return
+    systemSettingRows.value = await requestPage('/system-settings', paginations.systemSettings, params)
   }
 
   async function loadSupportInfo() {
@@ -1748,6 +1755,8 @@ export function useHealthData() {
       })
       const index = systemSettings.value.findIndex((item) => item.id === updated.id)
       if (index >= 0) systemSettings.value[index] = updated
+      const rowIndex = systemSettingRows.value.findIndex((item) => item.id === updated.id)
+      if (rowIndex >= 0) systemSettingRows.value[rowIndex] = updated
       if (updated.key === 'service.faq' || updated.key === 'service.customer_service_url' || updated.key === 'service.customer_service_hours') {
         await loadSupportInfo()
       }
@@ -1818,6 +1827,7 @@ export function useHealthData() {
     rolePermissions,
     permissionCodes,
     systemSettings,
+    systemSettingRows,
     familyMembers,
     favorites,
     browseHistories,
@@ -1888,6 +1898,7 @@ export function useHealthData() {
     loadMyPermissions,
     loadRolePermissions,
     loadSystemSettings,
+    loadSystemSettingsPage,
     loadSupportInfo,
     loadPackagesPage,
     loadInstitutions,
