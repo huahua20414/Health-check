@@ -97,6 +97,39 @@ func TestCreateAppointmentRejectsPackageSpecificCouponMismatch(t *testing.T) {
 	assertErrorMessage(t, response.Body.Bytes(), "coupon does not apply to this package")
 }
 
+func TestCreateAppointmentWaitlistCreatesNotifications(t *testing.T) {
+	handler, db, fixture := newAppointmentCreateFixture(t)
+	if err := db.Model(&models.ScheduleSlot{}).Where("id = ?", fixture.slot.ID).Update("booked_count", fixture.slot.Capacity).Error; err != nil {
+		t.Fatalf("fill slot: %v", err)
+	}
+	router := newAppointmentCreateRouter(handler, fixture.user)
+
+	response := performCreateAppointmentRequest(t, router, appointmentRequest{
+		PackageID:       fixture.pkg.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          fixture.slot.ID,
+		AppointmentType: "个人体检",
+		Date:            fixture.slot.Date,
+		Period:          fixture.slot.Period,
+	})
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Type     string               `json:"type"`
+		Waitlist models.WaitlistEntry `json:"waitlist"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode waitlist response: %v", err)
+	}
+	if payload.Type != "waitlist" || payload.Waitlist.Status != "waiting" {
+		t.Fatalf("expected waiting waitlist response, got %#v", payload)
+	}
+	assertCreateNotificationChannelCount(t, db, fixture.user.ID, "waitlist_joined", "in_app", 1)
+	assertCreateNotificationChannelCount(t, db, fixture.user.ID, "waitlist_joined", "sms_mock", 1)
+}
+
 type appointmentCreateFixture struct {
 	user               models.User
 	doctor             models.User
@@ -117,7 +150,12 @@ func newAppointmentCreateFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Coupon{}, &models.Notification{}, &models.MailLog{}, &models.SystemSetting{}); err != nil {
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Coupon{}, &models.Notification{}, &models.MailLog{}, &models.SystemSetting{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := appointmentCreateFixture{
@@ -191,5 +229,16 @@ func assertCreatedAppointmentPricing(t *testing.T, db *gorm.DB, appointmentID ui
 	}
 	if appointment.OriginalAmount != original || appointment.DiscountAmount != discount || appointment.PayableAmount != payable {
 		t.Fatalf("expected pricing %.2f/%.2f/%.2f, got %.2f/%.2f/%.2f", original, discount, payable, appointment.OriginalAmount, appointment.DiscountAmount, appointment.PayableAmount)
+	}
+}
+
+func assertCreateNotificationChannelCount(t *testing.T, db *gorm.DB, userID uint, kind, channel string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND channel = ?", userID, kind, channel).Count(&count).Error; err != nil {
+		t.Fatalf("count %s notifications: %v", kind, err)
+	}
+	if count != want {
+		t.Fatalf("expected %d %s/%s notifications, got %d", want, kind, channel, count)
 	}
 }

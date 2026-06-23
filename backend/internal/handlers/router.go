@@ -686,6 +686,10 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			h.sendAppointmentMail(appointment, "体检预约成功")
 			h.createAppointmentNotifications(appointment, "appointment_success", "预约成功", "您的体检预约已成功，系统已模拟发送短信提醒。")
 		}
+	} else if payload, ok := result.(gin.H); ok && payload["type"] == "waitlist" {
+		if wait, ok := payload["waitlist"].(models.WaitlistEntry); ok && wait.ID != 0 {
+			h.createWaitlistNotifications(wait)
+		}
 	}
 	c.JSON(http.StatusCreated, result)
 }
@@ -2531,6 +2535,8 @@ func (h *Handler) promoteWaitlist(tx *gorm.DB, slotID uint) error {
 	}
 	tx.Preload("User").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").First(&appointment, appointment.ID)
 	go h.sendAppointmentMail(appointment, "候补预约成功")
+	h.createAppointmentNotificationsWithDB(tx, appointment, "waitlist_promoted", "候补递补成功", "您的候补已自动递补为正式预约，请按新预约时间到检。")
+	h.recordSystemOperation(tx, appointment.UserID, "promote", "waitlist", strconv.Itoa(int(wait.ID)), "success", appointment.OrderNo)
 	return nil
 }
 
@@ -2584,6 +2590,21 @@ func (h *Handler) recordOperation(c *gin.Context, action, resource, resourceID, 
 		Method:     c.Request.Method,
 		Path:       c.FullPath(),
 		IP:         c.ClientIP(),
+		Status:     status,
+		Detail:     detail,
+	})
+}
+
+func (h *Handler) recordSystemOperation(db *gorm.DB, userID uint, action, resource, resourceID, status, detail string) {
+	db.Create(&models.OperationLog{
+		UserID:     userID,
+		UserName:   "系统",
+		Role:       "system",
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		Method:     "SYSTEM",
+		Path:       "waitlist_promotion",
 		Status:     status,
 		Detail:     detail,
 	})
@@ -2683,6 +2704,10 @@ func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
 }
 
 func (h *Handler) createAppointmentNotifications(appointment models.Appointment, kind, title, content string) {
+	h.createAppointmentNotificationsWithDB(h.db, appointment, kind, title, content)
+}
+
+func (h *Handler) createAppointmentNotificationsWithDB(db *gorm.DB, appointment models.Appointment, kind, title, content string) {
 	if appointment.UserID == 0 {
 		return
 	}
@@ -2690,14 +2715,32 @@ func (h *Handler) createAppointmentNotifications(appointment models.Appointment,
 	if appointment.Date != "" {
 		body = fmt.Sprintf("%s 时间：%s %s-%s，机构：%s，套餐：%s。", content, appointment.Date, appointment.StartTime, appointment.EndTime, appointment.Institution.Name, appointment.Package.Name)
 	}
+	inAppEnabled := h.booleanSettingWithDB(db, "notification.in_app_enabled", true)
+	smsMockEnabled := h.booleanSettingWithDB(db, "notification.sms_mock_enabled", true)
+	if inAppEnabled {
+		db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: kind, Title: title, Content: body, Status: "unread"})
+	}
+	if smsMockEnabled {
+		db.Create(&models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: kind, Title: "短信模拟：" + title, Content: body, Status: "unread"})
+	}
+	if appointment.Status == "booked" && inAppEnabled {
+		db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: "请携带有效证件，按预约时间到达体检机构。体检前一天建议清淡饮食，部分项目需空腹。", Status: "unread"})
+	}
+}
+
+func (h *Handler) createWaitlistNotifications(wait models.WaitlistEntry) {
+	if wait.UserID == 0 {
+		return
+	}
+	body := fmt.Sprintf("您已加入候补队列。日期：%s，时段：%s，机构：%s，套餐：%s。", wait.Date, wait.Period, wait.Institution.Name, wait.Package.Name)
+	if wait.StartTime != "" {
+		body = fmt.Sprintf("您已加入候补队列。时间：%s %s-%s，机构：%s，套餐：%s。", wait.Date, wait.StartTime, wait.EndTime, wait.Institution.Name, wait.Package.Name)
+	}
 	if h.inAppNotificationsEnabled() {
-		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: kind, Title: title, Content: body, Status: "unread"})
+		h.db.Create(&models.Notification{UserID: wait.UserID, Channel: "in_app", Type: "waitlist_joined", Title: "已加入候补", Content: body, Status: "unread"})
 	}
 	if h.smsMockNotificationsEnabled() {
-		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: kind, Title: "短信模拟：" + title, Content: body, Status: "unread"})
-	}
-	if appointment.Status == "booked" && h.inAppNotificationsEnabled() {
-		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: "请携带有效证件，按预约时间到达体检机构。体检前一天建议清淡饮食，部分项目需空腹。", Status: "unread"})
+		h.db.Create(&models.Notification{UserID: wait.UserID, Channel: "sms_mock", Type: "waitlist_joined", Title: "短信模拟：已加入候补", Content: body, Status: "unread"})
 	}
 }
 
@@ -2766,11 +2809,15 @@ func (h *Handler) smsMockNotificationsEnabled() bool {
 }
 
 func (h *Handler) booleanSetting(key string, fallback bool) bool {
-	settings, err := h.settingsByKeys(key)
-	if err != nil {
+	return h.booleanSettingWithDB(h.db, key, fallback)
+}
+
+func (h *Handler) booleanSettingWithDB(db *gorm.DB, key string, fallback bool) bool {
+	var setting models.SystemSetting
+	if err := db.Where("`key` = ? AND status = ?", key, "active").First(&setting).Error; err != nil {
 		return fallback
 	}
-	value := strings.TrimSpace(settings[key])
+	value := strings.TrimSpace(setting.Value)
 	if value == "" {
 		return fallback
 	}

@@ -25,9 +25,12 @@ func TestCancelAppointmentRefundsPaidAppointment(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
 	assertCanceledAppointmentState(t, db, fixture.paidAppointment.ID, "refunded")
-	assertCancelSlotBookedCount(t, db, fixture.slot.ID, 1)
+	assertCancelSlotBookedCount(t, db, fixture.slot.ID, 2)
 	assertCancellationNotification(t, db, fixture.user.ID, "模拟退款")
 	assertCancelOperationLog(t, db, fixture.user.ID, fixture.paidAppointment.ID, "payment=refunded")
+	assertWaitlistPromoted(t, db, fixture.waitEntry.ID, fixture.waitUser.ID, fixture.slot.ID)
+	assertWaitlistPromotionNotifications(t, db, fixture.waitUser.ID)
+	assertWaitlistPromotionOperationLog(t, db, fixture.waitUser.ID, fixture.waitEntry.ID)
 }
 
 func TestCancelAppointmentKeepsUnpaidAppointmentUnpaid(t *testing.T) {
@@ -58,6 +61,7 @@ func TestCancelAppointmentRejectsOtherUsersAppointment(t *testing.T) {
 
 type appointmentCancelFixture struct {
 	user              models.User
+	waitUser          models.User
 	otherUser         models.User
 	doctor            models.User
 	institution       models.CheckupInstitution
@@ -66,6 +70,7 @@ type appointmentCancelFixture struct {
 	paidAppointment   models.Appointment
 	unpaidAppointment models.Appointment
 	otherAppointment  models.Appointment
+	waitEntry         models.WaitlistEntry
 }
 
 func newAppointmentCancelFixture(t *testing.T) (*Handler, *gorm.DB, appointmentCancelFixture) {
@@ -75,11 +80,17 @@ func newAppointmentCancelFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Notification{}, &models.OperationLog{}, &models.SystemSetting{}); err != nil {
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Notification{}, &models.MailLog{}, &models.OperationLog{}, &models.SystemSetting{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := appointmentCancelFixture{
 		user:              models.User{ID: 100, Name: "用户", Phone: "13800000100", Email: "user@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
+		waitUser:          models.User{ID: 102, Name: "候补用户", Phone: "13800000102", Email: "wait@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
 		otherUser:         models.User{ID: 101, Name: "其他用户", Phone: "13800000101", Email: "other@example.com", Role: "user", Status: "active", PasswordHash: "hash"},
 		doctor:            models.User{ID: 200, Name: "医生", Phone: "13800000200", Email: "doctor@example.com", Role: "doctor", Status: "active", PasswordHash: "hash"},
 		institution:       models.CheckupInstitution{ID: 10, Name: "主院区", Address: "健康路 1 号", Status: "active"},
@@ -88,9 +99,11 @@ func newAppointmentCancelFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 		paidAppointment:   models.Appointment{ID: 40, OrderNo: "HCCANCEL001", UserID: 100, DoctorID: 200, InstitutionID: 10, SlotID: 30, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked", PaymentStatus: "paid", OriginalAmount: 399, PayableAmount: 399},
 		unpaidAppointment: models.Appointment{ID: 41, OrderNo: "HCCANCEL002", UserID: 100, DoctorID: 200, InstitutionID: 10, SlotID: 0, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-02", Period: "上午", StartTime: "09:30", EndTime: "10:00", Status: "booked", PaymentStatus: "unpaid", OriginalAmount: 399, PayableAmount: 399},
 		otherAppointment:  models.Appointment{ID: 42, OrderNo: "HCCANCEL003", UserID: 101, DoctorID: 200, InstitutionID: 10, SlotID: 0, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-02", Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "booked", PaymentStatus: "paid", OriginalAmount: 399, PayableAmount: 399},
+		waitEntry:         models.WaitlistEntry{ID: 50, UserID: 102, PackageID: 20, InstitutionID: 10, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "waiting"},
 	}
 	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
-	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.paidAppointment, &fixture.unpaidAppointment, &fixture.otherAppointment, &inAppSetting} {
+	smsSetting := models.SystemSetting{Key: "notification.sms_mock_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "短信模拟通知", Status: "active"}
+	for _, row := range []any{&fixture.user, &fixture.waitUser, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.paidAppointment, &fixture.unpaidAppointment, &fixture.otherAppointment, &fixture.waitEntry, &inAppSetting, &smsSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
@@ -151,6 +164,48 @@ func assertCancellationNotification(t *testing.T, db *gorm.DB, userID uint, cont
 	}
 	if !strings.Contains(notification.Content, contentContains) {
 		t.Fatalf("expected notification content to contain %q, got %q", contentContains, notification.Content)
+	}
+}
+
+func assertWaitlistPromoted(t *testing.T, db *gorm.DB, waitID, userID, slotID uint) {
+	t.Helper()
+	var wait models.WaitlistEntry
+	if err := db.First(&wait, waitID).Error; err != nil {
+		t.Fatalf("load waitlist entry: %v", err)
+	}
+	if wait.Status != "promoted" {
+		t.Fatalf("expected waitlist entry promoted, got %q", wait.Status)
+	}
+	var appointment models.Appointment
+	if err := db.Where("user_id = ? AND slot_id = ? AND status = ?", userID, slotID, "booked").First(&appointment).Error; err != nil {
+		t.Fatalf("load promoted appointment: %v", err)
+	}
+	if appointment.PaymentStatus != "unpaid" || appointment.PayableAmount != 399 {
+		t.Fatalf("unexpected promoted appointment payment snapshot: %#v", appointment)
+	}
+}
+
+func assertWaitlistPromotionNotifications(t *testing.T, db *gorm.DB, userID uint) {
+	t.Helper()
+	for _, channel := range []string{"in_app", "sms_mock"} {
+		var count int64
+		if err := db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND channel = ?", userID, "waitlist_promoted", channel).Count(&count).Error; err != nil {
+			t.Fatalf("count waitlist promotion notifications: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("expected one %s waitlist promotion notification, got %d", channel, count)
+		}
+	}
+}
+
+func assertWaitlistPromotionOperationLog(t *testing.T, db *gorm.DB, userID, waitID uint) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).Where("user_id = ? AND action = ? AND resource = ? AND resource_id = ?", userID, "promote", "waitlist", strconv.Itoa(int(waitID))).Count(&count).Error; err != nil {
+		t.Fatalf("count waitlist promotion operation log: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one waitlist promotion operation log, got %d", count)
 	}
 }
 
