@@ -114,6 +114,23 @@ func TestAdminSendCheckupRemindersIsIdempotentPerAppointment(t *testing.T) {
 	assertNotificationTypeCount(t, db, fixture.user.ID, "checkup_reminder", 2)
 }
 
+func TestAdminSendCheckupRemindersRespectsSmsMockToggle(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	createReminderAppointments(t, db, fixture)
+	if err := db.Model(&models.SystemSetting{}).Where("key = ?", "notification.sms_mock_enabled").Update("value", "false").Error; err != nil {
+		t.Fatalf("disable sms mock setting: %v", err)
+	}
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	response := performNotificationAdminJSON(t, router, http.MethodPost, "/admin/notifications/reminders", reminderRequest{Date: "2026-07-08"})
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
+	}
+	assertNotificationTypeCount(t, db, fixture.user.ID, "checkup_reminder", 1)
+	assertNotificationChannelCount(t, db, fixture.user.ID, "sms_mock", 0)
+}
+
 func TestAdminSendCheckupRemindersRejectsInvalidDate(t *testing.T) {
 	handler, _, fixture := newNotificationAdminFixture(t)
 	router := newNotificationAdminRouter(handler, fixture.admin)
@@ -155,6 +172,7 @@ func newNotificationAdminFixture(t *testing.T) (*Handler, *gorm.DB, notification
 		&models.CheckupPackage{},
 		&models.FamilyMember{},
 		&models.Appointment{},
+		&models.SystemSetting{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -167,7 +185,9 @@ func newNotificationAdminFixture(t *testing.T) (*Handler, *gorm.DB, notification
 		userArchived: models.Notification{ID: 11, UserID: 2, Channel: "in_app", Type: "admin_notice", Title: "归档提醒", Content: "旧通知", Status: "archived"},
 		doctorNotice: models.Notification{ID: 12, UserID: 3, Channel: "sms_mock", Type: "schedule", Title: "医生提醒", Content: "排班", Status: "unread"},
 	}
-	for _, row := range []any{&fixture.admin, &fixture.user, &fixture.doctor, &fixture.inactiveUser, &fixture.userUnread, &fixture.userArchived, &fixture.doctorNotice} {
+	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
+	smsSetting := models.SystemSetting{Key: "notification.sms_mock_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "短信模拟通知", Status: "active"}
+	for _, row := range []any{&fixture.admin, &fixture.user, &fixture.doctor, &fixture.inactiveUser, &fixture.userUnread, &fixture.userArchived, &fixture.doctorNotice, &inAppSetting, &smsSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}

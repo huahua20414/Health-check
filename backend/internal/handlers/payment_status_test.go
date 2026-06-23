@@ -67,6 +67,21 @@ func TestUpdateAppointmentPaymentRejectsInvalidPaymentStatus(t *testing.T) {
 	assertErrorMessage(t, response.Body.Bytes(), "invalid payment status")
 }
 
+func TestUpdateAppointmentPaymentRespectsInAppToggle(t *testing.T) {
+	handler, db, fixture := newPaymentStatusFixture(t)
+	if err := db.Model(&models.SystemSetting{}).Where("key = ?", "notification.in_app_enabled").Update("value", "false").Error; err != nil {
+		t.Fatalf("disable in app setting: %v", err)
+	}
+	router := newPaymentStatusRouter(handler, fixture.user)
+
+	response := performPaymentStatusRequest(t, router, fixture.bookedAppointment.ID, paymentStatusRequest{PaymentStatus: "paid"})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	assertPaymentNotificationCount(t, db, fixture.user.ID, 0)
+}
+
 type paymentStatusFixture struct {
 	user                models.User
 	otherUser           models.User
@@ -86,7 +101,7 @@ func newPaymentStatusFixture(t *testing.T) (*Handler, *gorm.DB, paymentStatusFix
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Notification{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.Notification{}, &models.SystemSetting{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := paymentStatusFixture{
@@ -100,7 +115,8 @@ func newPaymentStatusFixture(t *testing.T) (*Handler, *gorm.DB, paymentStatusFix
 		otherAppointment:    models.Appointment{ID: 41, OrderNo: "HC202607010002", UserID: 101, DoctorID: 200, InstitutionID: 10, SlotID: 30, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:30", EndTime: "10:00", Status: "booked", PaymentStatus: "unpaid"},
 		reportedAppointment: models.Appointment{ID: 42, OrderNo: "HC202607010003", UserID: 100, DoctorID: 200, InstitutionID: 10, SlotID: 30, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "10:00", EndTime: "10:30", Status: "reported", PaymentStatus: "unpaid"},
 	}
-	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.bookedAppointment, &fixture.otherAppointment, &fixture.reportedAppointment} {
+	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
+	for _, row := range []any{&fixture.user, &fixture.otherUser, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.slot, &fixture.bookedAppointment, &fixture.otherAppointment, &fixture.reportedAppointment, &inAppSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}

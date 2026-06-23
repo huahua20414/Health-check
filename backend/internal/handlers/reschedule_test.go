@@ -143,6 +143,27 @@ func TestRescheduleAppointmentRejectsCutoffWindow(t *testing.T) {
 	assertSlotBookedCount(t, db, fixture.newSlot.ID, 0)
 }
 
+func TestRescheduleAppointmentRespectsSmsMockToggle(t *testing.T) {
+	handler, db, fixture := newRescheduleFixture(t)
+	if err := db.Model(&models.SystemSetting{}).Where("key = ?", "notification.sms_mock_enabled").Update("value", "false").Error; err != nil {
+		t.Fatalf("disable sms mock setting: %v", err)
+	}
+	router := newRescheduleTestRouter(handler, fixture.user)
+
+	response := performRescheduleRequest(t, router, fixture.appointment.ID, rescheduleRequest{
+		InstitutionID: fixture.institution.ID,
+		SlotID:        fixture.newSlot.ID,
+		Date:          fixture.newSlot.Date,
+		Period:        fixture.newSlot.Period,
+	})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	assertNotificationCount(t, db, fixture.user.ID, 2)
+	assertNotificationChannelCount(t, db, fixture.user.ID, "sms_mock", 0)
+}
+
 type rescheduleFixture struct {
 	user        models.User
 	doctor      models.User
@@ -180,14 +201,27 @@ func newRescheduleFixture(t *testing.T) (*Handler, *gorm.DB, rescheduleFixture) 
 		newSlot:     models.ScheduleSlot{ID: 31, DoctorID: 300, InstitutionID: 10, Date: "2026-07-03", Period: "上午", Category: "年度综合", StartTime: "10:00", EndTime: "10:30", Capacity: 1, BookedCount: 0, Status: "available"},
 		appointment: models.Appointment{ID: 40, OrderNo: "HC202607010001", UserID: 100, DoctorID: 300, InstitutionID: 10, SlotID: 30, PackageID: 20, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "booked", PaymentStatus: "unpaid"},
 	}
-	setting := models.SystemSetting{Key: "appointment.allow_reschedule_hours", Value: "0", ValueType: "number", Group: "appointment", Label: "改期截止小时数", Status: "active"}
-	for _, row := range []any{&fixture.user, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.oldSlot, &fixture.newSlot, &fixture.appointment, &setting} {
+	rescheduleSetting := models.SystemSetting{Key: "appointment.allow_reschedule_hours", Value: "0", ValueType: "number", Group: "appointment", Label: "改期截止小时数", Status: "active"}
+	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
+	smsSetting := models.SystemSetting{Key: "notification.sms_mock_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "短信模拟通知", Status: "active"}
+	for _, row := range []any{&fixture.user, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.oldSlot, &fixture.newSlot, &fixture.appointment, &rescheduleSetting, &inAppSetting, &smsSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
 	}
 	handler := &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}
 	return handler, db, fixture
+}
+
+func assertNotificationChannelCount(t *testing.T, db *gorm.DB, userID uint, channel string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.Notification{}).Where("user_id = ? AND channel = ?", userID, channel).Count(&count).Error; err != nil {
+		t.Fatalf("count notifications: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected %d %s notifications, got %d", want, channel, count)
+	}
 }
 
 func newRescheduleTestRouter(handler *Handler, current models.User) *gin.Engine {

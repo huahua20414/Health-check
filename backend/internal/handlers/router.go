@@ -831,7 +831,9 @@ func (h *Handler) updateAppointmentPayment(c *gin.Context) {
 	if req.PaymentStatus == "paid" {
 		content = "您的体检预约已模拟支付成功。"
 	}
-	h.db.Create(&models.Notification{UserID: current.ID, Channel: "in_app", Type: "payment_status", Title: title, Content: content, Status: "unread"})
+	if h.inAppNotificationsEnabled() {
+		h.db.Create(&models.Notification{UserID: current.ID, Channel: "in_app", Type: "payment_status", Title: title, Content: content, Status: "unread"})
+	}
 	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
 	c.JSON(http.StatusOK, appointment)
 }
@@ -1518,6 +1520,8 @@ func (h *Handler) sendCheckupReminders(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	inAppEnabled := h.inAppNotificationsEnabled()
+	smsMockEnabled := h.smsMockNotificationsEnabled()
 	notifications := make([]models.Notification, 0, len(appointments)*2)
 	for _, appointment := range appointments {
 		existing := int64(0)
@@ -1533,10 +1537,12 @@ func (h *Handler) sendCheckupReminders(c *gin.Context) {
 		}
 		content := fmt.Sprintf("体检前提醒：%s 将于 %s %s-%s 到 %s 进行 %s，请携带有效证件，前一天清淡饮食，需空腹项目请按医嘱执行。预约单号：%s",
 			person, appointment.Date, appointment.StartTime, appointment.EndTime, appointment.Institution.Name, appointment.Package.Name, appointment.OrderNo)
-		notifications = append(notifications,
-			models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: content, Status: "unread"},
-			models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: "checkup_reminder", Title: "短信模拟：体检前提醒", Content: content, Status: "unread"},
-		)
+		if inAppEnabled {
+			notifications = append(notifications, models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: content, Status: "unread"})
+		}
+		if smsMockEnabled {
+			notifications = append(notifications, models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: "checkup_reminder", Title: "短信模拟：体检前提醒", Content: content, Status: "unread"})
+		}
 	}
 	if len(notifications) > 0 {
 		if err := h.db.Create(&notifications).Error; err != nil {
@@ -2553,9 +2559,13 @@ func (h *Handler) createAppointmentNotifications(appointment models.Appointment,
 	if appointment.Date != "" {
 		body = fmt.Sprintf("%s 时间：%s %s-%s，机构：%s，套餐：%s。", content, appointment.Date, appointment.StartTime, appointment.EndTime, appointment.Institution.Name, appointment.Package.Name)
 	}
-	h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: kind, Title: title, Content: body, Status: "unread"})
-	h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: kind, Title: "短信模拟：" + title, Content: body, Status: "unread"})
-	if appointment.Status == "booked" {
+	if h.inAppNotificationsEnabled() {
+		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: kind, Title: title, Content: body, Status: "unread"})
+	}
+	if h.smsMockNotificationsEnabled() {
+		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "sms_mock", Type: kind, Title: "短信模拟：" + title, Content: body, Status: "unread"})
+	}
+	if appointment.Status == "booked" && h.inAppNotificationsEnabled() {
 		h.db.Create(&models.Notification{UserID: appointment.UserID, Channel: "in_app", Type: "checkup_reminder", Title: "体检前提醒", Content: "请携带有效证件，按预约时间到达体检机构。体检前一天建议清淡饮食，部分项目需空腹。", Status: "unread"})
 	}
 }
@@ -2603,6 +2613,26 @@ func (h *Handler) numericSetting(key string, fallback float64) float64 {
 		return fallback
 	}
 	return parsed
+}
+
+func (h *Handler) inAppNotificationsEnabled() bool {
+	return h.booleanSetting("notification.in_app_enabled", true)
+}
+
+func (h *Handler) smsMockNotificationsEnabled() bool {
+	return h.booleanSetting("notification.sms_mock_enabled", true)
+}
+
+func (h *Handler) booleanSetting(key string, fallback bool) bool {
+	settings, err := h.settingsByKeys(key)
+	if err != nil {
+		return fallback
+	}
+	value := strings.TrimSpace(settings[key])
+	if value == "" {
+		return fallback
+	}
+	return value == "true"
 }
 
 func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, bookedCount int) (models.ScheduleSlot, bool) {
