@@ -86,6 +86,7 @@ const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: 
 const emailForm = reactive({ email: '', code: '' })
 const familyMemberForm = reactive({ id: null, name: '', relation: '', gender: '', age: null, idCard: '', phone: '' })
 const rescheduleForm = reactive({ appointmentId: null, institutionId: null, slotId: null, date: '', period: '', note: '' })
+const invoiceForm = reactive({ appointmentId: null, invoiceTitle: '', invoiceTaxNo: '' })
 const packageForm = reactive({ id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' })
 const couponForm = reactive({ id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: null, status: 'active', startDate: '', endDate: '', description: '' })
 const reviewForm = reactive({ appointmentId: null, rating: 5, content: '' })
@@ -645,6 +646,33 @@ export function useHealthData() {
       ElMessage.success(paymentStatus === 'paid' ? '已模拟支付成功' : '已撤销模拟支付')
       await loadAppointmentsPage()
       notifications.value = await request('/notifications').catch(() => notifications.value)
+    } finally {
+      loading.appointment = false
+    }
+  }
+
+  function editInvoice(appointment) {
+    Object.assign(invoiceForm, {
+      appointmentId: appointment?.id || null,
+      invoiceTitle: appointment?.invoiceTitle || '',
+      invoiceTaxNo: appointment?.invoiceTaxNo || '',
+    })
+  }
+
+  async function saveInvoice() {
+    if (!invoiceForm.appointmentId || loading.appointment) return
+    loading.appointment = true
+    try {
+      await request(`/appointments/${invoiceForm.appointmentId}/invoice`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          invoiceTitle: invoiceForm.invoiceTitle,
+          invoiceTaxNo: invoiceForm.invoiceTaxNo,
+        }),
+      })
+      ElMessage.success('发票信息已保存')
+      editInvoice(null)
+      await loadAppointmentsPage()
     } finally {
       loading.appointment = false
     }
@@ -1289,6 +1317,7 @@ export function useHealthData() {
     emailForm,
     familyMemberForm,
     rescheduleForm,
+    invoiceForm,
     packageForm,
     couponForm,
     reviewForm,
@@ -1351,6 +1380,8 @@ export function useHealthData() {
     editReschedule,
     rescheduleAppointment,
     updateAppointmentPayment,
+    editInvoice,
+    saveInvoice,
     markNotificationRead,
     editCoupon,
     saveCoupon,

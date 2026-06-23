@@ -38,6 +38,9 @@
           <el-button v-if="canPay && row.paymentStatus === 'paid'" size="small" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('unpay', row)">
             撤销支付
           </el-button>
+          <el-button v-if="canInvoice" size="small" plain :disabled="row.status === 'canceled'" @click="$emit('invoice', row)">
+            发票
+          </el-button>
           <el-button v-if="canReschedule" size="small" :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('reschedule', row)">
             改期
           </el-button>
@@ -85,11 +88,15 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  canInvoice: {
+    type: Boolean,
+    default: false,
+  },
   canMarkDone: {
     type: Boolean,
     default: false,
   },
 })
 
-defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order', 'pay', 'unpay'])
+defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order', 'pay', 'unpay', 'invoice'])
 </script>

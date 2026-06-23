@@ -71,6 +71,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
 	protected.PATCH("/appointments/:id/reschedule", handler.requireRole("user"), handler.rescheduleAppointment)
 	protected.PATCH("/appointments/:id/payment", handler.requireRole("user"), handler.updateAppointmentPayment)
+	protected.PATCH("/appointments/:id/invoice", handler.requireRole("user"), handler.updateAppointmentInvoice)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.POST("/schedule/slots", handler.requireRole("admin"), handler.createScheduleSlot)
 	protected.PATCH("/schedule/slots/:id", handler.requireRole("admin"), handler.updateScheduleSlot)
@@ -809,6 +810,43 @@ func (h *Handler) updateAppointmentPayment(c *gin.Context) {
 		content = "您的体检预约已模拟支付成功。"
 	}
 	h.db.Create(&models.Notification{UserID: current.ID, Channel: "in_app", Type: "payment_status", Title: title, Content: content, Status: "unread"})
+	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
+	c.JSON(http.StatusOK, appointment)
+}
+
+func (h *Handler) updateAppointmentInvoice(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment id"})
+		return
+	}
+	var req invoiceRequest
+	if !bind(c, &req) {
+		return
+	}
+	current := currentUser(c)
+	var appointment models.Appointment
+	if err := h.db.Where("id = ? AND user_id = ?", id, current.ID).First(&appointment).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if appointment.Status == "canceled" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invoice cannot be updated for canceled appointments"})
+		return
+	}
+	title := strings.TrimSpace(req.InvoiceTitle)
+	taxNo := strings.TrimSpace(req.InvoiceTaxNo)
+	if len(title) > 128 || len(taxNo) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invoice fields are too long"})
+		return
+	}
+	if err := h.db.Model(&models.Appointment{}).Where("id = ?", id).Updates(map[string]any{
+		"invoice_title":  title,
+		"invoice_tax_no": taxNo,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
 	c.JSON(http.StatusOK, appointment)
 }
@@ -2513,6 +2551,11 @@ type rescheduleRequest struct {
 
 type paymentStatusRequest struct {
 	PaymentStatus string `json:"paymentStatus" binding:"required"`
+}
+
+type invoiceRequest struct {
+	InvoiceTitle string `json:"invoiceTitle"`
+	InvoiceTaxNo string `json:"invoiceTaxNo"`
 }
 
 type profileRequest struct {

@@ -14,6 +14,7 @@
         :can-reschedule="can('appointment:reschedule')"
         :can-review="can('review:create')"
         :can-pay="can('appointment:pay')"
+        :can-invoice="can('appointment:invoice')"
         :loading="loading.status || loading.appointment"
         @cancel="cancelAppointment"
         @reschedule="openReschedule"
@@ -21,6 +22,7 @@
         @view-order="openOrder"
         @pay="(row) => updateAppointmentPayment(row, 'paid')"
         @unpay="(row) => updateAppointmentPayment(row, 'unpaid')"
+        @invoice="openInvoice"
       />
       <el-pagination
         class="table-pagination"
@@ -104,6 +106,21 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="invoiceVisible" title="发票信息" width="640px">
+      <el-form label-position="top">
+        <el-form-item label="发票抬头">
+          <el-input v-model="invoiceForm.invoiceTitle" maxlength="128" show-word-limit placeholder="个人或企业名称" />
+        </el-form-item>
+        <el-form-item label="纳税人识别号">
+          <el-input v-model="invoiceForm.invoiceTaxNo" maxlength="64" show-word-limit placeholder="企业发票可填写" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="invoiceVisible = false">取消</el-button>
+        <el-button type="primary" :loading="loading.appointment" :disabled="!invoiceForm.appointmentId || !can('appointment:invoice')" @click="submitInvoice">保存发票</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="reviewVisible" title="评价体检服务" width="640px">
       <el-form label-position="top">
         <el-form-item label="评分">
@@ -127,10 +144,11 @@ import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, slots, rescheduleForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, updateAppointmentPayment, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
+const { myAppointments, waitlist, slots, rescheduleForm, invoiceForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, updateAppointmentPayment, editInvoice, saveInvoice, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const rescheduleVisible = ref(false)
+const invoiceVisible = ref(false)
 const reviewVisible = ref(false)
 const orderHTML = computed(() => (selectedOrder.value ? appointmentDocumentHTML(selectedOrder.value) : ''))
 const activeRescheduleAppointment = computed(() => myAppointments.value.find((item) => item.id === rescheduleForm.appointmentId))
@@ -172,6 +190,16 @@ function syncSelectedSlot(slotId) {
 async function submitReschedule() {
   await rescheduleAppointment()
   rescheduleVisible.value = false
+}
+
+function openInvoice(row) {
+  editInvoice(row)
+  invoiceVisible.value = true
+}
+
+async function submitInvoice() {
+  await saveInvoice()
+  invoiceVisible.value = false
 }
 
 function openReview(row) {
