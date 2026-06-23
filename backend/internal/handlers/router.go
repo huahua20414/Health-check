@@ -96,6 +96,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/package-browses", handler.requireRole("user"), handler.packageBrowses)
 	protected.GET("/notifications", handler.notifications)
 	protected.PATCH("/notifications/:id/read", handler.markNotificationRead)
+	protected.PATCH("/notifications/:id/status", handler.updateMyNotificationStatus)
 	protected.GET("/support-tickets", handler.requireRole("user"), handler.mySupportTickets)
 	protected.POST("/support-tickets", handler.requireRole("user"), handler.createSupportTicket)
 	protected.GET("/admin/support-tickets", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.supportTickets)
@@ -103,6 +104,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.adminNotifications)
 	protected.POST("/admin/notifications", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.createAdminNotification)
 	protected.POST("/admin/notifications/reminders", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.sendCheckupReminders)
+	protected.PATCH("/admin/notifications/:id/status", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.updateAdminNotificationStatus)
 	protected.DELETE("/admin/notifications/:id", handler.requireRoleAndPermission("admin:notification:manage", "admin"), handler.archiveAdminNotification)
 	protected.GET("/permissions/me", handler.myPermissions)
 	protected.GET("/admin/dashboard", handler.requireRole("admin"), handler.adminDashboard)
@@ -1473,23 +1475,11 @@ func (h *Handler) notifications(c *gin.Context) {
 }
 
 func (h *Handler) markNotificationRead(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid notification id"})
-		return
-	}
-	current := currentUser(c)
-	now := time.Now()
-	result := h.db.Model(&models.Notification{}).Where("id = ? AND user_id = ?", id, current.ID).Updates(map[string]any{"status": "read", "read_at": &now})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"id": id, "status": "read"})
+	h.updateNotificationStatus(c, false, "read")
+}
+
+func (h *Handler) updateMyNotificationStatus(c *gin.Context) {
+	h.updateNotificationStatus(c, false, "")
 }
 
 func (h *Handler) mySupportTickets(c *gin.Context) {
@@ -1727,12 +1717,46 @@ func (h *Handler) sendCheckupReminders(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"date": date, "created": len(notifications), "appointments": len(appointments)})
 }
 
+func (h *Handler) updateAdminNotificationStatus(c *gin.Context) {
+	h.updateNotificationStatus(c, true, "")
+}
+
 func (h *Handler) archiveAdminNotification(c *gin.Context) {
+	h.updateNotificationStatus(c, true, "archived")
+}
+
+func (h *Handler) updateNotificationStatus(c *gin.Context, admin bool, forcedStatus string) {
 	id, ok := parseIDParam(c, "id", "invalid notification id")
 	if !ok {
 		return
 	}
-	result := h.db.Model(&models.Notification{}).Where("id = ? AND status <> ?", id, "archived").Update("status", "archived")
+	status := forcedStatus
+	if status == "" {
+		var req notificationStatusRequest
+		if !bind(c, &req) {
+			return
+		}
+		status = strings.TrimSpace(req.Status)
+	}
+	if !validNotificationStatus(status, admin) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid notification status"})
+		return
+	}
+	updates := map[string]any{"status": status}
+	if status == "read" {
+		now := time.Now()
+		updates["read_at"] = &now
+	} else {
+		updates["read_at"] = nil
+	}
+	query := h.db.Model(&models.Notification{}).Where("id = ?", id)
+	if admin {
+		query = query.Where("status <> ?", "archived")
+	} else {
+		current := currentUser(c)
+		query = query.Where("user_id = ? AND status <> ?", current.ID, "archived")
+	}
+	result := query.Updates(updates)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -1741,8 +1765,12 @@ func (h *Handler) archiveAdminNotification(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
 		return
 	}
-	h.recordOperation(c, "archive", "notification", strconv.Itoa(id), "success", "")
-	c.JSON(http.StatusOK, gin.H{"id": id, "status": "archived"})
+	action := "update_status"
+	if status == "archived" {
+		action = "archive"
+	}
+	h.recordOperation(c, action, "notification", strconv.Itoa(id), "success", status)
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": status})
 }
 
 func (h *Handler) mailLogs(c *gin.Context) {
@@ -3312,6 +3340,10 @@ type reminderRequest struct {
 	Date string `json:"date"`
 }
 
+type notificationStatusRequest struct {
+	Status string `json:"status" binding:"required"`
+}
+
 type doctorProfileRequest struct {
 	Department  string `json:"department" binding:"required"`
 	Title       string `json:"title"`
@@ -3332,6 +3364,17 @@ func normalizeStatus(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func validNotificationStatus(status string, admin bool) bool {
+	switch status {
+	case "unread", "read":
+		return true
+	case "archived":
+		return admin
+	default:
+		return false
+	}
 }
 
 func splitCSV(value string) []string {

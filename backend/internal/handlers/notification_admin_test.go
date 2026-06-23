@@ -59,6 +59,39 @@ func TestUserNotificationsHideArchivedRows(t *testing.T) {
 	}
 }
 
+func TestUserCanToggleOwnNotificationReadStatus(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.user)
+
+	read := performNotificationAdminJSON(t, router, http.MethodPatch, "/notifications/"+strconv.Itoa(int(fixture.userUnread.ID))+"/status", notificationStatusRequest{Status: "read"})
+	if read.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", read.Code, read.Body.String())
+	}
+	assertNotificationStatus(t, db, fixture.userUnread.ID, "read")
+	assertNotificationReadAt(t, db, fixture.userUnread.ID, true)
+
+	unread := performNotificationAdminJSON(t, router, http.MethodPatch, "/notifications/"+strconv.Itoa(int(fixture.userUnread.ID))+"/status", notificationStatusRequest{Status: "unread"})
+	if unread.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", unread.Code, unread.Body.String())
+	}
+	assertNotificationStatus(t, db, fixture.userUnread.ID, "unread")
+	assertNotificationReadAt(t, db, fixture.userUnread.ID, false)
+}
+
+func TestUserCannotUpdateOtherOrArchivedNotification(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.user)
+
+	other := performNotificationAdminJSON(t, router, http.MethodPatch, "/notifications/"+strconv.Itoa(int(fixture.doctorNotice.ID))+"/status", notificationStatusRequest{Status: "read"})
+	archived := performNotificationAdminJSON(t, router, http.MethodPatch, "/notifications/"+strconv.Itoa(int(fixture.userArchived.ID))+"/status", notificationStatusRequest{Status: "read"})
+
+	if other.Code != http.StatusNotFound || archived.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for other/archived notification, got %d/%d", other.Code, archived.Code)
+	}
+	assertNotificationStatus(t, db, fixture.doctorNotice.ID, "unread")
+	assertNotificationStatus(t, db, fixture.userArchived.ID, "archived")
+}
+
 func TestAdminNotificationsFilterByKeywordAndChannel(t *testing.T) {
 	handler, _, fixture := newNotificationAdminFixture(t)
 	router := newNotificationAdminRouter(handler, fixture.admin)
@@ -68,6 +101,31 @@ func TestAdminNotificationsFilterByKeywordAndChannel(t *testing.T) {
 	payload := decodeNotificationPage(t, response)
 	if payload.Total != 1 || len(payload.Items) != 1 || payload.Items[0].ID != fixture.userUnread.ID {
 		t.Fatalf("admin notification filter returned wrong page: %#v", payload)
+	}
+}
+
+func TestAdminCanUpdateNotificationStatus(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	response := performNotificationAdminJSON(t, router, http.MethodPatch, "/admin/notifications/"+strconv.Itoa(int(fixture.doctorNotice.ID))+"/status", notificationStatusRequest{Status: "read"})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	assertNotificationStatus(t, db, fixture.doctorNotice.ID, "read")
+	assertNotificationReadAt(t, db, fixture.doctorNotice.ID, true)
+	assertOperationCount(t, db, "update_status", "notification", 1)
+}
+
+func TestAdminRejectsInvalidNotificationStatus(t *testing.T) {
+	handler, _, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	response := performNotificationAdminJSON(t, router, http.MethodPatch, "/admin/notifications/"+strconv.Itoa(int(fixture.doctorNotice.ID))+"/status", notificationStatusRequest{Status: "sent"})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
 	}
 }
 
@@ -82,6 +140,18 @@ func TestAdminArchiveNotificationHidesItFromUserAndRecordsOperation(t *testing.T
 	}
 	assertNotificationStatus(t, db, fixture.userUnread.ID, "archived")
 	assertOperationCount(t, db, "archive", "notification", 1)
+}
+
+func TestAdminCannotUpdateArchivedNotification(t *testing.T) {
+	handler, db, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.admin)
+
+	response := performNotificationAdminJSON(t, router, http.MethodPatch, "/admin/notifications/"+strconv.Itoa(int(fixture.userArchived.ID))+"/status", notificationStatusRequest{Status: "read"})
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", response.Code, response.Body.String())
+	}
+	assertNotificationStatus(t, db, fixture.userArchived.ID, "archived")
 }
 
 func TestAdminSendCheckupRemindersOnlyTargetsBookedAppointmentsForDate(t *testing.T) {
@@ -205,6 +275,8 @@ func newNotificationAdminRouter(handler *Handler, current models.User) *gin.Engi
 	router.GET("/admin/notifications", handler.adminNotifications)
 	router.POST("/admin/notifications", handler.createAdminNotification)
 	router.POST("/admin/notifications/reminders", handler.sendCheckupReminders)
+	router.PATCH("/notifications/:id/status", handler.updateMyNotificationStatus)
+	router.PATCH("/admin/notifications/:id/status", handler.updateAdminNotificationStatus)
 	router.DELETE("/admin/notifications/:id", handler.archiveAdminNotification)
 	return router
 }
@@ -284,6 +356,17 @@ func assertNotificationStatus(t *testing.T, db *gorm.DB, id uint, want string) {
 	}
 	if notification.Status != want {
 		t.Fatalf("expected notification %d status %s, got %s", id, want, notification.Status)
+	}
+}
+
+func assertNotificationReadAt(t *testing.T, db *gorm.DB, id uint, wantSet bool) {
+	t.Helper()
+	var notification models.Notification
+	if err := db.First(&notification, id).Error; err != nil {
+		t.Fatalf("load notification: %v", err)
+	}
+	if (notification.ReadAt != nil) != wantSet {
+		t.Fatalf("expected notification %d readAt set=%t, got %#v", id, wantSet, notification.ReadAt)
 	}
 }
 

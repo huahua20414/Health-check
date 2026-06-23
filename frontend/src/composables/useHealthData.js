@@ -738,11 +738,19 @@ export function useHealthData() {
   }
 
   async function markNotificationRead(notification) {
+    return updateMyNotificationStatus(notification, 'read')
+  }
+
+  async function updateMyNotificationStatus(notification, status) {
     if (loading.notification) return
     loading.notification = true
     try {
-      await request(`/notifications/${notification.id}/read`, { method: 'PATCH' })
-      notification.status = 'read'
+      await request(`/notifications/${notification.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      notification.status = status
+      notification.readAt = status === 'read' ? new Date().toISOString() : null
     } finally {
       loading.notification = false
     }
@@ -927,11 +935,21 @@ export function useHealthData() {
   }
 
   async function archiveAdminNotification(notification) {
+    return updateAdminNotificationStatus(notification, 'archived')
+  }
+
+  async function updateAdminNotificationStatus(notification, status) {
     if (loading.adminNotification) return
     loading.adminNotification = true
     try {
-      await request(`/admin/notifications/${notification.id}`, { method: 'DELETE' })
-      ElMessage.success('通知已归档')
+      if (status === 'archived') await request(`/admin/notifications/${notification.id}`, { method: 'DELETE' })
+      else {
+        await request(`/admin/notifications/${notification.id}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+        })
+      }
+      ElMessage.success(status === 'archived' ? '通知已归档' : '通知状态已更新')
       await loadAdminNotificationsPage()
     } finally {
       loading.adminNotification = false
@@ -1545,6 +1563,7 @@ export function useHealthData() {
     editInvoice,
     saveInvoice,
     markNotificationRead,
+    updateMyNotificationStatus,
     editCoupon,
     saveCoupon,
     archiveCoupon,
@@ -1558,6 +1577,7 @@ export function useHealthData() {
     sendAdminNotification,
     sendCheckupReminders,
     archiveAdminNotification,
+    updateAdminNotificationStatus,
     createSupportTicket,
     editSupportTicketReply,
     saveSupportTicketReply,

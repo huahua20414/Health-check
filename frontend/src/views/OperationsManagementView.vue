@@ -222,9 +222,28 @@
         <el-table-column prop="title" label="标题" />
         <el-table-column prop="content" label="内容" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="190">
           <template #default="{ row }">
-            <el-button v-if="can('admin:notification:manage')" size="small" type="danger" plain :loading="loading.adminNotification" @click="archiveAdminNotification(row)">归档</el-button>
+            <div class="table-actions">
+              <el-button
+                v-if="can('admin:notification:manage') && row.status === 'unread'"
+                size="small"
+                :loading="loading.adminNotification"
+                @click="updateAdminNotificationStatus(row, 'read')"
+              >
+                标已读
+              </el-button>
+              <el-button
+                v-if="can('admin:notification:manage') && row.status === 'read'"
+                size="small"
+                plain
+                :loading="loading.adminNotification"
+                @click="updateAdminNotificationStatus(row, 'unread')"
+              >
+                标未读
+              </el-button>
+              <el-button v-if="can('admin:notification:manage')" size="small" type="danger" plain :loading="loading.adminNotification" @click="archiveAdminNotification(row)">归档</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -326,6 +345,7 @@ const {
   sendAdminNotification,
   sendCheckupReminders,
   archiveAdminNotification,
+  updateAdminNotificationStatus,
   editSupportTicketReply,
   saveSupportTicketReply,
 } = useHealthData()
