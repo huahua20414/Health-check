@@ -13,11 +13,14 @@
         :can-cancel="can('appointment:cancel')"
         :can-reschedule="can('appointment:reschedule')"
         :can-review="can('review:create')"
+        :can-pay="can('appointment:pay')"
         :loading="loading.status || loading.appointment"
         @cancel="cancelAppointment"
         @reschedule="openReschedule"
         @review="openReview"
         @view-order="openOrder"
+        @pay="(row) => updateAppointmentPayment(row, 'paid')"
+        @unpay="(row) => updateAppointmentPayment(row, 'unpaid')"
       />
       <el-pagination
         class="table-pagination"
@@ -124,7 +127,7 @@ import AppointmentTable from '../components/AppointmentTable.vue'
 import StatusTag from '../components/StatusTag.vue'
 import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composables/useHealthData'
 
-const { myAppointments, waitlist, slots, rescheduleForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
+const { myAppointments, waitlist, slots, rescheduleForm, reviewForm, loading, can, cancelAppointment, editReschedule, rescheduleAppointment, updateAppointmentPayment, createReview, paginations, loadAppointmentsPage, loadWaitlistPage } = useHealthData()
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const rescheduleVisible = ref(false)

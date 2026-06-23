@@ -151,6 +151,7 @@ func defaultRolePermissions() []models.RolePermission {
 		"appointment:create":        "创建体检预约",
 		"appointment:reschedule":    "预约改期",
 		"appointment:cancel":        "取消预约",
+		"appointment:pay":           "模拟预约支付",
 		"review:create":             "评价体检服务",
 		"favorite:manage":           "收藏套餐",
 		"family:manage":             "管理家庭成员",
@@ -171,7 +172,7 @@ func defaultRolePermissions() []models.RolePermission {
 	roles := map[string][]string{
 		"user": {
 			"appointment:create", "appointment:reschedule", "appointment:cancel", "review:create",
-			"favorite:manage", "family:manage", "report:view",
+			"appointment:pay", "favorite:manage", "family:manage", "report:view",
 		},
 		"doctor": {"doctor:appointment:update", "report:create", "customer:view"},
 		"admin": {

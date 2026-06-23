@@ -32,6 +32,12 @@
           完成体检
         </el-button>
         <template v-else>
+          <el-button v-if="canPay" size="small" type="primary" plain :loading="loading" :disabled="row.status !== 'booked' || row.paymentStatus === 'paid'" @click="$emit('pay', row)">
+            模拟支付
+          </el-button>
+          <el-button v-if="canPay && row.paymentStatus === 'paid'" size="small" plain :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('unpay', row)">
+            撤销支付
+          </el-button>
           <el-button v-if="canReschedule" size="small" :loading="loading" :disabled="row.status !== 'booked'" @click="$emit('reschedule', row)">
             改期
           </el-button>
@@ -75,11 +81,15 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  canPay: {
+    type: Boolean,
+    default: false,
+  },
   canMarkDone: {
     type: Boolean,
     default: false,
   },
 })
 
-defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order'])
+defineEmits(['mark-done', 'cancel', 'reschedule', 'review', 'view-order', 'pay', 'unpay'])
 </script>

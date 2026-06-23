@@ -70,6 +70,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.POST("/appointments", handler.requireRole("user"), handler.createAppointment)
 	protected.PATCH("/appointments/:id/cancel", handler.requireRole("user"), handler.cancelAppointment)
 	protected.PATCH("/appointments/:id/reschedule", handler.requireRole("user"), handler.rescheduleAppointment)
+	protected.PATCH("/appointments/:id/payment", handler.requireRole("user"), handler.updateAppointmentPayment)
 	protected.GET("/schedule/slots", handler.scheduleSlots)
 	protected.POST("/schedule/slots", handler.requireRole("admin"), handler.createScheduleSlot)
 	protected.PATCH("/schedule/slots/:id", handler.requireRole("admin"), handler.updateScheduleSlot)
@@ -772,6 +773,44 @@ func (h *Handler) rescheduleAppointment(c *gin.Context) {
 	}
 	h.createAppointmentNotifications(updated, "appointment_rescheduled", "预约已改期", "您的体检预约时间已更新，请按新的时间到检。")
 	c.JSON(http.StatusOK, updated)
+}
+
+func (h *Handler) updateAppointmentPayment(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment id"})
+		return
+	}
+	var req paymentStatusRequest
+	if !bind(c, &req) {
+		return
+	}
+	if req.PaymentStatus != "paid" && req.PaymentStatus != "unpaid" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payment status"})
+		return
+	}
+	current := currentUser(c)
+	var appointment models.Appointment
+	if err := h.db.Where("id = ? AND user_id = ?", id, current.ID).First(&appointment).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return
+	}
+	if appointment.Status != "booked" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "payment can only be updated for booked appointments"})
+		return
+	}
+	if err := h.db.Model(&models.Appointment{}).Where("id = ?", id).Update("payment_status", req.PaymentStatus).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	title := "支付状态已更新"
+	content := "您的体检预约支付状态已更新为未支付。"
+	if req.PaymentStatus == "paid" {
+		content = "您的体检预约已模拟支付成功。"
+	}
+	h.db.Create(&models.Notification{UserID: current.ID, Channel: "in_app", Type: "payment_status", Title: title, Content: content, Status: "unread"})
+	h.db.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").Preload("Report").First(&appointment, id)
+	c.JSON(http.StatusOK, appointment)
 }
 
 func (h *Handler) updateAppointmentStatus(c *gin.Context) {
@@ -2470,6 +2509,10 @@ type rescheduleRequest struct {
 	Date          string `json:"date" binding:"required"`
 	Period        string `json:"period" binding:"required"`
 	Note          string `json:"note"`
+}
+
+type paymentStatusRequest struct {
+	PaymentStatus string `json:"paymentStatus" binding:"required"`
 }
 
 type profileRequest struct {

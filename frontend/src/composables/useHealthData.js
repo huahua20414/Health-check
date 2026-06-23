@@ -634,6 +634,22 @@ export function useHealthData() {
     }
   }
 
+  async function updateAppointmentPayment(appointment, paymentStatus) {
+    if (!appointment?.id || loading.appointment) return
+    loading.appointment = true
+    try {
+      await request(`/appointments/${appointment.id}/payment`, {
+        method: 'PATCH',
+        body: JSON.stringify({ paymentStatus }),
+      })
+      ElMessage.success(paymentStatus === 'paid' ? '已模拟支付成功' : '已撤销模拟支付')
+      await loadAppointmentsPage()
+      notifications.value = await request('/notifications').catch(() => notifications.value)
+    } finally {
+      loading.appointment = false
+    }
+  }
+
   async function markNotificationRead(notification) {
     if (loading.notification) return
     loading.notification = true
@@ -1334,6 +1350,7 @@ export function useHealthData() {
     recordPackageBrowse,
     editReschedule,
     rescheduleAppointment,
+    updateAppointmentPayment,
     markNotificationRead,
     editCoupon,
     saveCoupon,
