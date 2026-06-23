@@ -97,6 +97,7 @@ type Appointment struct {
 	InstitutionID   uint               `json:"institutionId" gorm:"not null;index"`
 	SlotID          uint               `json:"slotId" gorm:"index"`
 	PackageID       uint               `json:"packageId" gorm:"not null;index"`
+	CouponID        uint               `json:"couponId" gorm:"index"`
 	AppointmentType string             `json:"appointmentType" gorm:"size:32;not null;default:'个人体检'"`
 	Category        string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
 	Date            string             `json:"date" gorm:"size:16;not null"`
@@ -106,6 +107,9 @@ type Appointment struct {
 	Status          string             `json:"status" gorm:"size:24;not null;default:'booked'"`
 	Note            string             `json:"note" gorm:"type:text"`
 	PaymentStatus   string             `json:"paymentStatus" gorm:"size:24;not null;default:'unpaid'"`
+	OriginalAmount  float64            `json:"originalAmount" gorm:"not null;default:0"`
+	DiscountAmount  float64            `json:"discountAmount" gorm:"not null;default:0"`
+	PayableAmount   float64            `json:"payableAmount" gorm:"not null;default:0"`
 	InvoiceTitle    string             `json:"invoiceTitle" gorm:"size:128"`
 	InvoiceTaxNo    string             `json:"invoiceTaxNo" gorm:"size:64"`
 	User            User               `json:"user"`
@@ -113,6 +117,7 @@ type Appointment struct {
 	Doctor          User               `json:"doctor"`
 	Institution     CheckupInstitution `json:"institution"`
 	Package         CheckupPackage     `json:"package"`
+	Coupon          Coupon             `json:"coupon"`
 	Slot            ScheduleSlot       `json:"slot"`
 	Report          *Report            `json:"report,omitempty"`
 	CreatedAt       time.Time          `json:"createdAt"`

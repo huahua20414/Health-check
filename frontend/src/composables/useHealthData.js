@@ -74,6 +74,7 @@ const appointmentForm = reactive({
   packageId: null,
   familyMemberId: null,
   slotId: null,
+  couponId: null,
   date: '',
   period: '',
   note: '',

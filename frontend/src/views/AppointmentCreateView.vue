@@ -54,9 +54,22 @@
           <div><dt>时间</dt><dd>{{ selectedSlot ? `${selectedSlot.startTime}-${selectedSlot.endTime}` : '-' }}</dd></div>
           <div><dt>医生</dt><dd>{{ selectedSlot?.doctor?.name || '-' }}</dd></div>
           <div><dt>体检人</dt><dd>{{ selectedMember?.name || '本人' }}</dd></div>
+          <div><dt>原价</dt><dd>￥{{ Number(selectedPackage?.price || 0).toFixed(2) }}</dd></div>
+          <div><dt>优惠</dt><dd>-￥{{ discountAmount.toFixed(2) }}</dd></div>
+          <div><dt>应付</dt><dd>￥{{ payableAmount.toFixed(2) }}</dd></div>
           <div><dt>支付</dt><dd>{{ appointmentForm.paymentStatus === 'paid' ? '已支付' : '未支付' }}</dd></div>
         </dl>
         <el-form label-position="top">
+          <el-form-item label="可用优惠券">
+            <el-select v-model="appointmentForm.couponId" clearable filterable placeholder="不使用优惠券">
+              <el-option
+                v-for="coupon in usableCoupons"
+                :key="coupon.id"
+                :label="couponLabel(coupon)"
+                :value="coupon.id"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item label="支付状态模拟">
             <el-segmented v-model="appointmentForm.paymentStatus" :options="paymentOptions" />
           </el-form-item>
@@ -201,7 +214,7 @@ import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 import { appointmentTypes, useHealthData } from '../composables/useHealthData'
 
-const { packages, institutions, slots, familyMembers, appointmentForm, loading, can, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
+const { packages, institutions, slots, familyMembers, activeCoupons, appointmentForm, loading, can, loadAll, selectPackage, createAppointment, joinWaitlist } = useHealthData()
 const dialogs = reactive({ type: false, institution: false, package: false, date: false, slot: false, member: false })
 let refreshTimer = 0
 const paymentOptions = [
@@ -213,6 +226,10 @@ const activeInstitutions = computed(() => institutions.value.filter((item) => it
 const selectedInstitution = computed(() => activeInstitutions.value.find((item) => item.id === appointmentForm.institutionId))
 const selectedPackage = computed(() => activePackages.value.find((item) => item.id === appointmentForm.packageId))
 const selectedMember = computed(() => familyMembers.value.find((item) => item.id === appointmentForm.familyMemberId))
+const usableCoupons = computed(() => activeCoupons.value.filter((coupon) => couponApplies(coupon)))
+const selectedCoupon = computed(() => usableCoupons.value.find((coupon) => coupon.id === appointmentForm.couponId))
+const discountAmount = computed(() => discountValue(selectedPackage.value, selectedCoupon.value))
+const payableAmount = computed(() => Math.max(0, Number(selectedPackage.value?.price || 0) - discountAmount.value))
 const selectedCategory = computed(() => selectedPackage.value?.category || '')
 const selectedPackageText = computed(() => (selectedPackage.value ? `${selectedPackage.value.name} · ${selectedPackage.value.category}` : ''))
 const institutionSlots = computed(() => slots.value.filter((slot) => slot.institutionId === appointmentForm.institutionId && (!selectedCategory.value || slot.category === selectedCategory.value)))
@@ -265,6 +282,7 @@ function selectInstitution(institution) {
 
 function selectPackageAndClose(pkg) {
   selectPackage(pkg)
+  appointmentForm.couponId = null
   appointmentForm.date = ''
   appointmentForm.period = ''
   appointmentForm.slotId = null
@@ -284,6 +302,31 @@ function selectSlot(slot) {
   appointmentForm.date = slot.date
   appointmentForm.period = slot.period
   dialogs.slot = false
+}
+
+function couponApplies(coupon) {
+  const price = Number(selectedPackage.value?.price || 0)
+  if (!selectedPackage.value || coupon.status !== 'active') return false
+  if (coupon.packageId && coupon.packageId !== selectedPackage.value.id) return false
+  if (Number(coupon.minAmount || 0) > price) return false
+  if (appointmentForm.date) {
+    if (coupon.startDate && appointmentForm.date < coupon.startDate) return false
+    if (coupon.endDate && appointmentForm.date > coupon.endDate) return false
+  }
+  return true
+}
+
+function discountValue(pkg, coupon) {
+  if (!pkg || !coupon) return 0
+  const price = Number(pkg.price || 0)
+  const value = coupon.type === 'percent' ? price * Number(coupon.value || 0) / 100 : Number(coupon.value || 0)
+  return Math.min(price, Math.max(0, value))
+}
+
+function couponLabel(coupon) {
+  const discount = discountValue(selectedPackage.value, coupon).toFixed(2)
+  const threshold = Number(coupon.minAmount || 0) > 0 ? `满￥${Number(coupon.minAmount).toFixed(2)} ` : ''
+  return `${coupon.name} · ${threshold}优惠￥${discount}`
 }
 
 function selectMember(member) {

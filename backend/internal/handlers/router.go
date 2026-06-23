@@ -636,6 +636,10 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			result = gin.H{"type": "waitlist", "waitlist": wait}
 			return nil
 		}
+		pricing, pricingErr := h.appointmentPricing(tx, pkg, req.CouponID, slot.Date)
+		if pricingErr != nil {
+			return pricingErr
+		}
 		appointment := models.Appointment{
 			OrderNo:         generateOrderNo(),
 			UserID:          current.ID,
@@ -644,6 +648,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			InstitutionID:   slot.InstitutionID,
 			SlotID:          slot.ID,
 			PackageID:       req.PackageID,
+			CouponID:        req.CouponID,
 			AppointmentType: appointmentType,
 			Category:        pkg.Category,
 			Date:            slot.Date,
@@ -653,6 +658,9 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			Status:          "booked",
 			Note:            req.Note,
 			PaymentStatus:   normalizeStatus(req.PaymentStatus, "unpaid"),
+			OriginalAmount:  pricing.OriginalAmount,
+			DiscountAmount:  pricing.DiscountAmount,
+			PayableAmount:   pricing.PayableAmount,
 			InvoiceTitle:    req.InvoiceTitle,
 			InvoiceTaxNo:    req.InvoiceTaxNo,
 		}
@@ -662,10 +670,14 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		if err := tx.Model(&slot).Update("booked_count", slot.BookedCount+1).Error; err != nil {
 			return err
 		}
-		tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot").First(&appointment, appointment.ID)
+		tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Coupon").Preload("Slot").First(&appointment, appointment.ID)
 		result = gin.H{"type": "appointment", "appointment": appointment}
 		return nil
 	}); err != nil {
+		if strings.HasPrefix(err.Error(), "coupon ") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -887,7 +899,7 @@ func (h *Handler) exportAppointments(c *gin.Context) {
 	_ = writer.Write([]string{
 		"order_no", "user_name", "family_member", "doctor_name", "institution", "package",
 		"appointment_type", "category", "date", "period", "start_time", "end_time",
-		"status", "payment_status", "invoice_title", "invoice_tax_no", "note",
+		"status", "payment_status", "original_amount", "discount_amount", "payable_amount", "invoice_title", "invoice_tax_no", "note",
 	})
 	for _, appointment := range appointments {
 		familyMember := "本人"
@@ -909,6 +921,9 @@ func (h *Handler) exportAppointments(c *gin.Context) {
 			appointment.EndTime,
 			appointment.Status,
 			appointment.PaymentStatus,
+			fmt.Sprintf("%.2f", appointment.OriginalAmount),
+			fmt.Sprintf("%.2f", appointment.DiscountAmount),
+			fmt.Sprintf("%.2f", appointment.PayableAmount),
 			appointment.InvoiceTitle,
 			appointment.InvoiceTaxNo,
 			appointment.Note,
@@ -1763,7 +1778,7 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 		Scan(&appointmentTrend)
 	var packageSales []row
 	h.db.Model(&models.Appointment{}).
-		Select("checkup_packages.name AS label, COUNT(appointments.id) AS count, SUM(checkup_packages.price) AS total").
+		Select("checkup_packages.name AS label, COUNT(appointments.id) AS count, SUM(CASE WHEN appointments.payable_amount > 0 THEN appointments.payable_amount ELSE checkup_packages.price END) AS total").
 		Joins("LEFT JOIN checkup_packages ON checkup_packages.id = appointments.package_id").
 		Where("appointments.status <> ? AND appointments.date BETWEEN ? AND ?", "canceled", appointmentStartDate, appointmentEndDate).
 		Group("checkup_packages.id, checkup_packages.name").
@@ -1783,7 +1798,7 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 	h.db.Model(&models.ServiceReview{}).Select("AVG(rating) AS average").Scan(&averageRating)
 	var paymentRows []row
 	h.db.Model(&models.Appointment{}).
-		Select("appointments.payment_status AS label, COUNT(appointments.id) AS count, SUM(checkup_packages.price) AS total").
+		Select("appointments.payment_status AS label, COUNT(appointments.id) AS count, SUM(CASE WHEN appointments.payable_amount > 0 THEN appointments.payable_amount ELSE checkup_packages.price END) AS total").
 		Joins("LEFT JOIN checkup_packages ON checkup_packages.id = appointments.package_id").
 		Where("appointments.status <> ? AND appointments.date BETWEEN ? AND ?", "canceled", appointmentStartDate, appointmentEndDate).
 		Group("appointments.payment_status").
@@ -2589,6 +2604,53 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+type appointmentPricing struct {
+	OriginalAmount float64
+	DiscountAmount float64
+	PayableAmount  float64
+}
+
+func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, couponID uint, appointmentDate string) (appointmentPricing, error) {
+	pricing := appointmentPricing{OriginalAmount: pkg.Price, PayableAmount: pkg.Price}
+	if couponID == 0 {
+		return pricing, nil
+	}
+	var coupon models.Coupon
+	if err := db.First(&coupon, couponID).Error; err != nil {
+		return pricing, fmt.Errorf("coupon not found")
+	}
+	if coupon.Status != "active" {
+		return pricing, fmt.Errorf("coupon is not active")
+	}
+	if coupon.PackageID != 0 && coupon.PackageID != pkg.ID {
+		return pricing, fmt.Errorf("coupon does not apply to this package")
+	}
+	if coupon.MinAmount > 0 && pkg.Price < coupon.MinAmount {
+		return pricing, fmt.Errorf("coupon minimum amount not reached")
+	}
+	if appointmentDate != "" {
+		if coupon.StartDate != "" && appointmentDate < coupon.StartDate {
+			return pricing, fmt.Errorf("coupon is not started")
+		}
+		if coupon.EndDate != "" && appointmentDate > coupon.EndDate {
+			return pricing, fmt.Errorf("coupon is expired")
+		}
+	}
+	discount := coupon.Value
+	if coupon.Type == "percent" {
+		discount = pkg.Price * coupon.Value / 100
+	}
+	if discount < 0 {
+		discount = 0
+	}
+	if discount > pkg.Price {
+		discount = pkg.Price
+	}
+	pricing.DiscountAmount = discount
+	pricing.PayableAmount = pkg.Price - discount
+	return pricing, nil
+}
+
 func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
 	var count int64
 	h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ?", familyMemberID, userID).Count(&count)
@@ -2871,6 +2933,7 @@ type appointmentRequest struct {
 	PackageID       uint   `json:"packageId" binding:"required"`
 	InstitutionID   uint   `json:"institutionId" binding:"required"`
 	FamilyMemberID  uint   `json:"familyMemberId"`
+	CouponID        uint   `json:"couponId"`
 	SlotID          uint   `json:"slotId"`
 	AppointmentType string `json:"appointmentType" binding:"required"`
 	Date            string `json:"date" binding:"required"`
