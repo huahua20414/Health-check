@@ -137,6 +137,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.PATCH("/users/:id/status", handler.requireRoleAndPermission("admin:user:manage", "admin"), handler.updateUserStatus)
 	protected.PATCH("/users/:id/doctor-profile", handler.requireRoleAndPermission("admin:doctor:review", "admin"), handler.updateDoctorProfile)
 	protected.GET("/mail-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.mailLogs)
+	protected.GET("/mail-logs/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportMailLogs)
 	protected.GET("/login-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.loginLogs)
 	protected.GET("/login-logs/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportLoginLogs)
 	protected.GET("/operation-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.operationLogs)
@@ -1883,14 +1884,7 @@ func (h *Handler) updateNotificationStatus(c *gin.Context, admin bool, forcedSta
 
 func (h *Handler) mailLogs(c *gin.Context) {
 	var logs []models.MailLog
-	query := h.db.Model(&models.MailLog{}).Order("created_at desc")
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		pattern := "%" + keyword + "%"
-		query = query.Where("`to` LIKE ? OR subject LIKE ? OR error LIKE ?", pattern, pattern, pattern)
-	}
+	query := h.mailLogQuery(c).Order("created_at desc")
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &logs)
 		return
@@ -1900,6 +1894,31 @@ func (h *Handler) mailLogs(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, logs)
+}
+
+func (h *Handler) exportMailLogs(c *gin.Context) {
+	var logs []models.MailLog
+	if err := h.mailLogQuery(c).Order("created_at desc").Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="mail-logs.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "user_id", "to", "subject", "status", "error", "created_at"})
+	for _, log := range logs {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(log.ID)),
+			strconv.Itoa(int(log.UserID)),
+			log.To,
+			log.Subject,
+			log.Status,
+			log.Error,
+			log.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "mail_log", "", "success", fmt.Sprintf("%d mail logs", len(logs)))
 }
 
 func (h *Handler) loginLogs(c *gin.Context) {
@@ -1986,6 +2005,18 @@ func (h *Handler) exportOperationLogs(c *gin.Context) {
 	}
 	writer.Flush()
 	h.recordOperation(c, "export", "operation_log", "", "success", fmt.Sprintf("%d operation logs", len(logs)))
+}
+
+func (h *Handler) mailLogQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.MailLog{})
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("`to` LIKE ? OR subject LIKE ? OR error LIKE ?", pattern, pattern, pattern)
+	}
+	return query
 }
 
 func (h *Handler) loginLogQuery(c *gin.Context) *gorm.DB {

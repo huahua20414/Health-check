@@ -97,6 +97,13 @@
             <el-option label="失败" value="failed" />
           </el-select>
           <el-input v-model="mailLogKeyword" placeholder="搜索收件人/主题/错误" clearable />
+          <el-button
+            :loading="loading.exportMailLogs"
+            :disabled="!can('admin:data:exchange')"
+            @click="handleMailLogExport"
+          >
+            导出邮件日志
+          </el-button>
         </div>
       </div>
       <el-table :data="mailLogs" stripe>
@@ -257,6 +264,7 @@ const {
   loadRolePermissions,
   loadSystemSettings,
   exportPackages,
+  exportMailLogs,
   exportLoginLogs,
   exportOperationLogs,
   importPackages,
@@ -280,6 +288,10 @@ function loadMailLogPage(reset = false) {
   if (!isAdmin.value) return
   if (reset) paginations.mailLogs.page = 1
   return loadMailLogsPage({ status: mailLogStatus.value, keyword: debouncedMailLogKeyword.value })
+}
+
+function handleMailLogExport() {
+  return exportMailLogs({ status: mailLogStatus.value, keyword: debouncedMailLogKeyword.value })
 }
 
 function loadLoginLogPage(reset = false) {

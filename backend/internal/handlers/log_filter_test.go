@@ -53,6 +53,22 @@ func TestOperationLogsFilterByResourceAndKeyword(t *testing.T) {
 	}
 }
 
+func TestExportMailLogsUsesFiltersAndAudits(t *testing.T) {
+	handler := newLogFilterFixture(t)
+	router := newLogFilterRouter(handler)
+
+	response := performLogFilterRequest(t, router, "/mail-logs/export?status=failed&keyword=smtp")
+
+	records := decodeLogCSV(t, response)
+	if len(records) != 2 {
+		t.Fatalf("expected header plus one mail log, got %#v", records)
+	}
+	if records[1][2] != "fail@example.com" || records[1][4] != "failed" || records[1][5] != "smtp timeout" {
+		t.Fatalf("export returned wrong mail log row: %#v", records[1])
+	}
+	assertLogExportOperation(t, handler.db, "mail_log", "1 mail logs")
+}
+
 func TestExportLoginLogsUsesFiltersAndAudits(t *testing.T) {
 	handler := newLogFilterFixture(t)
 	router := newLogFilterRouter(handler)
@@ -134,6 +150,7 @@ func newLogFilterRouter(handler *Handler) *gin.Engine {
 		c.Next()
 	})
 	router.GET("/mail-logs", handler.mailLogs)
+	router.GET("/mail-logs/export", handler.exportMailLogs)
 	router.GET("/login-logs", handler.loginLogs)
 	router.GET("/login-logs/export", handler.exportLoginLogs)
 	router.GET("/operation-logs", handler.operationLogs)

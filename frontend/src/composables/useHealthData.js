@@ -142,6 +142,7 @@ const loading = reactive({
   exportAppointments: false,
   exportSupportTickets: false,
   exportUsers: false,
+  exportMailLogs: false,
   exportLoginLogs: false,
   exportOperationLogs: false,
   permission: false,
@@ -1427,6 +1428,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportMailLogs(params = {}) {
+    if (loading.exportMailLogs) return
+    loading.exportMailLogs = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/mail-logs/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'mail-logs.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('邮件日志 CSV 已导出')
+    } finally {
+      loading.exportMailLogs = false
+    }
+  }
+
   async function exportLoginLogs(params = {}) {
     if (loading.exportLoginLogs) return
     loading.exportLoginLogs = true
@@ -1732,6 +1751,7 @@ export function useHealthData() {
     exportAppointments,
     exportSupportTickets,
     exportUsers,
+    exportMailLogs,
     exportLoginLogs,
     exportOperationLogs,
     importPackages,
