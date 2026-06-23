@@ -2793,11 +2793,18 @@ func (h *Handler) importCoupons(c *gin.Context) {
 
 func (h *Handler) announcements(c *gin.Context) {
 	var announcements []models.SystemAnnouncement
-	query := h.db.Model(&models.SystemAnnouncement{}).Order("created_at desc")
+	query := h.db.Model(&models.SystemAnnouncement{}).Order("system_announcements.created_at desc")
 	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
+		query = query.Where("system_announcements.status = ?", status)
 	} else {
-		query = query.Where("status <> ?", "deleted")
+		query = query.Where("system_announcements.status <> ?", "deleted")
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where(
+			"system_announcements.title LIKE ? OR system_announcements.content LIKE ? OR system_announcements.audience LIKE ?",
+			pattern, pattern, pattern,
+		)
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &announcements)

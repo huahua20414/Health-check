@@ -906,7 +906,7 @@ export function useHealthData() {
     })
   }
 
-  async function saveAnnouncement() {
+  async function saveAnnouncement(params = {}) {
     if (loading.announcement) return
     loading.announcement = true
     try {
@@ -920,20 +920,21 @@ export function useHealthData() {
       else await request('/announcements', { method: 'POST', body })
       ElMessage.success('公告已保存')
       editAnnouncement(null)
-      await loadAnnouncementsPage()
+      await loadAnnouncementsPage(params)
       activeAnnouncements.value = await request('/announcements/active')
     } finally {
       loading.announcement = false
     }
   }
 
-  async function archiveAnnouncement(announcement) {
+  async function archiveAnnouncement(announcement, params = {}) {
     if (loading.announcement) return
     loading.announcement = true
     try {
       await request(`/announcements/${announcement.id}`, { method: 'DELETE' })
       ElMessage.success('公告已归档')
-      await loadAnnouncementsPage()
+      await loadAnnouncementsPage(params)
+      activeAnnouncements.value = await request('/announcements/active')
     } finally {
       loading.announcement = false
     }

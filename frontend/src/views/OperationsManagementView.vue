@@ -159,6 +159,15 @@
           <p>发布给用户、医生或全员的系统公告。</p>
         </div>
       </div>
+      <div class="filter-bar operation-filter-bar">
+        <el-select v-model="announcementStatusFilter" placeholder="公告状态" clearable>
+          <el-option label="草稿" value="draft" />
+          <el-option label="发布" value="published" />
+          <el-option label="停用" value="disabled" />
+          <el-option label="已归档" value="deleted" />
+        </el-select>
+        <el-input v-model="announcementKeyword" placeholder="搜索标题/内容/受众" clearable />
+      </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="标题"><el-input v-model="announcementForm.title" /></el-form-item>
         <el-form-item label="受众">
@@ -178,7 +187,7 @@
         </el-form-item>
         <el-form-item label="内容"><el-input v-model="announcementForm.content" type="textarea" :rows="4" /></el-form-item>
         <div class="actions">
-          <el-button type="primary" :loading="loading.announcement" :disabled="!announcementForm.title || !announcementForm.content || !can('admin:operation:manage')" @click="saveAnnouncement">保存公告</el-button>
+          <el-button type="primary" :loading="loading.announcement" :disabled="!announcementForm.title || !announcementForm.content || !can('admin:operation:manage')" @click="handleSaveAnnouncement">保存公告</el-button>
           <el-button @click="editAnnouncement(null)">清空</el-button>
         </div>
       </el-form>
@@ -191,11 +200,20 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-if="can('admin:operation:manage')" size="small" @click="editAnnouncement(row)">编辑</el-button>
-              <el-button v-if="can('admin:operation:manage')" size="small" type="danger" plain :loading="loading.announcement" @click="archiveAnnouncement(row)">归档</el-button>
+              <el-button v-if="can('admin:operation:manage')" size="small" type="danger" plain :loading="loading.announcement" @click="handleArchiveAnnouncement(row)">归档</el-button>
             </div>
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.announcements.total"
+        v-model:current-page="paginations.announcements.page"
+        v-model:page-size="paginations.announcements.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
 
     <div class="panel">
@@ -417,11 +435,14 @@ const couponKeyword = ref('')
 const reviewStatusFilter = ref('')
 const reviewRatingFilter = ref(null)
 const reviewKeyword = ref('')
+const announcementStatusFilter = ref('')
+const announcementKeyword = ref('')
 const debouncedNotificationKeyword = useDebouncedRef(notificationKeyword, 350)
 const debouncedAppointmentExportKeyword = useDebouncedRef(appointmentExportKeyword, 350)
 const debouncedSupportTicketKeyword = useDebouncedRef(supportTicketKeyword, 350)
 const debouncedCouponKeyword = useDebouncedRef(couponKeyword, 350)
 const debouncedReviewKeyword = useDebouncedRef(reviewKeyword, 350)
+const debouncedAnnouncementKeyword = useDebouncedRef(announcementKeyword, 350)
 
 function loadNotificationPage(reset = false) {
   if (reset) paginations.adminNotifications.page = 1
@@ -487,6 +508,26 @@ async function handleSaveReviewReply() {
   await saveReviewReply(reviewFilters())
 }
 
+function announcementFilters() {
+  return {
+    status: announcementStatusFilter.value,
+    keyword: debouncedAnnouncementKeyword.value,
+  }
+}
+
+function loadAnnouncementPage(reset = false) {
+  if (reset) paginations.announcements.page = 1
+  return loadAnnouncementsPage(announcementFilters())
+}
+
+async function handleSaveAnnouncement() {
+  await saveAnnouncement(announcementFilters())
+}
+
+async function handleArchiveAnnouncement(row) {
+  await archiveAnnouncement(row, announcementFilters())
+}
+
 function handleSupportTicketExport() {
   return exportSupportTickets({
     status: supportTicketStatusFilter.value,
@@ -510,13 +551,15 @@ watch([couponStatusFilter, debouncedCouponKeyword], () => loadCouponPage(true))
 watch(() => [paginations.coupons.page, paginations.coupons.pageSize], () => loadCouponPage())
 watch([reviewStatusFilter, reviewRatingFilter, debouncedReviewKeyword], () => loadReviewPage(true))
 watch(() => [paginations.reviews.page, paginations.reviews.pageSize], () => loadReviewPage())
+watch([announcementStatusFilter, debouncedAnnouncementKeyword], () => loadAnnouncementPage(true))
+watch(() => [paginations.announcements.page, paginations.announcements.pageSize], () => loadAnnouncementPage())
 
 onMounted(() => {
   loadPackagesPage()
   loadUsersPage({ role: 'user', status: 'active' })
   loadCouponPage()
   loadReviewPage()
-  loadAnnouncementsPage()
+  loadAnnouncementPage()
   loadNotificationPage()
   loadSupportTicketPage()
 })

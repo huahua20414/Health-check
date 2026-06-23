@@ -103,6 +103,23 @@ func TestAdminResourceListsCanQueryArchivedRowsExplicitly(t *testing.T) {
 	}
 }
 
+func TestAnnouncementsSupportKeywordAndPagination(t *testing.T) {
+	handler, db := newArchiveTestHandler(t)
+	seedArchiveRows(t, db)
+	if err := db.Create(&models.SystemAnnouncement{Title: "医生排班调整", Content: "本周医生号源有调整", Audience: "doctor", Status: "published"}).Error; err != nil {
+		t.Fatalf("create announcement: %v", err)
+	}
+
+	page := performArchivePageRequest(t, handler.announcements, http.MethodGet, "/api/announcements?keyword=医生&page=1&pageSize=1", true)
+
+	if page.Total != 1 || page.Page != 1 || page.PageSize != 1 {
+		t.Fatalf("unexpected pagination metadata: %#v", page)
+	}
+	if len(page.Items) != 1 || !jsonContains(encodeJSON(t, page.Items[0]), "医生排班调整") {
+		t.Fatalf("unexpected announcement page: %#v", page.Items)
+	}
+}
+
 func newArchiveTestHandler(t *testing.T) (*Handler, *gorm.DB) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -168,6 +185,33 @@ func performArchiveRequest(t *testing.T, handler gin.HandlerFunc, method, path s
 		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var body []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response %s: %v", rec.Body.String(), err)
+	}
+	return body
+}
+
+type archivePageResponse struct {
+	Items    []map[string]any `json:"items"`
+	Total    int64            `json:"total"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"pageSize"`
+}
+
+func performArchivePageRequest(t *testing.T, handler gin.HandlerFunc, method, path string, withAuthHeader bool) archivePageResponse {
+	t.Helper()
+	router := gin.New()
+	router.Handle(method, pathWithoutQuery(path), handler)
+	req := httptest.NewRequest(method, path, nil)
+	if withAuthHeader {
+		req.Header.Set("Authorization", "Bearer test")
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body archivePageResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response %s: %v", rec.Body.String(), err)
 	}
