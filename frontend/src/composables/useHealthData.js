@@ -42,6 +42,7 @@ const adminSupportTickets = ref([])
 const loginLogs = ref([])
 const operationLogs = ref([])
 const rolePermissions = ref([])
+const rolePermissionRows = ref([])
 const permissionCodes = ref([])
 const systemSettings = ref([])
 const systemSettingRows = ref([])
@@ -64,6 +65,7 @@ const paginations = reactive({
   mailLogs: { page: 1, pageSize: 10, total: 0 },
   loginLogs: { page: 1, pageSize: 10, total: 0 },
   operationLogs: { page: 1, pageSize: 10, total: 0 },
+  rolePermissions: { page: 1, pageSize: 10, total: 0 },
   systemSettings: { page: 1, pageSize: 10, total: 0 },
   packages: { page: 1, pageSize: 10, total: 0 },
   institutions: { page: 1, pageSize: 10, total: 0 },
@@ -524,6 +526,11 @@ export function useHealthData() {
   async function loadRolePermissions() {
     if (!isAdmin.value) return
     rolePermissions.value = await request('/role-permissions')
+  }
+
+  async function loadRolePermissionsPage(params = {}) {
+    if (!isAdmin.value) return
+    rolePermissionRows.value = await requestPage('/role-permissions', paginations.rolePermissions, params)
   }
 
   async function loadSystemSettings() {
@@ -1732,6 +1739,8 @@ export function useHealthData() {
       })
       const index = rolePermissions.value.findIndex((item) => item.id === updated.id)
       if (index >= 0) rolePermissions.value[index] = updated
+      const rowIndex = rolePermissionRows.value.findIndex((item) => item.id === updated.id)
+      if (rowIndex >= 0) rolePermissionRows.value[rowIndex] = updated
       if (updated.role === currentUser.value?.role) await loadMyPermissions()
       ElMessage.success('权限配置已更新')
     } finally {
@@ -1825,6 +1834,7 @@ export function useHealthData() {
     loginLogs,
     operationLogs,
     rolePermissions,
+    rolePermissionRows,
     permissionCodes,
     systemSettings,
     systemSettingRows,
@@ -1897,6 +1907,7 @@ export function useHealthData() {
     loadOperationLogsPage,
     loadMyPermissions,
     loadRolePermissions,
+    loadRolePermissionsPage,
     loadSystemSettings,
     loadSystemSettingsPage,
     loadSupportInfo,

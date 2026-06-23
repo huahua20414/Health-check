@@ -2406,9 +2406,25 @@ func (h *Handler) myPermissions(c *gin.Context) {
 
 func (h *Handler) rolePermissions(c *gin.Context) {
 	var permissions []models.RolePermission
-	query := h.db.Model(&models.RolePermission{}).Order("role asc, permission asc")
+	query := h.db.Model(&models.RolePermission{}).Order("role_permissions.role asc, role_permissions.permission asc")
 	if role := c.Query("role"); role != "" {
-		query = query.Where("role = ?", role)
+		query = query.Where("role_permissions.role = ?", role)
+	}
+	if enabled := c.Query("enabled"); enabled != "" {
+		value, err := strconv.ParseBool(enabled)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid enabled filter"})
+			return
+		}
+		query = query.Where("role_permissions.enabled = ?", value)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("role_permissions.permission LIKE ? OR role_permissions.description LIKE ?", pattern, pattern)
+	}
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &permissions)
+		return
 	}
 	if err := query.Find(&permissions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

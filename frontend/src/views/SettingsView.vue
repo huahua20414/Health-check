@@ -249,7 +249,19 @@
           <p>维护角色可见菜单和关键按钮能力，后端仍保留角色级接口保护。</p>
         </div>
       </div>
-      <el-table :data="rolePermissions" stripe>
+      <div class="filter-bar log-filter-bar">
+        <el-select v-model="permissionRole" placeholder="角色" clearable>
+          <el-option label="用户" value="user" />
+          <el-option label="医生" value="doctor" />
+          <el-option label="管理员" value="admin" />
+        </el-select>
+        <el-select v-model="permissionEnabled" placeholder="启用状态" clearable>
+          <el-option label="启用" value="true" />
+          <el-option label="停用" value="false" />
+        </el-select>
+        <el-input v-model="permissionKeyword" placeholder="搜索权限点/说明" clearable />
+      </div>
+      <el-table :data="rolePermissionRows" stripe>
         <el-table-column label="角色" width="100">
           <template #default="{ row }">{{ roleText(row.role) }}</template>
         </el-table-column>
@@ -257,10 +269,19 @@
         <el-table-column prop="description" label="说明" min-width="220" />
         <el-table-column label="启用" width="120">
           <template #default="{ row }">
-            <el-switch v-model="row.enabled" :loading="loading.permission" @change="updateRolePermission(row)" />
+            <el-switch v-model="row.enabled" :loading="loading.permission" @change="handleUpdateRolePermission(row)" />
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.rolePermissions.total"
+        v-model:current-page="paginations.rolePermissions.page"
+        v-model:page-size="paginations.rolePermissions.pageSize"
+        :page-sizes="[10, 20, 50]"
+      />
     </div>
   </section>
 </template>
@@ -276,7 +297,7 @@ const {
   mailLogs,
   loginLogs,
   operationLogs,
-  rolePermissions,
+  rolePermissionRows,
   systemSettings,
   systemSettingRows,
   paginations,
@@ -285,7 +306,7 @@ const {
   loadMailLogsPage,
   loadLoginLogsPage,
   loadOperationLogsPage,
-  loadRolePermissions,
+  loadRolePermissionsPage,
   loadSystemSettings,
   loadSystemSettingsPage,
   exportPackages,
@@ -302,6 +323,9 @@ const faqSetting = computed(() => systemSettings.value.find((item) => item.key =
 const settingGroup = ref('')
 const settingStatus = ref('')
 const settingKeyword = ref('')
+const permissionRole = ref('')
+const permissionEnabled = ref('')
+const permissionKeyword = ref('')
 const mailLogStatus = ref('')
 const mailLogKeyword = ref('')
 const loginLogStatus = ref('')
@@ -312,6 +336,7 @@ const debouncedMailLogKeyword = useDebouncedRef(mailLogKeyword, 350)
 const debouncedLoginLogKeyword = useDebouncedRef(loginLogKeyword, 350)
 const debouncedOperationKeyword = useDebouncedRef(operationKeyword, 350)
 const debouncedSettingKeyword = useDebouncedRef(settingKeyword, 350)
+const debouncedPermissionKeyword = useDebouncedRef(permissionKeyword, 350)
 
 function loadSystemSettingPage(reset = false) {
   if (!isAdmin.value) return
@@ -326,6 +351,21 @@ function loadSystemSettingPage(reset = false) {
 async function handleUpdateSystemSetting(row) {
   await updateSystemSetting(row)
   await loadSystemSettingPage()
+}
+
+function loadRolePermissionPage(reset = false) {
+  if (!isAdmin.value) return
+  if (reset) paginations.rolePermissions.page = 1
+  return loadRolePermissionsPage({
+    role: permissionRole.value,
+    enabled: permissionEnabled.value,
+    keyword: debouncedPermissionKeyword.value,
+  })
+}
+
+async function handleUpdateRolePermission(row) {
+  await updateRolePermission(row)
+  await loadRolePermissionPage()
 }
 
 function loadMailLogPage(reset = false) {
@@ -370,7 +410,11 @@ watch(() => [paginations.operationLogs.page, paginations.operationLogs.pageSize]
 watch(() => [paginations.systemSettings.page, paginations.systemSettings.pageSize], () => {
   loadSystemSettingPage()
 })
+watch(() => [paginations.rolePermissions.page, paginations.rolePermissions.pageSize], () => {
+  loadRolePermissionPage()
+})
 watch([settingGroup, settingStatus, debouncedSettingKeyword], () => loadSystemSettingPage(true))
+watch([permissionRole, permissionEnabled, debouncedPermissionKeyword], () => loadRolePermissionPage(true))
 watch([mailLogStatus, debouncedMailLogKeyword], () => loadMailLogPage(true))
 watch([loginLogStatus, debouncedLoginLogKeyword], () => loadLoginLogPage(true))
 watch([operationResource, debouncedOperationKeyword], () => loadOperationLogPage(true))
@@ -435,7 +479,7 @@ onMounted(() => {
   loadMailLogPage()
   loadLoginLogPage()
   loadOperationLogPage()
-  loadRolePermissions()
+  loadRolePermissionPage()
   loadSystemSettings()
   loadSystemSettingPage()
 })
