@@ -14,6 +14,13 @@
             <el-option label="已出报告" value="reported" />
             <el-option label="已取消" value="canceled" />
           </el-select>
+          <el-select v-model="sortBy" placeholder="排序">
+            <el-option label="最近创建" value="created_desc" />
+            <el-option label="预约时间由近到远" value="appointment_time_asc" />
+            <el-option label="预约时间由远到近" value="appointment_time_desc" />
+            <el-option label="金额从高到低" value="payable_desc" />
+            <el-option label="金额从低到高" value="payable_asc" />
+          </el-select>
           <el-input v-model="keyword" placeholder="搜索客户/套餐" />
         </div>
       </div>
@@ -48,6 +55,7 @@ import { appointmentDocumentHTML, downloadHTML, useHealthData } from '../composa
 const router = useRouter()
 const statusFilter = ref('')
 const keyword = ref('')
+const sortBy = ref('created_desc')
 const selectedOrder = ref(null)
 const orderVisible = ref(false)
 const debouncedKeyword = useDebouncedRef(keyword, 350)
@@ -58,7 +66,7 @@ const filteredAppointments = computed(() => appointments.value)
 
 function loadPage(reset = false) {
   if (reset) paginations.appointments.page = 1
-  return loadAppointmentsPage({ status: statusFilter.value, keyword: debouncedKeyword.value })
+  return loadAppointmentsPage({ status: statusFilter.value, keyword: debouncedKeyword.value, sort: sortBy.value })
 }
 
 async function handleMarkDone(row) {
@@ -77,10 +85,10 @@ function downloadOrder() {
 }
 
 function handleExport() {
-  return exportAppointments({ status: statusFilter.value, keyword: debouncedKeyword.value })
+  return exportAppointments({ status: statusFilter.value, keyword: debouncedKeyword.value, sort: sortBy.value })
 }
 
-watch([statusFilter, debouncedKeyword], () => loadPage(true))
+watch([statusFilter, debouncedKeyword, sortBy], () => loadPage(true))
 watch(() => [paginations.appointments.page, paginations.appointments.pageSize], () => loadPage())
 onMounted(() => loadPage())
 </script>

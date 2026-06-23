@@ -513,7 +513,7 @@ func (h *Handler) supportInfo(c *gin.Context) {
 
 func (h *Handler) appointments(c *gin.Context) {
 	var appointments []models.Appointment
-	query := h.appointmentQuery(c).Order("created_at desc")
+	query := h.appointmentQuery(c).Order(appointmentSortClause(c.Query("sort")))
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &appointments)
 		return
@@ -905,7 +905,7 @@ func (h *Handler) updateAppointmentInvoice(c *gin.Context) {
 
 func (h *Handler) exportAppointments(c *gin.Context) {
 	var appointments []models.Appointment
-	if err := h.appointmentExportQuery(c).Order("date asc, start_time asc, order_no asc").Find(&appointments).Error; err != nil {
+	if err := h.appointmentExportQuery(c).Order(appointmentSortClause(c.Query("sort"))).Find(&appointments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -3257,6 +3257,21 @@ func packageSortClause(value string) string {
 		return "created_at asc, id asc"
 	default:
 		return "price asc, id asc"
+	}
+}
+
+func appointmentSortClause(value string) string {
+	switch value {
+	case "appointment_time_asc":
+		return "appointments.date asc, appointments.start_time asc, appointments.id asc"
+	case "appointment_time_desc":
+		return "appointments.date desc, appointments.start_time desc, appointments.id desc"
+	case "payable_desc":
+		return "appointments.payable_amount desc, appointments.id desc"
+	case "payable_asc":
+		return "appointments.payable_amount asc, appointments.id asc"
+	default:
+		return "appointments.created_at desc, appointments.id desc"
 	}
 }
 
