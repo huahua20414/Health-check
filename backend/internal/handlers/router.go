@@ -386,7 +386,7 @@ func (h *Handler) updateEmail(c *gin.Context) {
 
 func (h *Handler) packages(c *gin.Context) {
 	var packages []models.CheckupPackage
-	query := h.db.Model(&models.CheckupPackage{}).Order("price asc")
+	query := h.db.Model(&models.CheckupPackage{})
 	if c.GetHeader("Authorization") == "" {
 		query = query.Where("status = ?", "active")
 	} else if status := c.Query("status"); status != "" {
@@ -394,6 +394,14 @@ func (h *Handler) packages(c *gin.Context) {
 	} else {
 		query = query.Where("status <> ?", "deleted")
 	}
+	if category := strings.TrimSpace(c.Query("category")); category != "" {
+		query = query.Where("category = ?", category)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("name LIKE ? OR category LIKE ? OR description LIKE ? OR items LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	query = query.Order(packageSortClause(c.Query("sort")))
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &packages)
 		return
@@ -2576,6 +2584,19 @@ func defaultFAQItems() []faqItem {
 		{Question: "体检前需要注意什么？", Answer: "前一天清淡饮食，部分抽血项目建议空腹；请携带有效证件并提前 15 分钟到达。"},
 		{Question: "可以为家人预约吗？", Answer: "可以。先在家庭成员中维护家人档案，提交预约时选择对应成员。"},
 		{Question: "预约成功后会有什么提醒？", Answer: "系统会生成站内信，并模拟短信通知；邮件通知按 SMTP 配置实际发送。"},
+	}
+}
+
+func packageSortClause(value string) string {
+	switch value {
+	case "price_desc":
+		return "price desc, id desc"
+	case "created_desc":
+		return "created_at desc, id desc"
+	case "created_asc":
+		return "created_at asc, id asc"
+	default:
+		return "price asc, id asc"
 	}
 }
 

@@ -7,6 +7,17 @@
           <p>支持热门、推荐、收藏和最近浏览。</p>
         </div>
       </div>
+      <div class="filter-bar package-filter-bar">
+        <el-input v-model="keyword" placeholder="搜索套餐、项目或说明" clearable />
+        <el-select v-model="categoryFilter" placeholder="全部分类" clearable>
+          <el-option v-for="category in packageCategories" :key="category" :label="category" :value="category" />
+        </el-select>
+        <el-select v-model="sortBy" placeholder="排序">
+          <el-option label="价格从低到高" value="price_asc" />
+          <el-option label="价格从高到低" value="price_desc" />
+          <el-option label="最新上架" value="created_desc" />
+        </el-select>
+      </div>
       <div class="insight-strip">
         <div>
           <span>热门套餐</span>
@@ -41,19 +52,53 @@
             </el-button>
           </div>
         </div>
+        <el-empty v-if="!loading.load && activePackages.length === 0" description="暂无匹配套餐" />
       </div>
+      <el-pagination
+        class="table-pagination"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="paginations.packages.total"
+        v-model:current-page="paginations.packages.page"
+        v-model:page-size="paginations.packages.pageSize"
+        :page-sizes="[6, 10, 20]"
+      />
     </div>
   </section>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDebouncedRef } from '../composables/useDebouncedRef'
 import { useHealthData } from '../composables/useHealthData'
 
 const router = useRouter()
-const { packages, favorites, browseHistories, popularPackages, recommendedPackages, activeCoupons, loading, can, selectPackage, toggleFavorite, recordPackageBrowse } = useHealthData()
+const keyword = ref('')
+const categoryFilter = ref('')
+const sortBy = ref('price_asc')
+const debouncedKeyword = useDebouncedRef(keyword, 350)
+const { packages, favorites, browseHistories, popularPackages, recommendedPackages, activeCoupons, loading, can, selectPackage, toggleFavorite, recordPackageBrowse, paginations, loadPackagesPage } = useHealthData()
 const activePackages = computed(() => packages.value.filter((item) => item.status !== 'disabled'))
+const basePackageCategories = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
+const packageCategories = computed(() => {
+  const categories = new Set([
+    ...basePackageCategories,
+    ...packages.value.map((item) => item.category).filter(Boolean),
+    ...popularPackages.value.map((item) => item.category).filter(Boolean),
+    ...recommendedPackages.value.map((item) => item.category).filter(Boolean),
+  ])
+  return [...categories]
+})
+
+function loadCatalog(reset = false) {
+  if (reset) paginations.packages.page = 1
+  return loadPackagesPage({
+    keyword: debouncedKeyword.value,
+    category: categoryFilter.value,
+    sort: sortBy.value,
+  })
+}
 
 function goBooking(pkg) {
   selectPackage(pkg)
@@ -80,4 +125,8 @@ function discountValue(pkg, coupon) {
 function campaignPrice(pkg) {
   return Math.max(0, Number(pkg.price || 0) - discountValue(pkg, bestCoupon(pkg)))
 }
+
+watch([debouncedKeyword, categoryFilter, sortBy], () => loadCatalog(true))
+watch(() => [paginations.packages.page, paginations.packages.pageSize], () => loadCatalog())
+onMounted(() => loadCatalog())
 </script>
