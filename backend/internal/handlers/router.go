@@ -127,6 +127,8 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.DELETE("/packages/:id", handler.requireRoleAndPermission("admin:package:manage", "admin"), handler.archivePackage)
 	protected.GET("/checkup-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.checkupItems)
 	protected.POST("/checkup-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.createCheckupItem)
+	protected.GET("/checkup-items/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportCheckupItems)
+	protected.POST("/checkup-items/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importCheckupItems)
 	protected.PATCH("/checkup-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updateCheckupItem)
 	protected.DELETE("/checkup-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveCheckupItem)
 	protected.GET("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.packageItems)
@@ -2774,6 +2776,107 @@ func (h *Handler) archiveCheckupItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
 }
 
+func (h *Handler) exportCheckupItems(c *gin.Context) {
+	var items []models.CheckupItem
+	query := h.db.Order("id asc")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if err := query.Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="checkup-items.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"name", "category", "department", "price", "duration_min", "description", "status"})
+	for _, item := range items {
+		_ = writer.Write([]string{
+			item.Name,
+			item.Category,
+			item.Department,
+			fmt.Sprintf("%.2f", item.Price),
+			strconv.Itoa(item.DurationMin),
+			item.Description,
+			item.Status,
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "checkup_item", "", "success", fmt.Sprintf("%d checkup items", len(items)))
+}
+
+func (h *Handler) importCheckupItems(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "csv file is required"})
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "open csv file failed"})
+		return
+	}
+	defer opened.Close()
+	reader := csv.NewReader(opened)
+	reader.TrimLeadingSpace = true
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read csv header failed"})
+		return
+	}
+	index := csvIndex(header)
+	for _, field := range []string{"name", "category", "price"} {
+		if _, ok := index[field]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing csv column: " + field})
+			return
+		}
+	}
+	created := 0
+	updated := 0
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			item, err := checkupItemFromCSVRecord(record, index)
+			if err != nil {
+				return err
+			}
+			if item.Name == "" {
+				continue
+			}
+			var existing models.CheckupItem
+			err = tx.Where("name = ?", item.Name).First(&existing).Error
+			if err == nil {
+				if err := tx.Model(&existing).Updates(item).Error; err != nil {
+					return err
+				}
+				updated++
+				continue
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	}); err != nil {
+		h.recordOperation(c, "import", "checkup_item", "", "failed", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	detail := fmt.Sprintf("created=%d updated=%d", created, updated)
+	h.recordOperation(c, "import", "checkup_item", "", "success", detail)
+	c.JSON(http.StatusOK, gin.H{"created": created, "updated": updated})
+}
+
 func (h *Handler) packageItems(c *gin.Context) {
 	var items []models.PackageItem
 	query := h.db.Model(&models.PackageItem{}).Preload("Package").Preload("Item").Order("package_id asc, sort_order asc, id asc")
@@ -3835,6 +3938,37 @@ func couponFromCSVRecord(record []string, index map[string]int) (models.Coupon, 
 		EndDate:     csvValue(record, index, "end_date"),
 		Status:      normalizeStatus(csvValue(record, index, "status"), "active"),
 		Description: csvValue(record, index, "description"),
+	}, nil
+}
+
+func checkupItemFromCSVRecord(record []string, index map[string]int) (models.CheckupItem, error) {
+	name := csvValue(record, index, "name")
+	category := csvValue(record, index, "category")
+	if name == "" && category == "" {
+		return models.CheckupItem{}, nil
+	}
+	if name == "" || category == "" {
+		return models.CheckupItem{}, fmt.Errorf("checkup item name and category are required")
+	}
+	price, err := strconv.ParseFloat(csvValue(record, index, "price"), 64)
+	if err != nil {
+		return models.CheckupItem{}, fmt.Errorf("invalid checkup item price for %s", name)
+	}
+	duration := 10
+	if raw := csvValue(record, index, "duration_min"); raw != "" {
+		duration, err = strconv.Atoi(raw)
+		if err != nil || duration <= 0 {
+			return models.CheckupItem{}, fmt.Errorf("invalid checkup item duration for %s", name)
+		}
+	}
+	return models.CheckupItem{
+		Name:        name,
+		Category:    category,
+		Department:  csvValue(record, index, "department"),
+		Price:       price,
+		DurationMin: duration,
+		Description: csvValue(record, index, "description"),
+		Status:      normalizeStatus(csvValue(record, index, "status"), "active"),
 	}, nil
 }
 

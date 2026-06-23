@@ -6,6 +6,14 @@
           <h3>体检项目管理</h3>
           <p>维护检查项目、科室、价格和预计时长，供套餐组合复用。</p>
         </div>
+        <div class="head-actions">
+          <el-button :loading="loading.exportCheckupItems" :disabled="!can('admin:data:exchange')" @click="exportCheckupItems">
+            导出项目 CSV
+          </el-button>
+          <el-upload accept=".csv" :auto-upload="false" :show-file-list="false" :on-change="handleCheckupItemImport">
+            <el-button :loading="loading.importCheckupItems" :disabled="!can('admin:data:exchange')">导入项目 CSV</el-button>
+          </el-upload>
+        </div>
       </div>
       <el-form label-position="top" class="form-grid spacious-form">
         <el-form-item label="项目名称"><el-input v-model="checkupItemForm.name" /></el-form-item>
@@ -204,6 +212,8 @@ const {
   editCheckupItem,
   saveCheckupItem,
   archiveCheckupItem,
+  exportCheckupItems,
+  importCheckupItems,
   savePackageItem,
   deletePackageItem,
   editScheduleSlot,
@@ -221,6 +231,10 @@ const submitSchedule = useDebouncedFn(saveScheduleSlot, 350)
 function reloadPackageItems() {
   paginations.packageItems.page = 1
   loadPackageItemsPage(packageItemForm.packageId ? { packageId: packageItemForm.packageId } : {})
+}
+
+async function handleCheckupItemImport(file) {
+  await importCheckupItems(file.raw)
 }
 
 async function removePackageItem(row) {

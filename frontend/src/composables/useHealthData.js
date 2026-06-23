@@ -137,6 +137,8 @@ const loading = reactive({
   schedule: false,
   importPackages: false,
   exportPackages: false,
+  importCheckupItems: false,
+  exportCheckupItems: false,
   importCoupons: false,
   exportCoupons: false,
   exportAppointments: false,
@@ -1074,6 +1076,38 @@ export function useHealthData() {
     }
   }
 
+  async function exportCheckupItems(params = {}) {
+    if (loading.exportCheckupItems) return
+    loading.exportCheckupItems = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/checkup-items/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'checkup-items.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('体检项目 CSV 已导出')
+    } finally {
+      loading.exportCheckupItems = false
+    }
+  }
+
+  async function importCheckupItems(file) {
+    if (!file || loading.importCheckupItems) return
+    loading.importCheckupItems = true
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await request('/checkup-items/import', { method: 'POST', body: formData })
+      ElMessage.success(`导入完成，新增 ${result.created || 0} 条，更新 ${result.updated || 0} 条`)
+      await loadCheckupItemsPage()
+    } finally {
+      loading.importCheckupItems = false
+    }
+  }
+
   async function savePackageItem() {
     if (loading.packageItem) return
     loading.packageItem = true
@@ -1731,6 +1765,8 @@ export function useHealthData() {
     editCheckupItem,
     saveCheckupItem,
     archiveCheckupItem,
+    exportCheckupItems,
+    importCheckupItems,
     savePackageItem,
     deletePackageItem,
     editScheduleSlot,
