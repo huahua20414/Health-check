@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"health-checkup/backend/internal/models"
@@ -144,6 +146,29 @@ func TestAdminReviewsSupportFiltersAndPagination(t *testing.T) {
 	}
 }
 
+func TestAdminCanExportFilteredReviews(t *testing.T) {
+	handler, db, fixture := newReviewFixture(t)
+	createSeedReview(t, handler.db, fixture)
+	router := newReviewRouter(handler, fixture.admin)
+
+	response := performReviewRequest(t, router, http.MethodGet, "/reviews/export?rating=4&keyword=已有", nil)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(response.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected header plus one review, got %d rows: %#v", len(rows), rows)
+	}
+	if rows[1][1] != fixture.user.Name || rows[1][6] != "4" || rows[1][7] != "已有评价" {
+		t.Fatalf("unexpected exported review row: %#v", rows[1])
+	}
+	assertReviewOperationLogCount(t, db, fixture.admin.ID, "export", 1)
+}
+
 func TestAdminCanReplyReviewAndHideIt(t *testing.T) {
 	handler, db, fixture := newReviewFixture(t)
 	review := createSeedReview(t, db, fixture)
@@ -231,6 +256,7 @@ func newReviewFixture(t *testing.T) (*Handler, *gorm.DB, reviewFixture) {
 		&models.CheckupPackage{},
 		&models.Appointment{},
 		&models.ServiceReview{},
+		&models.OperationLog{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -273,6 +299,7 @@ func newReviewRouter(handler *Handler, current models.User) *gin.Engine {
 		c.Next()
 	})
 	router.GET("/reviews", handler.reviews)
+	router.GET("/reviews/export", handler.exportReviews)
 	router.POST("/reviews", handler.createReview)
 	router.PATCH("/reviews/:id/reply", handler.requireRole("admin"), handler.replyReview)
 	return router
@@ -348,6 +375,17 @@ func assertReviewListLength(t *testing.T, response *httptest.ResponseRecorder, w
 	}
 	if len(reviews) != want {
 		t.Fatalf("expected %d reviews, got %d: %#v", want, len(reviews), reviews)
+	}
+}
+
+func assertReviewOperationLogCount(t *testing.T, db *gorm.DB, userID uint, action string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).Where("user_id = ? AND action = ? AND resource = ?", userID, action, "review").Count(&count).Error; err != nil {
+		t.Fatalf("count operation logs: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected %d review operation logs, got %d", want, count)
 	}
 }
 

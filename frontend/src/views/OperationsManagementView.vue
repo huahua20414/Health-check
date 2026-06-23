@@ -123,6 +123,7 @@
           <el-option v-for="score in [5, 4, 3, 2, 1]" :key="score" :label="`${score} 分`" :value="score" />
         </el-select>
         <el-input v-model="reviewKeyword" placeholder="搜索用户/医生/套餐/机构/评价" clearable />
+        <el-button :loading="loading.exportReviews" :disabled="!can('admin:data:exchange')" @click="handleReviewExport">导出评价</el-button>
       </div>
       <el-table :data="reviews" stripe>
         <el-table-column label="用户" width="120"><template #default="{ row }">{{ row.user?.name || '-' }}</template></el-table-column>
@@ -404,6 +405,7 @@ const {
   loadAdminSupportTicketsPage,
   exportAppointments,
   exportCoupons,
+  exportReviews,
   importCoupons,
   exportSupportTickets,
   editCoupon,
@@ -506,6 +508,10 @@ function loadReviewPage(reset = false) {
 
 async function handleSaveReviewReply() {
   await saveReviewReply(reviewFilters())
+}
+
+function handleReviewExport() {
+  return exportReviews(reviewFilters())
 }
 
 function announcementFilters() {

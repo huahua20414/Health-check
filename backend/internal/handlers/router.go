@@ -91,6 +91,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/reports", handler.reports)
 	protected.POST("/reports", handler.requireRoleAndPermission("report:create", "doctor"), handler.createReport)
 	protected.GET("/reviews", handler.reviews)
+	protected.GET("/reviews/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportReviews)
 	protected.POST("/reviews", handler.requireRoleAndPermission("review:create", "user"), handler.createReview)
 	protected.PATCH("/reviews/:id/reply", handler.requireRoleAndPermission("admin:operation:manage", "admin"), handler.replyReview)
 	protected.GET("/family-members", handler.requireRoleAndPermission("family:manage", "user"), handler.familyMembers)
@@ -1614,6 +1615,19 @@ func (h *Handler) cancelWaitlist(c *gin.Context) {
 func (h *Handler) reviews(c *gin.Context) {
 	current := currentUser(c)
 	var reviews []models.ServiceReview
+	query := h.reviewsQuery(c, current)
+	if page, pageSize, ok := paginationParams(c); ok {
+		respondPaginated(c, query, page, pageSize, &reviews)
+		return
+	}
+	if err := query.Limit(100).Find(&reviews).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, reviews)
+}
+
+func (h *Handler) reviewsQuery(c *gin.Context, current models.User) *gorm.DB {
 	query := h.db.Model(&models.ServiceReview{}).
 		Preload("User").Preload("Appointment").Preload("Package").Preload("Institution").Preload("Doctor").
 		Joins("LEFT JOIN users review_users ON review_users.id = service_reviews.user_id").
@@ -1639,15 +1653,37 @@ func (h *Handler) reviews(c *gin.Context) {
 			pattern, pattern, pattern, pattern, pattern, pattern, pattern,
 		)
 	}
-	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &reviews)
-		return
-	}
-	if err := query.Limit(100).Find(&reviews).Error; err != nil {
+	return query
+}
+
+func (h *Handler) exportReviews(c *gin.Context) {
+	current := currentUser(c)
+	var reviews []models.ServiceReview
+	if err := h.reviewsQuery(c, current).Find(&reviews).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, reviews)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="reviews.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "user_name", "user_email", "doctor_name", "package_name", "institution_name", "rating", "content", "reply", "status", "created_at"})
+	for _, review := range reviews {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(review.ID)),
+			review.User.Name,
+			review.User.Email,
+			review.Doctor.Name,
+			review.Package.Name,
+			review.Institution.Name,
+			strconv.Itoa(review.Rating),
+			review.Content,
+			review.Reply,
+			review.Status,
+			review.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "review", "", "success", fmt.Sprintf("%d reviews", len(reviews)))
 }
 
 func (h *Handler) createReview(c *gin.Context) {

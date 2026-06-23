@@ -157,6 +157,7 @@ const loading = reactive({
   exportScheduleSlots: false,
   importCoupons: false,
   exportCoupons: false,
+  exportReviews: false,
   exportAppointments: false,
   exportSupportTickets: false,
   exportUsers: false,
@@ -1610,6 +1611,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportReviews(params = {}) {
+    if (loading.exportReviews) return
+    loading.exportReviews = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/reviews/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'reviews.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('评价 CSV 已导出')
+    } finally {
+      loading.exportReviews = false
+    }
+  }
+
   async function exportSupportTickets(params = {}) {
     if (loading.exportSupportTickets) return
     loading.exportSupportTickets = true
@@ -1949,6 +1968,7 @@ export function useHealthData() {
     createReview,
     editReviewReply,
     saveReviewReply,
+    exportReviews,
     editAnnouncement,
     saveAnnouncement,
     archiveAnnouncement,
