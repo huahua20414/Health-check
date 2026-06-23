@@ -1153,6 +1153,9 @@ func (h *Handler) createScheduleSlot(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.ensureScheduleSlotDoesNotOverlap(c, slot, 0) {
+		return
+	}
 	if err := h.db.Create(&slot).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -1179,6 +1182,9 @@ func (h *Handler) updateScheduleSlot(c *gin.Context) {
 	}
 	slot, ok := h.buildScheduleSlot(c, req, existing.BookedCount)
 	if !ok {
+		return
+	}
+	if !h.ensureScheduleSlotDoesNotOverlap(c, slot, uint(id)) {
 		return
 	}
 	updates := map[string]any{
@@ -3148,6 +3154,10 @@ func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, boo
 			return models.ScheduleSlot{}, false
 		}
 	}
+	if !validTimeRange(req.StartTime, endTime) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "end time must be after start time"})
+		return models.ScheduleSlot{}, false
+	}
 	period := strings.TrimSpace(req.Period)
 	if period == "" {
 		period = "上午"
@@ -3167,6 +3177,24 @@ func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, boo
 		BookedCount:   bookedCount,
 		Status:        normalizeStatus(req.Status, "available"),
 	}, true
+}
+
+func (h *Handler) ensureScheduleSlotDoesNotOverlap(c *gin.Context, slot models.ScheduleSlot, excludeID uint) bool {
+	query := h.db.Model(&models.ScheduleSlot{}).
+		Where("doctor_id = ? AND date = ? AND status <> ? AND start_time < ? AND end_time > ?", slot.DoctorID, slot.Date, "deleted", slot.EndTime, slot.StartTime)
+	if excludeID > 0 {
+		query = query.Where("id <> ?", excludeID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return false
+	}
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "schedule slot overlaps with existing slot"})
+		return false
+	}
+	return true
 }
 
 func (h *Handler) authRequired() gin.HandlerFunc {
@@ -3534,6 +3562,18 @@ func addMinutes(value string, minutes int) (string, error) {
 	}
 	end := parsed.Add(time.Duration(minutes) * time.Minute)
 	return fmt.Sprintf("%02d:%02d", end.Hour(), end.Minute()), nil
+}
+
+func validTimeRange(startTime, endTime string) bool {
+	start, err := time.Parse("15:04", startTime)
+	if err != nil {
+		return false
+	}
+	end, err := time.Parse("15:04", endTime)
+	if err != nil {
+		return false
+	}
+	return end.After(start)
 }
 
 func csvValue(record []string, index map[string]int, key string) string {
