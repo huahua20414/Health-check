@@ -26,6 +26,7 @@ func TestRunSeedsRichDemoBusinessData(t *testing.T) {
 
 	assertDoctorDepartmentsAreUneven(t, db)
 	assertEveryDemoTimeHasSlots(t, db)
+	assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t, db)
 	assertSomeTimesHaveMultipleDoctors(t, db)
 	assertSomeSlotsAreFull(t, db)
 	assertNoSlotIsOverbooked(t, db)
@@ -87,6 +88,35 @@ func assertEveryDemoTimeHasSlots(t *testing.T, db *gorm.DB) {
 		}
 		if count == 0 {
 			t.Fatalf("expected seeded slots for %s", startTime)
+		}
+	}
+}
+
+func assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var institutions []models.CheckupInstitution
+	if err := db.Where("status = ?", "active").Find(&institutions).Error; err != nil {
+		t.Fatalf("query institutions: %v", err)
+	}
+	var categories []string
+	if err := db.Model(&models.CheckupPackage{}).
+		Distinct("category").
+		Where("status = ?", "active").
+		Pluck("category", &categories).Error; err != nil {
+		t.Fatalf("query package categories: %v", err)
+	}
+	for _, institution := range institutions {
+		for _, category := range categories {
+			var count int64
+			err := db.Model(&models.ScheduleSlot{}).
+				Where("institution_id = ? AND category = ? AND date >= DATE('now') AND status = ? AND booked_count < capacity", institution.ID, category, "available").
+				Count(&count).Error
+			if err != nil {
+				t.Fatalf("count future slots for %s/%s: %v", institution.Name, category, err)
+			}
+			if count == 0 {
+				t.Fatalf("expected future available slot for institution %q and category %q", institution.Name, category)
+			}
 		}
 	}
 }

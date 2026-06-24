@@ -244,6 +244,7 @@ func demoScheduleSlots(now time.Time, doctors []models.User, institutions []mode
 	categories := packageCategories(packages)
 	offsets := []int{-2, -1, 0, 1, 2, 3, 4}
 	slots := make([]models.ScheduleSlot, 0, len(offsets)*len(startTimes)*2)
+	usedDoctorTimes := make(map[string]bool)
 	doctorCursor := 0
 	for dayIndex, offset := range offsets {
 		date := now.AddDate(0, 0, offset).Format("2006-01-02")
@@ -256,8 +257,7 @@ func demoScheduleSlots(now time.Time, doctors []models.User, institutions []mode
 				doctorCount = 3
 			}
 			for repeat := 0; repeat < doctorCount; repeat++ {
-				doctor := activeDoctors[doctorCursor%len(activeDoctors)]
-				doctorCursor += 3
+				doctor := nextAvailableDoctor(activeDoctors, &doctorCursor, usedDoctorTimes, date, start)
 				category := categories[(dayIndex+timeIndex+repeat)%len(categories)]
 				institution := institutions[(dayIndex+repeat+timeIndex)%len(institutions)]
 				slots = append(slots, models.ScheduleSlot{
@@ -275,7 +275,7 @@ func demoScheduleSlots(now time.Time, doctors []models.User, institutions []mode
 			}
 		}
 	}
-	return slots
+	return appendCoverageSlots(slots, activeDoctors, institutions, categories, now, usedDoctorTimes, &doctorCursor)
 }
 
 func filterActiveDoctors(doctors []models.User) []models.User {
@@ -298,6 +298,46 @@ func packageCategories(packages []models.CheckupPackage) []string {
 		}
 	}
 	return categories
+}
+
+func appendCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, institutions []models.CheckupInstitution, categories []string, now time.Time, usedDoctorTimes map[string]bool, doctorCursor *int) []models.ScheduleSlot {
+	coverageTimes := []string{"10:00", "11:00", "13:30", "15:00", "16:00", "16:30"}
+	for institutionIndex, institution := range institutions {
+		for categoryIndex, category := range categories {
+			start := coverageTimes[(institutionIndex+categoryIndex)%len(coverageTimes)]
+			date := now.AddDate(0, 0, 5+institutionIndex+categoryIndex/len(coverageTimes)).Format("2006-01-02")
+			doctor := nextAvailableDoctor(doctors, doctorCursor, usedDoctorTimes, date, start)
+			slots = append(slots, models.ScheduleSlot{
+				DoctorID:      doctor.ID,
+				InstitutionID: institution.ID,
+				Date:          date,
+				Period:        periodForStart(start),
+				Category:      category,
+				StartTime:     start,
+				EndTime:       addHalfHour(start),
+				Capacity:      1,
+				BookedCount:   0,
+				Status:        "available",
+			})
+		}
+	}
+	return slots
+}
+
+func nextAvailableDoctor(doctors []models.User, cursor *int, usedDoctorTimes map[string]bool, date, start string) models.User {
+	for attempts := 0; attempts < len(doctors)*2; attempts++ {
+		doctor := doctors[*cursor%len(doctors)]
+		*cursor += 3
+		key := fmt.Sprintf("%d|%s|%s", doctor.ID, date, start)
+		if usedDoctorTimes[key] {
+			continue
+		}
+		usedDoctorTimes[key] = true
+		return doctor
+	}
+	doctor := doctors[*cursor%len(doctors)]
+	*cursor++
+	return doctor
 }
 
 func periodForStart(start string) string {
