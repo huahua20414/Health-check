@@ -166,6 +166,7 @@ const loading = reactive({
   exportLoginLogs: false,
   exportOperationLogs: false,
   exportSystemSettings: false,
+  exportRolePermissions: false,
   permission: false,
   systemSetting: false,
 })
@@ -1757,6 +1758,24 @@ export function useHealthData() {
     }
   }
 
+  async function exportRolePermissions(params = {}) {
+    if (loading.exportRolePermissions) return
+    loading.exportRolePermissions = true
+    try {
+      const query = toQuery(params)
+      const blob = await requestBlob(`/role-permissions/export${query ? `?${query}` : ''}`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'role-permissions.csv'
+      link.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('角色权限 CSV 已导出')
+    } finally {
+      loading.exportRolePermissions = false
+    }
+  }
+
   async function importPackages(file) {
     if (!file || loading.importPackages) return
     loading.importPackages = true
@@ -2057,6 +2076,7 @@ export function useHealthData() {
     exportLoginLogs,
     exportOperationLogs,
     exportSystemSettings,
+    exportRolePermissions,
     importPackages,
     importCoupons,
     updateRolePermission,

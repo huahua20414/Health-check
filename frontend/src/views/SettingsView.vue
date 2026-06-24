@@ -261,6 +261,7 @@
           <el-option label="停用" value="false" />
         </el-select>
         <el-input v-model="permissionKeyword" placeholder="搜索权限点/说明" clearable />
+        <el-button :loading="loading.exportRolePermissions" :disabled="!can('admin:data:exchange')" @click="handleRolePermissionExport">导出权限</el-button>
       </div>
       <el-table :data="rolePermissionRows" stripe>
         <el-table-column label="角色" width="100">
@@ -315,6 +316,7 @@ const {
   exportLoginLogs,
   exportOperationLogs,
   exportSystemSettings,
+  exportRolePermissions,
   importPackages,
   updateRolePermission,
   updateSystemSetting,
@@ -366,16 +368,24 @@ function handleSystemSettingExport() {
 function loadRolePermissionPage(reset = false) {
   if (!isAdmin.value) return
   if (reset) paginations.rolePermissions.page = 1
-  return loadRolePermissionsPage({
-    role: permissionRole.value,
-    enabled: permissionEnabled.value,
-    keyword: debouncedPermissionKeyword.value,
-  })
+  return loadRolePermissionsPage(rolePermissionFilters())
 }
 
 async function handleUpdateRolePermission(row) {
   await updateRolePermission(row)
   await loadRolePermissionPage()
+}
+
+function rolePermissionFilters() {
+  return {
+    role: permissionRole.value,
+    enabled: permissionEnabled.value,
+    keyword: debouncedPermissionKeyword.value,
+  }
+}
+
+function handleRolePermissionExport() {
+  return exportRolePermissions(rolePermissionFilters())
 }
 
 function loadMailLogPage(reset = false) {

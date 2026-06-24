@@ -156,6 +156,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.GET("/operation-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.operationLogs)
 	protected.GET("/operation-logs/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportOperationLogs)
 	protected.GET("/role-permissions", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.rolePermissions)
+	protected.GET("/role-permissions/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportRolePermissions)
 	protected.PATCH("/role-permissions/:id", handler.requireRoleAndPermission("admin:permission:manage", "admin"), handler.updateRolePermission)
 	protected.GET("/system-settings", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.systemSettings)
 	protected.GET("/system-settings/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportSystemSettings)
@@ -2444,21 +2445,9 @@ func (h *Handler) myPermissions(c *gin.Context) {
 
 func (h *Handler) rolePermissions(c *gin.Context) {
 	var permissions []models.RolePermission
-	query := h.db.Model(&models.RolePermission{}).Order("role_permissions.role asc, role_permissions.permission asc")
-	if role := c.Query("role"); role != "" {
-		query = query.Where("role_permissions.role = ?", role)
-	}
-	if enabled := c.Query("enabled"); enabled != "" {
-		value, err := strconv.ParseBool(enabled)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid enabled filter"})
-			return
-		}
-		query = query.Where("role_permissions.enabled = ?", value)
-	}
-	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		pattern := "%" + keyword + "%"
-		query = query.Where("role_permissions.permission LIKE ? OR role_permissions.description LIKE ?", pattern, pattern)
+	query, ok := h.rolePermissionsQuery(c)
+	if !ok {
+		return
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
 		respondPaginated(c, query, page, pageSize, &permissions)
@@ -2469,6 +2458,55 @@ func (h *Handler) rolePermissions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, permissions)
+}
+
+func (h *Handler) rolePermissionsQuery(c *gin.Context) (*gorm.DB, bool) {
+	query := h.db.Model(&models.RolePermission{}).Order("role_permissions.role asc, role_permissions.permission asc")
+	if role := c.Query("role"); role != "" {
+		query = query.Where("role_permissions.role = ?", role)
+	}
+	if enabled := c.Query("enabled"); enabled != "" {
+		value, err := strconv.ParseBool(enabled)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid enabled filter"})
+			return nil, false
+		}
+		query = query.Where("role_permissions.enabled = ?", value)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("role_permissions.permission LIKE ? OR role_permissions.description LIKE ?", pattern, pattern)
+	}
+	return query, true
+}
+
+func (h *Handler) exportRolePermissions(c *gin.Context) {
+	query, ok := h.rolePermissionsQuery(c)
+	if !ok {
+		return
+	}
+	var permissions []models.RolePermission
+	if err := query.Find(&permissions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="role-permissions.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"id", "role", "permission", "description", "enabled", "created_at", "updated_at"})
+	for _, permission := range permissions {
+		_ = writer.Write([]string{
+			strconv.Itoa(int(permission.ID)),
+			permission.Role,
+			permission.Permission,
+			permission.Description,
+			strconv.FormatBool(permission.Enabled),
+			permission.CreatedAt.Format(time.RFC3339),
+			permission.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "role_permission", "", "success", fmt.Sprintf("%d permissions", len(permissions)))
 }
 
 func (h *Handler) updateRolePermission(c *gin.Context) {

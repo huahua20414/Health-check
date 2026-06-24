@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"health-checkup/backend/internal/models"
@@ -40,6 +42,29 @@ func TestRolePermissionsRejectInvalidEnabledFilter(t *testing.T) {
 	}
 }
 
+func TestExportRolePermissionsUsesFiltersAndAudits(t *testing.T) {
+	handler := newRolePermissionFixture(t)
+	admin := models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"}
+	router := newRolePermissionRouterWithUser(handler, admin)
+
+	response := performRolePermissionGet(t, router, "/role-permissions/export?role=admin&enabled=false&keyword=数据")
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(response.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected header plus one permission, got %d rows: %#v", len(rows), rows)
+	}
+	if rows[1][1] != "admin" || rows[1][2] != "admin:data:exchange" || rows[1][4] != "false" {
+		t.Fatalf("unexpected role permission csv row: %#v", rows[1])
+	}
+	assertRolePermissionOperationLogCount(t, handler.db, admin.ID, "export", 1)
+}
+
 func newRolePermissionFixture(t *testing.T) *Handler {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -47,7 +72,7 @@ func newRolePermissionFixture(t *testing.T) *Handler {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.RolePermission{}); err != nil {
+	if err := db.AutoMigrate(&models.RolePermission{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	rows := []models.RolePermission{
@@ -58,13 +83,39 @@ func newRolePermissionFixture(t *testing.T) *Handler {
 	if err := db.Create(&rows).Error; err != nil {
 		t.Fatalf("create permissions: %v", err)
 	}
+	if err := db.Model(&models.RolePermission{}).Where("permission = ?", "admin:data:exchange").Update("enabled", false).Error; err != nil {
+		t.Fatalf("disable data exchange permission: %v", err)
+	}
 	return &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}
 }
 
 func newRolePermissionRouter(handler *Handler) *gin.Engine {
 	router := gin.New()
 	router.GET("/role-permissions", handler.rolePermissions)
+	router.GET("/role-permissions/export", handler.exportRolePermissions)
 	return router
+}
+
+func newRolePermissionRouterWithUser(handler *Handler, current models.User) *gin.Engine {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user", current)
+		c.Next()
+	})
+	router.GET("/role-permissions", handler.rolePermissions)
+	router.GET("/role-permissions/export", handler.exportRolePermissions)
+	return router
+}
+
+func assertRolePermissionOperationLogCount(t *testing.T, db *gorm.DB, userID uint, action string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&models.OperationLog{}).Where("user_id = ? AND action = ? AND resource = ?", userID, action, "role_permission").Count(&count).Error; err != nil {
+		t.Fatalf("count operation logs: %v", err)
+	}
+	if count != want {
+		t.Fatalf("expected %d operation logs, got %d", want, count)
+	}
 }
 
 type rolePermissionPage struct {
