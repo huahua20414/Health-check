@@ -52,12 +52,12 @@
           </div>
         </div>
         <div class="bar-list">
-          <div v-for="row in adminDashboard.appointmentTrend" :key="row.label" class="bar-row">
+          <div v-for="row in appointmentTrendRows" :key="row.label" class="bar-row">
             <span>{{ row.label || '未排期' }}</span>
             <div><i :style="{ width: `${barWidth(row.count, maxTrend)}%` }" /></div>
             <strong>{{ row.count }}</strong>
           </div>
-          <el-empty v-if="adminDashboard.appointmentTrend.length === 0" description="暂无趋势数据" />
+          <el-empty v-if="appointmentTrendRows.length === 0" description="暂无趋势数据" />
         </div>
       </div>
 
@@ -68,7 +68,7 @@
             <p>统计非取消预约的套餐销量和销售额。</p>
           </div>
         </div>
-        <el-table :data="adminDashboard.packageSales" stripe>
+        <el-table :data="packageSalesRows" stripe>
           <el-table-column prop="label" label="套餐" />
           <el-table-column prop="count" label="销量" width="90" />
           <el-table-column label="销售额" width="120">
@@ -86,7 +86,7 @@
             <p>按预约支付状态汇总订单数和应收金额。</p>
           </div>
         </div>
-        <el-table :data="adminDashboard.paymentStatus" stripe>
+        <el-table :data="paymentStatusRows" stripe>
           <el-table-column label="状态" min-width="100">
             <template #default="{ row }">{{ paymentStatusText(row.label) }}</template>
           </el-table-column>
@@ -95,7 +95,7 @@
             <template #default="{ row }">￥{{ Number(row.total || 0).toFixed(2) }}</template>
           </el-table-column>
         </el-table>
-        <el-empty v-if="adminDashboard.paymentStatus.length === 0" description="暂无支付数据" />
+        <el-empty v-if="paymentStatusRows.length === 0" description="暂无支付数据" />
       </div>
 
       <div class="panel">
@@ -106,12 +106,12 @@
           </div>
         </div>
         <div class="bar-list compact-bars">
-          <div v-for="row in adminDashboard.userGrowth" :key="row.label" class="bar-row">
+          <div v-for="row in userGrowthRows" :key="row.label" class="bar-row">
             <span>{{ row.label }}</span>
             <div><i :style="{ width: `${barWidth(row.count, maxGrowth)}%` }" /></div>
             <strong>{{ row.count }}</strong>
           </div>
-          <el-empty v-if="adminDashboard.userGrowth.length === 0" description="暂无增长数据" />
+          <el-empty v-if="userGrowthRows.length === 0" description="暂无增长数据" />
         </div>
       </div>
     </div>
@@ -132,8 +132,12 @@ const rangeOptions = [
 ]
 const summary = computed(() => adminDashboard.value.summary || {})
 const dashboardRange = computed(() => adminDashboard.value.range || { appointmentStartDate: '-', appointmentEndDate: '-' })
-const maxTrend = computed(() => Math.max(1, ...adminDashboard.value.appointmentTrend.map((item) => item.count || 0)))
-const maxGrowth = computed(() => Math.max(1, ...adminDashboard.value.userGrowth.map((item) => item.count || 0)))
+const appointmentTrendRows = computed(() => adminDashboard.value.appointmentTrend || [])
+const packageSalesRows = computed(() => adminDashboard.value.packageSales || [])
+const paymentStatusRows = computed(() => adminDashboard.value.paymentStatus || [])
+const userGrowthRows = computed(() => adminDashboard.value.userGrowth || [])
+const maxTrend = computed(() => Math.max(1, ...appointmentTrendRows.value.map((item) => item.count || 0)))
+const maxGrowth = computed(() => Math.max(1, ...userGrowthRows.value.map((item) => item.count || 0)))
 
 function barWidth(value, max) {
   return Math.max(6, Math.round((Number(value || 0) / Number(max.value || 1)) * 100))

@@ -3880,17 +3880,26 @@ func (h *Handler) permissionsForRole(role string) []string {
 	if err := h.db.Where("role = ?", role).Find(&rows).Error; err != nil {
 		return []string{}
 	}
-	if len(rows) > 0 {
-		permissions := make([]string, 0, len(rows))
-		for _, row := range rows {
-			if !row.Enabled {
-				continue
-			}
-			permissions = append(permissions, row.Permission)
-		}
-		return permissions
+	defaults := fallbackPermissions(role)
+	enabled := make(map[string]bool, len(defaults)+len(rows))
+	order := make([]string, 0, len(defaults)+len(rows))
+	for _, permission := range defaults {
+		enabled[permission] = true
+		order = append(order, permission)
 	}
-	return fallbackPermissions(role)
+	for _, row := range rows {
+		if _, exists := enabled[row.Permission]; !exists {
+			order = append(order, row.Permission)
+		}
+		enabled[row.Permission] = row.Enabled
+	}
+	permissions := make([]string, 0, len(order))
+	for _, permission := range order {
+		if enabled[permission] {
+			permissions = append(permissions, permission)
+		}
+	}
+	return permissions
 }
 
 func fallbackPermissions(role string) []string {

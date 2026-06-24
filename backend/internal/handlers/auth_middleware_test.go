@@ -150,6 +150,18 @@ func TestRequirePermissionUsesFallbackWhenPermissionTableEmpty(t *testing.T) {
 	}
 }
 
+func TestRequirePermissionMergesFallbackWhenPermissionTableIsPartial(t *testing.T) {
+	user := models.User{ID: 1, Name: "管理员", Email: "admin@example.com", Role: "admin", Status: "active"}
+	router, redisClient := newAuthMiddlewareTestRouter(t, []models.User{user}, models.RolePermission{Role: "admin", Permission: "admin:data:exchange", Enabled: true})
+	token := issueTestToken(t, redisClient, user)
+
+	response := performAuthMiddlewareRequest(t, router, token)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
 func newAuthMiddlewareTestRouter(t *testing.T, users []models.User, permissions ...models.RolePermission) (*gin.Engine, *redis.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
