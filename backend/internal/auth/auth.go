@@ -13,7 +13,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Claims struct {
@@ -21,18 +20,6 @@ type Claims struct {
 	UserID    uint   `json:"uid"`
 	Role      string `json:"role"`
 	jwt.RegisteredClaims
-}
-
-func HashPassword(password string) (string, error) {
-	if len(password) < 6 {
-		return "", errors.New("password must be at least 6 characters")
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(hash), err
-}
-
-func CheckPassword(hash, password string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 func IssueToken(ctx context.Context, redisClient *redis.Client, secret string, ttl time.Duration, user models.User) (string, error) {

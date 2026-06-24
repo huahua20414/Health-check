@@ -206,6 +206,17 @@ func (h *Handler) registerUser(c *gin.Context) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
+	name := strings.TrimSpace(req.Name)
+	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	age, ok := ageFromIDCard(idCard, time.Now())
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id card"})
+		return
+	}
 	if !h.verifyAuthEmailCode(c, email, req.Code) {
 		return
 	}
@@ -213,22 +224,16 @@ func (h *Handler) registerUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
 		return
 	}
-	passwordHash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	user := models.User{
-		Name:         strings.TrimSpace(req.Name),
-		Phone:        syntheticPhone(email),
-		PasswordHash: passwordHash,
-		Role:         "user",
-		Status:       "active",
-		Gender:       req.Gender,
-		Age:          req.Age,
-		IDCard:       req.IDCard,
-		Email:        email,
-		EmailNotify:  true,
+		Name:        name,
+		Phone:       syntheticPhone(email),
+		Role:        "user",
+		Status:      "active",
+		Gender:      strings.TrimSpace(req.Gender),
+		Age:         age,
+		IDCard:      idCard,
+		Email:       email,
+		EmailNotify: true,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists or invalid user data"})
@@ -244,6 +249,14 @@ func (h *Handler) registerDoctor(c *gin.Context) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
+	name := strings.TrimSpace(req.Name)
+	employeeNo := strings.TrimSpace(req.EmployeeNo)
+	department := strings.TrimSpace(req.Department)
+	title := strings.TrimSpace(req.Title)
+	if name == "" || employeeNo == "" || department == "" || title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "doctor name, employee no, department and title are required"})
+		return
+	}
 	if !h.verifyAuthEmailCode(c, email, req.Code) {
 		return
 	}
@@ -251,22 +264,16 @@ func (h *Handler) registerDoctor(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
 		return
 	}
-	passwordHash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	user := models.User{
-		Name:         strings.TrimSpace(req.Name),
-		Phone:        syntheticPhone(email),
-		PasswordHash: passwordHash,
-		Role:         "doctor",
-		Status:       "pending",
-		Email:        email,
-		EmployeeNo:   req.EmployeeNo,
-		Department:   req.Department,
-		Title:        req.Title,
-		EmailNotify:  true,
+		Name:        name,
+		Phone:       syntheticPhone(email),
+		Role:        "doctor",
+		Status:      "pending",
+		Email:       email,
+		EmployeeNo:  employeeNo,
+		Department:  department,
+		Title:       title,
+		EmailNotify: true,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists or invalid doctor data"})
@@ -292,21 +299,10 @@ func (h *Handler) login(c *gin.Context) {
 	}
 	if err := query.Find(&candidates).Error; err != nil || len(candidates) == 0 {
 		h.recordLogin(c, 0, email, req.Role, "failed", "account not found")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email, password or code"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or code"})
 		return
 	}
-	var user models.User
-	for _, candidate := range candidates {
-		if auth.CheckPassword(candidate.PasswordHash, req.Password) {
-			user = candidate
-			break
-		}
-	}
-	if user.ID == 0 {
-		h.recordLogin(c, 0, email, req.Role, "failed", "password mismatch")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email, password or code"})
-		return
-	}
+	user := candidates[0]
 	if user.Status != "active" {
 		h.recordLogin(c, user.ID, user.Email, user.Role, "blocked", user.Status)
 		c.JSON(http.StatusForbidden, gin.H{"error": "account is not active", "status": user.Status})
@@ -343,11 +339,21 @@ func (h *Handler) updateProfile(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
+	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	age := 0
+	if idCard != "" {
+		calculatedAge, ok := ageFromIDCard(idCard, time.Now())
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id card"})
+			return
+		}
+		age = calculatedAge
+	}
 	updates := map[string]any{
-		"name":         req.Name,
-		"gender":       req.Gender,
-		"age":          req.Age,
-		"id_card":      req.IDCard,
+		"name":         strings.TrimSpace(req.Name),
+		"gender":       strings.TrimSpace(req.Gender),
+		"age":          age,
+		"id_card":      idCard,
 		"avatar_url":   req.AvatarURL,
 		"bio":          req.Bio,
 		"email_notify": req.EmailNotify,
@@ -1769,14 +1775,24 @@ func (h *Handler) createFamilyMember(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
+	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	age := 0
+	if idCard != "" {
+		calculatedAge, ok := ageFromIDCard(idCard, time.Now())
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id card"})
+			return
+		}
+		age = calculatedAge
+	}
 	member := models.FamilyMember{
 		UserID:   current.ID,
 		Name:     strings.TrimSpace(req.Name),
 		Relation: strings.TrimSpace(req.Relation),
-		Gender:   req.Gender,
-		Age:      req.Age,
-		IDCard:   req.IDCard,
-		Phone:    req.Phone,
+		Gender:   strings.TrimSpace(req.Gender),
+		Age:      age,
+		IDCard:   idCard,
+		Phone:    strings.TrimSpace(req.Phone),
 		Status:   "active",
 	}
 	if err := h.db.Create(&member).Error; err != nil {
@@ -1798,13 +1814,23 @@ func (h *Handler) updateFamilyMember(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
+	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	age := 0
+	if idCard != "" {
+		calculatedAge, ok := ageFromIDCard(idCard, time.Now())
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id card"})
+			return
+		}
+		age = calculatedAge
+	}
 	updates := map[string]any{
 		"name":     strings.TrimSpace(req.Name),
 		"relation": strings.TrimSpace(req.Relation),
-		"gender":   req.Gender,
-		"age":      req.Age,
-		"id_card":  req.IDCard,
-		"phone":    req.Phone,
+		"gender":   strings.TrimSpace(req.Gender),
+		"age":      age,
+		"id_card":  idCard,
+		"phone":    strings.TrimSpace(req.Phone),
 	}
 	result := h.db.Model(&models.FamilyMember{}).Where("id = ? AND user_id = ? AND status <> ?", id, current.ID, "deleted").Updates(updates)
 	if result.Error != nil {
@@ -4292,27 +4318,23 @@ func bind(c *gin.Context, target any) bool {
 }
 
 type loginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-	Code     string `json:"code"`
-	Role     string `json:"role"`
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code"`
+	Role  string `json:"role"`
 }
 
 type registerUserRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Code     string `json:"code" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	Gender   string `json:"gender"`
-	Age      int    `json:"age"`
-	IDCard   string `json:"idCard"`
+	Name   string `json:"name" binding:"required"`
+	Email  string `json:"email" binding:"required,email"`
+	Code   string `json:"code" binding:"required"`
+	Gender string `json:"gender"`
+	IDCard string `json:"idCard" binding:"required"`
 }
 
 type registerDoctorRequest struct {
 	Name       string `json:"name" binding:"required"`
 	Email      string `json:"email" binding:"required,email"`
 	Code       string `json:"code" binding:"required"`
-	Password   string `json:"password" binding:"required"`
 	EmployeeNo string `json:"employeeNo" binding:"required"`
 	Department string `json:"department" binding:"required"`
 	Title      string `json:"title" binding:"required"`
@@ -4368,7 +4390,6 @@ type supportTicketReplyRequest struct {
 type profileRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Gender      string `json:"gender"`
-	Age         int    `json:"age"`
 	IDCard      string `json:"idCard"`
 	AvatarURL   string `json:"avatarUrl"`
 	Bio         string `json:"bio"`
@@ -4511,7 +4532,6 @@ type familyMemberRequest struct {
 	Name     string `json:"name" binding:"required"`
 	Relation string `json:"relation" binding:"required"`
 	Gender   string `json:"gender"`
-	Age      int    `json:"age"`
 	IDCard   string `json:"idCard"`
 	Phone    string `json:"phone"`
 }
@@ -5032,6 +5052,42 @@ func (h *Handler) emailExists(email string) bool {
 	var count int64
 	h.db.Model(&models.User{}).Where("email = ?", email).Count(&count)
 	return count > 0
+}
+
+func ageFromIDCard(idCard string, now time.Time) (int, bool) {
+	idCard = strings.ToUpper(strings.TrimSpace(idCard))
+	if len(idCard) != 18 {
+		return 0, false
+	}
+	for i := 0; i < 17; i++ {
+		if idCard[i] < '0' || idCard[i] > '9' {
+			return 0, false
+		}
+	}
+	if !((idCard[17] >= '0' && idCard[17] <= '9') || idCard[17] == 'X') {
+		return 0, false
+	}
+	weights := []int{7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2}
+	checks := "10X98765432"
+	sum := 0
+	for i, weight := range weights {
+		sum += int(idCard[i]-'0') * weight
+	}
+	if idCard[17] != checks[sum%11] {
+		return 0, false
+	}
+	birth, err := time.Parse("20060102", idCard[6:14])
+	if err != nil || birth.After(now) {
+		return 0, false
+	}
+	age := now.Year() - birth.Year()
+	if now.Month() < birth.Month() || (now.Month() == birth.Month() && now.Day() < birth.Day()) {
+		age--
+	}
+	if age < 0 || age > 120 {
+		return 0, false
+	}
+	return age, true
 }
 
 func syntheticPhone(email string) string {

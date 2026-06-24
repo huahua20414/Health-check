@@ -17,13 +17,13 @@
               <el-option label="女" value="女" />
             </el-select>
           </el-form-item>
-          <el-form-item label="年龄"><el-input-number v-model="familyMemberForm.age" :min="0" :max="120" /></el-form-item>
-          <el-form-item label="证件号"><el-input v-model="familyMemberForm.idCard" /></el-form-item>
+          <el-form-item label="证件号"><el-input v-model="familyMemberForm.idCard" maxlength="18" /></el-form-item>
+          <el-form-item label="年龄"><el-input :model-value="memberAgeText" disabled /></el-form-item>
           <el-form-item label="联系电话"><el-input v-model="familyMemberForm.phone" /></el-form-item>
         </el-form>
         <div class="dialog-actions">
           <el-button @click="editFamilyMember(null)">清空</el-button>
-          <el-button type="primary" :loading="loading.familyMember" :disabled="!familyMemberForm.name || !familyMemberForm.relation || !can('family:manage')" @click="saveFamilyMember">
+          <el-button type="primary" :loading="loading.familyMember" :disabled="!canSaveMember" @click="saveFamilyMember">
             保存成员
           </el-button>
         </div>
@@ -56,10 +56,16 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
-import { useHealthData } from '../composables/useHealthData'
+import { computed, onMounted } from 'vue'
+import { calculateAgeFromIDCard, useHealthData } from '../composables/useHealthData'
 
 const { familyMembers, familyMemberForm, loading, can, loadAll, editFamilyMember, saveFamilyMember, deleteFamilyMember } = useHealthData()
+const memberAge = computed(() => calculateAgeFromIDCard(familyMemberForm.idCard))
+const memberAgeText = computed(() => {
+  if (!familyMemberForm.idCard) return '填写证件号后自动计算'
+  return memberAge.value === null ? '证件号未通过校验' : String(memberAge.value) + ' 岁'
+})
+const canSaveMember = computed(() => Boolean(familyMemberForm.name && familyMemberForm.relation && can('family:manage') && (!familyMemberForm.idCard || memberAge.value !== null)))
 
 onMounted(loadAll)
 </script>

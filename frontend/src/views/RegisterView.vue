@@ -23,10 +23,8 @@
               <el-option label="女" value="女" />
             </el-select>
           </el-form-item>
-          <el-form-item label="年龄"><el-input-number v-model="userRegisterForm.age" :min="0" :max="120" /></el-form-item>
-          <el-form-item label="身份证号"><el-input v-model="userRegisterForm.idCard" /></el-form-item>
-          <el-form-item label="密码"><el-input v-model="userRegisterForm.password" type="password" show-password /></el-form-item>
-          <el-form-item label="确认密码"><el-input v-model="userRegisterForm.confirmPassword" type="password" show-password /></el-form-item>
+          <el-form-item label="身份证号"><el-input v-model="userRegisterForm.idCard" maxlength="18" /></el-form-item>
+          <el-form-item label="年龄"><el-input :model-value="userAgeText" disabled /></el-form-item>
         </template>
 
         <template v-else>
@@ -45,11 +43,9 @@
             </el-select>
           </el-form-item>
           <el-form-item label="职称"><el-input v-model="doctorRegisterForm.title" /></el-form-item>
-          <el-form-item label="密码"><el-input v-model="doctorRegisterForm.password" type="password" show-password /></el-form-item>
-          <el-form-item label="确认密码"><el-input v-model="doctorRegisterForm.confirmPassword" type="password" show-password /></el-form-item>
         </template>
 
-        <el-button type="primary" size="large" :loading="loading.register" @click="submit">提交注册</el-button>
+        <el-button type="primary" size="large" :loading="loading.register" :disabled="!canSubmit" @click="submit">提交注册</el-button>
         <div class="auth-links"><router-link to="/login">返回登录</router-link></div>
       </el-form>
     </section>
@@ -60,7 +56,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { doctorDepartments, useHealthData } from '../composables/useHealthData'
+import { calculateAgeFromIDCard, doctorDepartments, useHealthData } from '../composables/useHealthData'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 
 const route = useRoute()
@@ -69,6 +65,14 @@ const isDoctorRegister = computed(() => route.params.role === 'doctor')
 const { userRegisterForm, doctorRegisterForm, loading, registerUser, registerDoctor, sendAuthEmailCode } = useHealthData()
 const sendUserCode = useDebouncedFn(() => sendAuthEmailCode(userRegisterForm.email), 800)
 const sendDoctorCode = useDebouncedFn(() => sendAuthEmailCode(doctorRegisterForm.email), 800)
+const userAge = computed(() => calculateAgeFromIDCard(userRegisterForm.idCard))
+const userAgeText = computed(() => (userAge.value === null ? '身份证校验通过后自动计算' : String(userAge.value) + ' 岁'))
+const canSubmit = computed(() => {
+  if (isDoctorRegister.value) {
+    return Boolean(doctorRegisterForm.name && doctorRegisterForm.email && doctorRegisterForm.code?.length === 6 && doctorRegisterForm.employeeNo && doctorRegisterForm.department && doctorRegisterForm.title)
+  }
+  return Boolean(userRegisterForm.name && userRegisterForm.email && userRegisterForm.code?.length === 6 && userAge.value !== null)
+})
 
 async function submit() {
   try {

@@ -7,14 +7,12 @@ export const devAuthEnabled = import.meta.env.VITE_DEV_AUTH === 'true'
 export const doctorDepartments = ['健康管理科', '内科', '影像科', '妇科', '老年医学科', '检验科', '心电科']
 export const specialtyOptions = ['入职体检', '慢病筛查', '年度综合', '影像专项', '女性专项', '老年体检']
 
-const loginForm = reactive({ email: 'huahua20414@foxmail.com', password: '123456', code: '', role: 'user' })
-const userRegisterForm = reactive({ name: '', email: '', code: '', password: '', confirmPassword: '', gender: '', age: null, idCard: '' })
+const loginForm = reactive({ email: 'huahua20414@foxmail.com', code: '', role: 'user' })
+const userRegisterForm = reactive({ name: '', email: '', code: '', gender: '', idCard: '' })
 const doctorRegisterForm = reactive({
   name: '',
   email: '',
   code: '',
-  password: '',
-  confirmPassword: '',
   employeeNo: '',
   department: '',
   title: '',
@@ -303,10 +301,41 @@ function saveUser(user) {
   }
 }
 
-function assertPasswordsMatch(form) {
-  if (form.password !== form.confirmPassword) {
-    throw new Error('两次输入的密码不一致')
-  }
+function assertRequired(value, message) {
+  if (!String(value || '').trim()) throw new Error(message)
+}
+
+function assertEmail(value) {
+  const email = String(value || '').trim()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('请输入有效邮箱')
+}
+
+function assertCode(value) {
+  if (!/^\d{6}$/.test(String(value || '').trim())) throw new Error('请输入 6 位验证码')
+}
+
+export function calculateAgeFromIDCard(value, now = new Date()) {
+  const idCard = String(value || '').trim().toUpperCase()
+  if (!/^\d{17}[\dX]$/.test(idCard)) return null
+  const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+  const checks = '10X98765432'
+  const sum = weights.reduce((total, weight, index) => total + Number(idCard[index]) * weight, 0)
+  if (idCard[17] !== checks[sum % 11]) return null
+  const year = Number(idCard.slice(6, 10))
+  const month = Number(idCard.slice(10, 12))
+  const day = Number(idCard.slice(12, 14))
+  const birth = new Date(year, month - 1, day)
+  if (birth.getFullYear() !== year || birth.getMonth() !== month - 1 || birth.getDate() !== day || birth > now) return null
+  let age = now.getFullYear() - year
+  const hadBirthday = now.getMonth() > birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate())
+  if (!hadBirthday) age -= 1
+  return age >= 0 && age <= 120 ? age : null
+}
+
+function assertIDCard(value, required = false) {
+  const idCard = String(value || '').trim()
+  if (!idCard && !required) return
+  if (calculateAgeFromIDCard(idCard) === null) throw new Error('请输入有效身份证号')
 }
 
 function toQuery(params) {
@@ -354,6 +383,7 @@ export function useHealthData() {
 
   async function sendAuthEmailCode(email) {
     if (loading.authCode) return
+    assertEmail(email)
     loading.authCode = true
     try {
       await request('/auth/email-code', {
@@ -368,6 +398,8 @@ export function useHealthData() {
 
   async function login() {
     if (loading.login) return
+    assertEmail(loginForm.email)
+    if (!devAuthEnabled) assertCode(loginForm.code)
     loading.login = true
     try {
       const result = await request('/auth/login', {
@@ -387,18 +419,19 @@ export function useHealthData() {
 
   async function registerUser() {
     if (loading.register) return
+    assertRequired(userRegisterForm.name, '请输入姓名')
+    assertEmail(userRegisterForm.email)
+    assertCode(userRegisterForm.code)
+    assertIDCard(userRegisterForm.idCard, true)
     loading.register = true
     try {
-      assertPasswordsMatch(userRegisterForm)
       await request('/auth/register/user', {
         method: 'POST',
         body: JSON.stringify({
           name: userRegisterForm.name,
           email: userRegisterForm.email,
           code: userRegisterForm.code,
-          password: userRegisterForm.password,
           gender: userRegisterForm.gender,
-          age: Number(userRegisterForm.age || 0),
           idCard: userRegisterForm.idCard,
         }),
       })
@@ -410,16 +443,20 @@ export function useHealthData() {
 
   async function registerDoctor() {
     if (loading.register) return
+    assertRequired(doctorRegisterForm.name, '请输入姓名')
+    assertEmail(doctorRegisterForm.email)
+    assertCode(doctorRegisterForm.code)
+    assertRequired(doctorRegisterForm.employeeNo, '请输入工号')
+    assertRequired(doctorRegisterForm.department, '请选择科室')
+    assertRequired(doctorRegisterForm.title, '请输入职称')
     loading.register = true
     try {
-      assertPasswordsMatch(doctorRegisterForm)
       await request('/auth/register/doctor', {
         method: 'POST',
         body: JSON.stringify({
           name: doctorRegisterForm.name,
           email: doctorRegisterForm.email,
           code: doctorRegisterForm.code,
-          password: doctorRegisterForm.password,
           employeeNo: doctorRegisterForm.employeeNo,
           department: doctorRegisterForm.department,
           title: doctorRegisterForm.title,
@@ -658,13 +695,15 @@ export function useHealthData() {
 
   async function saveFamilyMember() {
     if (loading.familyMember) return
+    assertRequired(familyMemberForm.name, '请输入成员姓名')
+    assertRequired(familyMemberForm.relation, '请输入成员关系')
+    assertIDCard(familyMemberForm.idCard)
     loading.familyMember = true
     try {
       const body = JSON.stringify({
         name: familyMemberForm.name,
         relation: familyMemberForm.relation,
         gender: familyMemberForm.gender,
-        age: Number(familyMemberForm.age || 0),
         idCard: familyMemberForm.idCard,
         phone: familyMemberForm.phone,
       })
@@ -1406,12 +1445,13 @@ export function useHealthData() {
 
   async function saveProfile() {
     if (loading.profile) return
+    assertRequired(profileForm.name, '请输入姓名')
+    assertIDCard(profileForm.idCard)
     loading.profile = true
     try {
       const payload = {
         name: profileForm.name,
         gender: profileForm.gender,
-        age: Number(profileForm.age || 0),
         idCard: profileForm.idCard,
         avatarUrl: profileForm.avatarUrl,
         bio: profileForm.bio,

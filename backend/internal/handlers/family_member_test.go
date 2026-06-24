@@ -69,7 +69,7 @@ func TestCreateFamilyMemberAssignsCurrentUser(t *testing.T) {
 		Name:     "母亲",
 		Relation: "母亲",
 		Gender:   "female",
-		Age:      58,
+		IDCard:   testIDCard("19680101"),
 		Phone:    "13900000001",
 	})
 
@@ -85,6 +85,9 @@ func TestCreateFamilyMemberAssignsCurrentUser(t *testing.T) {
 	}
 	if created.Status != "active" {
 		t.Fatalf("created member should be active, got %q", created.Status)
+	}
+	if created.Age <= 0 || created.IDCard == "" {
+		t.Fatalf("created member should have age calculated from id card, got %#v", created)
 	}
 	var count int64
 	if err := db.Model(&models.FamilyMember{}).Where("user_id = ?", fixture.user.ID).Count(&count).Error; err != nil {
@@ -126,7 +129,7 @@ func TestUpdateFamilyMemberUpdatesCurrentUsersMember(t *testing.T) {
 		Name:     "父亲-更新",
 		Relation: "父亲",
 		Gender:   "male",
-		Age:      62,
+		IDCard:   testIDCard("19620101"),
 		Phone:    "13900000002",
 	})
 
@@ -137,7 +140,7 @@ func TestUpdateFamilyMemberUpdatesCurrentUsersMember(t *testing.T) {
 	if err := db.First(&member, fixture.member.ID).Error; err != nil {
 		t.Fatalf("load updated member: %v", err)
 	}
-	if member.Name != "父亲-更新" || member.UserID != fixture.user.ID || member.Age != 62 {
+	if member.Name != "父亲-更新" || member.UserID != fixture.user.ID || member.Age <= 0 || member.IDCard == "" {
 		t.Fatalf("member was not updated correctly: %#v", member)
 	}
 	assertFamilyOperationLog(t, db, fixture.user.ID, fixture.member.ID, "update", "父亲-更新")

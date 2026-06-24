@@ -3,7 +3,6 @@ package seed
 import (
 	"time"
 
-	"health-checkup/backend/internal/auth"
 	"health-checkup/backend/internal/models"
 
 	"gorm.io/gorm"
@@ -14,13 +13,8 @@ func Run(db *gorm.DB) error {
 		return err
 	}
 
-	adminPassword, err := auth.HashPassword("123456")
-	if err != nil {
-		return err
-	}
-
 	admin := models.User{
-		Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", PasswordHash: adminPassword, Role: "admin", Status: "active", EmailNotify: false,
+		Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", Role: "admin", Status: "active", EmailNotify: false,
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		return err

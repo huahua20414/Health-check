@@ -13,10 +13,7 @@
         <el-form-item label="邮箱">
           <el-input v-model="loginForm.email" placeholder="请输入邮箱" />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入密码" />
-        </el-form-item>
-        <el-form-item v-if="!devAuthEnabled" label="邮箱验证码">
+        <el-form-item label="邮箱验证码">
           <div class="inline-code">
             <el-input v-model="loginForm.code" maxlength="6" placeholder="6 位验证码" />
             <el-button :loading="loading.authCode" :disabled="!loginForm.email" @click="sendCode">发送验证码</el-button>
@@ -27,7 +24,7 @@
           <el-button @click="quickLogin('doctor')">医生端</el-button>
           <el-button @click="quickLogin('admin')">管理端</el-button>
         </div>
-        <el-button type="primary" size="large" :loading="loading.login" @click="handleLogin">登录系统</el-button>
+        <el-button type="primary" size="large" :loading="loading.login" :disabled="!canSubmit" @click="handleLogin">登录系统</el-button>
         <div class="auth-links">
           <router-link to="/register/user">用户注册</router-link>
           <router-link to="/register/doctor">医生注册</router-link>
@@ -38,6 +35,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { homePath } from '../router'
@@ -52,6 +50,7 @@ const roleOptions = [
   { label: '医生', value: 'doctor' },
   { label: '管理员', value: 'admin' },
 ]
+const canSubmit = computed(() => Boolean(loginForm.email && (devAuthEnabled || loginForm.code?.length === 6)))
 
 async function handleLogin() {
   try {
@@ -65,7 +64,6 @@ async function handleLogin() {
 async function quickLogin(role) {
   loginForm.role = role
   loginForm.email = 'huahua20414@foxmail.com'
-  loginForm.password = '123456'
   loginForm.code = ''
   await handleLogin()
 }

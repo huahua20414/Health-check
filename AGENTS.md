@@ -62,7 +62,7 @@
 - 未登录访问受保护接口必须返回 `401`。
 - 登录、注册、提交预约、生成报告等操作必须防重复提交。
 - 后端启用同 IP 限流，避免恶意或误操作高频请求。
-- 密码必须使用 bcrypt 哈希保存，不能明文保存。
+- 登录和注册使用邮箱验证码，不再采集或校验密码。
 
 ## 前端规范
 
@@ -97,7 +97,7 @@
 ### 后端
 
 - `backend/cmd/server`：服务启动入口。
-- `backend/internal/auth`：密码哈希、JWT 签发与解析、Redis session key。
+- `backend/internal/auth`：JWT 签发与解析、Redis session key。
 - `backend/internal/cache`：Redis 连接。
 - `backend/internal/config`：环境变量配置。
 - `backend/internal/database`：MySQL 连接和迁移。
@@ -165,10 +165,7 @@ make down
 
 种子账号：
 
-- 用户：`huahua20414@foxmail.com / 123456`
-- 医生：`huahua20414@foxmail.com / 123456`
-- 待审核医生：`pendingdoctor@example.com / 123456`
-- 管理员：`huahua20414@foxmail.com / 123456`
+- 管理员：`huahua20414@foxmail.com`，登录时使用邮箱验证码。
 
 ## 交付前检查
 

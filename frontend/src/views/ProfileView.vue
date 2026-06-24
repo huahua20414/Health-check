@@ -32,8 +32,8 @@
               <el-option label="女" value="女" />
             </el-select>
           </el-form-item>
-          <el-form-item label="年龄"><el-input-number v-model="profileForm.age" :min="0" :max="120" /></el-form-item>
-          <el-form-item label="身份证号"><el-input v-model="profileForm.idCard" /></el-form-item>
+          <el-form-item label="身份证号"><el-input v-model="profileForm.idCard" maxlength="18" /></el-form-item>
+          <el-form-item label="年龄"><el-input :model-value="profileAgeText" disabled /></el-form-item>
           <el-form-item label="头像 URL"><el-input v-model="profileForm.avatarUrl" /></el-form-item>
           <el-form-item label="个人简介"><el-input v-model="profileForm.bio" type="textarea" :rows="4" /></el-form-item>
           <el-form-item label="消息通知">
@@ -71,11 +71,16 @@
 
 <script setup>
 import { computed } from 'vue'
-import { statusText, useHealthData } from '../composables/useHealthData'
+import { calculateAgeFromIDCard, statusText, useHealthData } from '../composables/useHealthData'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
 
 const { currentUser, profileForm, emailForm, myAppointments, reports, waitlist, loading, saveProfile, sendEmailCode, updateEmail } = useHealthData()
 const initials = computed(() => currentUser.value?.name?.slice(0, 1) || '用')
+const profileAge = computed(() => calculateAgeFromIDCard(profileForm.idCard))
+const profileAgeText = computed(() => {
+  if (!profileForm.idCard) return '填写身份证后自动计算'
+  return profileAge.value === null ? '身份证号未通过校验' : String(profileAge.value) + ' 岁'
+})
 const submit = useDebouncedFn(saveProfile, 350)
 const sendCode = useDebouncedFn(sendEmailCode, 800)
 const confirmEmail = useDebouncedFn(updateEmail, 500)

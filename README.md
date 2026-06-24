@@ -23,7 +23,7 @@ make test
 ## 常用命令
 
 ```bash
-make test     # 测试模式：显示角色选择，同一邮箱/密码可进用户、医生、管理员
+make test     # 测试模式：显示角色选择，方便用初始化邮箱进入指定角色
 make prod     # 正式模式：关闭调试登录，必须走邮箱验证码
 make up       # 默认构建并启动，按环境变量决定模式
 make seed     # 初始化管理员账号和基础配置
@@ -34,13 +34,13 @@ make clean    # 停止并删除数据库卷
 
 ## 初始化账号
 
-- 管理员：`huahua20414@foxmail.com / 123456`
+- 管理员：`huahua20414@foxmail.com`，登录时使用邮箱验证码。
 
 `make seed` 只初始化管理员账号、体检机构和套餐配置，不再创建用户、医生、预约、报告等模拟业务数据。
 
 ## 认证与权限
 
-- 登录后后端签发 JWT，前端通过 `Authorization: Bearer <token>` 调用接口。
+- 登录使用邮箱验证码；登录后后端签发 JWT，前端通过 `Authorization: Bearer <token>` 调用接口。
 - Redis 保存服务端 session，退出登录会删除 session。
 - 用户只能查看和维护自己的预约、报告。
 - 医生可以处理预约并生成报告。
