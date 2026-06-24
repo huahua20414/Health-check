@@ -54,6 +54,8 @@ const adminDashboard = ref({ summary: {}, appointmentTrend: [], packageSales: []
 const checkupItems = ref([])
 const checkupItemRows = ref([])
 const packageItems = ref([])
+const authCodeCooldown = ref(0)
+let authCodeCooldownTimer = null
 const paginations = reactive({
   appointments: { page: 1, pageSize: 10, total: 0 },
   users: { page: 1, pageSize: 10, total: 0 },
@@ -314,6 +316,19 @@ function assertCode(value) {
   if (!/^\d{6}$/.test(String(value || '').trim())) throw new Error('请输入 6 位验证码')
 }
 
+function startAuthCodeCooldown(seconds = 60) {
+  authCodeCooldown.value = seconds
+  if (authCodeCooldownTimer) clearInterval(authCodeCooldownTimer)
+  authCodeCooldownTimer = setInterval(() => {
+    authCodeCooldown.value -= 1
+    if (authCodeCooldown.value <= 0) {
+      authCodeCooldown.value = 0
+      clearInterval(authCodeCooldownTimer)
+      authCodeCooldownTimer = null
+    }
+  }, 1000)
+}
+
 export function calculateAgeFromIDCard(value, now = new Date()) {
   const idCard = String(value || '').trim().toUpperCase()
   if (!/^\d{17}[\dX]$/.test(idCard)) return null
@@ -382,7 +397,14 @@ export function useHealthData() {
   })
 
   async function sendAuthEmailCode(email) {
-    if (loading.authCode) return
+    if (loading.authCode) {
+      ElMessage.warning('验证码正在发送，请稍候')
+      return
+    }
+    if (authCodeCooldown.value > 0) {
+      ElMessage.warning(`${authCodeCooldown.value} 秒后可重新发送验证码`)
+      return
+    }
     assertEmail(email)
     loading.authCode = true
     try {
@@ -390,6 +412,7 @@ export function useHealthData() {
         method: 'POST',
         body: JSON.stringify({ email }),
       })
+      startAuthCodeCooldown()
       ElMessage.success('验证码已发送，请查看邮箱')
     } finally {
       loading.authCode = false
@@ -425,7 +448,7 @@ export function useHealthData() {
     assertIDCard(userRegisterForm.idCard, true)
     loading.register = true
     try {
-      await request('/auth/register/user', {
+      const result = await request('/auth/register/user', {
         method: 'POST',
         body: JSON.stringify({
           name: userRegisterForm.name,
@@ -435,7 +458,12 @@ export function useHealthData() {
           idCard: userRegisterForm.idCard,
         }),
       })
-      ElMessage.success('用户注册成功，请登录')
+      setAuthToken(result.accessToken)
+      saveUser(result.user)
+      await loadMyPermissions()
+      await loadAll()
+      ElMessage.success('注册成功，已自动登录')
+      return result.user
     } finally {
       loading.register = false
     }
@@ -1996,6 +2024,7 @@ export function useHealthData() {
     scheduleForm,
     reportForm,
     loading,
+    authCodeCooldown,
     role,
     isAuthenticated,
     isUser,

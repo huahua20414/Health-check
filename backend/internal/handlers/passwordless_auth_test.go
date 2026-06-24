@@ -43,6 +43,21 @@ func TestLoginWithEmailCodeDoesNotRequirePassword(t *testing.T) {
 	}
 }
 
+func TestLoginUnregisteredEmailPromptsRegistration(t *testing.T) {
+	_, router, redisClient := newPasswordlessAuthFixture(t)
+	email := "missing@example.com"
+	if err := redisClient.Set(context.Background(), authEmailCodeKey(email), "123456", time.Minute).Err(); err != nil {
+		t.Fatalf("set code: %v", err)
+	}
+
+	response := performPasswordlessAuthRequest(t, router, "/auth/login", map[string]any{"email": email, "code": "123456"})
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", response.Code, response.Body.String())
+	}
+	assertPasswordlessError(t, response, "该邮箱未注册，请先注册")
+}
+
 func TestRegisterUserCalculatesAgeFromIDCard(t *testing.T) {
 	handler, router, redisClient := newPasswordlessAuthFixture(t)
 	email := "user@example.com"
@@ -67,6 +82,13 @@ func TestRegisterUserCalculatesAgeFromIDCard(t *testing.T) {
 	}
 	if user.Age <= 0 || user.PasswordHash != "" {
 		t.Fatalf("expected calculated age and empty legacy credential field, got age=%d value=%q", user.Age, user.PasswordHash)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	if payload["accessToken"] == "" {
+		t.Fatalf("expected access token after user registration, got %#v", payload)
 	}
 }
 
@@ -115,6 +137,17 @@ func performPasswordlessAuthRequest(t *testing.T, router *gin.Engine, path strin
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, req)
 	return response
+}
+
+func assertPasswordlessError(t *testing.T, response *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	var payload map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload["error"] != want {
+		t.Fatalf("expected error %q, got %#v", want, payload)
+	}
 }
 
 func testIDCard(birth string) string {

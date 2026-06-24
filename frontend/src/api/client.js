@@ -29,12 +29,12 @@ export async function request(path, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(error.message || error.error || response.statusText)
+    throw new Error(localizeApiError(error.message || error.error || response.statusText))
   }
 
   const result = await response.json()
   if (result && typeof result === 'object' && 'code' in result && 'data' in result) {
-    if (result.code !== 0) throw new Error(result.message || response.statusText)
+    if (result.code !== 0) throw new Error(localizeApiError(result.message || response.statusText))
     return result.data
   }
   return result
@@ -53,8 +53,32 @@ export async function requestBlob(path, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(error.message || error.error || response.statusText)
+    throw new Error(localizeApiError(error.message || error.error || response.statusText))
   }
 
   return response.blob()
+}
+
+function localizeApiError(message) {
+  const text = String(message || '').trim()
+  if (!text) return '操作失败，请稍后重试'
+  if (text.includes('Field validation') || text.includes('ShouldBindJSON')) return '请检查必填项和输入格式'
+  const exact = {
+    'email code requests are too frequent': '验证码发送太频繁，请稍后再试',
+    'generate email code failed': '验证码生成失败，请稍后重试',
+    'save email code failed': '验证码保存失败，请稍后重试',
+    'send email code failed': '验证码邮件发送失败，请检查邮箱或稍后重试',
+    'email code expired': '验证码已过期，请重新获取',
+    'invalid email code': '验证码不正确，请重新输入',
+    'invalid email or code': '邮箱未注册或验证码不正确',
+    'email already exists': '该邮箱已注册，请直接登录',
+    'account is not active': '账号暂未启用，请联系管理员或等待审核',
+    'issue token failed': '登录凭证生成失败，请稍后再试',
+    'name is required': '请输入姓名',
+    'invalid id card': '身份证号无效',
+    Unauthorized: '登录已过期，请重新登录',
+    Forbidden: '没有权限执行该操作',
+    'Not Found': '请求的资源不存在',
+  }
+  return exact[text] || text
 }

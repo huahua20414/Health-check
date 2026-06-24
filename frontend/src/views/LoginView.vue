@@ -16,7 +16,7 @@
         <el-form-item label="邮箱验证码">
           <div class="inline-code">
             <el-input v-model="loginForm.code" maxlength="6" placeholder="6 位验证码" />
-            <el-button :loading="loading.authCode" :disabled="!loginForm.email" @click="sendCode">发送验证码</el-button>
+            <el-button :loading="loading.authCode" :disabled="!loginForm.email || authCodeCooldown > 0" @click="sendCode">{{ codeButtonText }}</el-button>
           </div>
         </el-form-item>
         <div v-if="devAuthEnabled" class="dev-login-panel">
@@ -40,17 +40,28 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { homePath } from '../router'
 import { devAuthEnabled, useHealthData } from '../composables/useHealthData'
-import { useDebouncedFn } from '../composables/useDebouncedFn'
 
 const router = useRouter()
-const { loginForm, loading, login, sendAuthEmailCode } = useHealthData()
-const sendCode = useDebouncedFn(() => sendAuthEmailCode(loginForm.email), 800)
+const { loginForm, loading, authCodeCooldown, login, sendAuthEmailCode } = useHealthData()
 const roleOptions = [
   { label: '用户', value: 'user' },
   { label: '医生', value: 'doctor' },
   { label: '管理员', value: 'admin' },
 ]
 const canSubmit = computed(() => Boolean(loginForm.email && (devAuthEnabled || loginForm.code?.length === 6)))
+const codeButtonText = computed(() => {
+  if (loading.authCode) return '发送中'
+  if (authCodeCooldown.value > 0) return `${authCodeCooldown.value} 秒后重发`
+  return '发送验证码'
+})
+
+async function sendCode() {
+  try {
+    await sendAuthEmailCode(loginForm.email)
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+}
 
 async function handleLogin() {
   try {

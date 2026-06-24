@@ -177,23 +177,23 @@ func (h *Handler) sendAuthEmailCode(c *gin.Context) {
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if exists, err := h.redis.Exists(c.Request.Context(), authEmailCodeCooldownKey(email)).Result(); err == nil && exists > 0 {
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": "email code requests are too frequent"})
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "验证码发送太频繁，请稍后再试"})
 		return
 	}
 	code, err := generateEmailCode()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate email code failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "验证码生成失败，请稍后重试"})
 		return
 	}
 	if err := h.redis.Set(c.Request.Context(), authEmailCodeKey(email), code, 10*time.Minute).Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "save email code failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "验证码保存失败，请稍后重试"})
 		return
 	}
 	body := "您好：\n\n您的登录/注册验证码是：" + code + "\n验证码 10 分钟内有效。"
 	sendErr := h.mailer.Send(email, "熙心体检验证码", body)
 	h.recordMail(0, email, "熙心体检验证码", "登录/注册验证码邮件，正文已脱敏。", sendErr)
 	if sendErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "send email code failed"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "验证码邮件发送失败，请检查邮箱或稍后重试"})
 		return
 	}
 	h.redis.Set(c.Request.Context(), authEmailCodeCooldownKey(email), "1", time.Minute)
@@ -210,18 +210,18 @@ func (h *Handler) registerUser(c *gin.Context) {
 	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
 	age, ok := ageFromIDCard(idCard, time.Now())
 	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入姓名"})
 		return
 	}
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id card"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "身份证号无效"})
 		return
 	}
 	if !h.verifyAuthEmailCode(c, email, req.Code) {
 		return
 	}
 	if h.emailExists(email) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该邮箱已注册，请直接登录"})
 		return
 	}
 	user := models.User{
@@ -236,11 +236,18 @@ func (h *Handler) registerUser(c *gin.Context) {
 		EmailNotify: true,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists or invalid user data"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "注册信息无效或邮箱已存在"})
 		return
 	}
 	h.redis.Del(c.Request.Context(), authEmailCodeKey(email))
-	c.JSON(http.StatusCreated, user)
+	token, err := auth.IssueToken(c.Request.Context(), h.redis, h.config.JWTSecret, time.Duration(h.config.TokenHours)*time.Hour, user)
+	if err != nil {
+		h.recordLogin(c, user.ID, user.Email, user.Role, "failed", "issue token failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "登录凭证生成失败，请稍后再试"})
+		return
+	}
+	h.recordLogin(c, user.ID, user.Email, user.Role, "success", "registered")
+	c.JSON(http.StatusCreated, gin.H{"accessToken": token, "user": user})
 }
 
 func (h *Handler) registerDoctor(c *gin.Context) {
@@ -254,14 +261,14 @@ func (h *Handler) registerDoctor(c *gin.Context) {
 	department := strings.TrimSpace(req.Department)
 	title := strings.TrimSpace(req.Title)
 	if name == "" || employeeNo == "" || department == "" || title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "doctor name, employee no, department and title are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入医生姓名、工号、科室和职称"})
 		return
 	}
 	if !h.verifyAuthEmailCode(c, email, req.Code) {
 		return
 	}
 	if h.emailExists(email) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该邮箱已注册，请直接登录"})
 		return
 	}
 	user := models.User{
@@ -276,7 +283,7 @@ func (h *Handler) registerDoctor(c *gin.Context) {
 		EmailNotify: true,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists or invalid doctor data"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "医生注册信息无效或邮箱已存在"})
 		return
 	}
 	h.redis.Del(c.Request.Context(), authEmailCodeKey(email))
@@ -289,9 +296,6 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if !h.config.DevAuthEnabled && !h.verifyAuthEmailCode(c, email, req.Code) {
-		return
-	}
 	var candidates []models.User
 	query := h.db.Where("email = ?", email)
 	if h.config.DevAuthEnabled && req.Role != "" {
@@ -299,19 +303,23 @@ func (h *Handler) login(c *gin.Context) {
 	}
 	if err := query.Find(&candidates).Error; err != nil || len(candidates) == 0 {
 		h.recordLogin(c, 0, email, req.Role, "failed", "account not found")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or code"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "该邮箱未注册，请先注册"})
 		return
 	}
 	user := candidates[0]
+	if !h.config.DevAuthEnabled && !h.verifyAuthEmailCode(c, email, req.Code) {
+		h.recordLogin(c, user.ID, user.Email, user.Role, "failed", "invalid email code")
+		return
+	}
 	if user.Status != "active" {
 		h.recordLogin(c, user.ID, user.Email, user.Role, "blocked", user.Status)
-		c.JSON(http.StatusForbidden, gin.H{"error": "account is not active", "status": user.Status})
+		c.JSON(http.StatusForbidden, gin.H{"error": "账号暂未启用，请联系管理员或等待审核", "status": user.Status})
 		return
 	}
 	token, err := auth.IssueToken(c.Request.Context(), h.redis, h.config.JWTSecret, time.Duration(h.config.TokenHours)*time.Hour, user)
 	if err != nil {
 		h.recordLogin(c, user.ID, user.Email, user.Role, "failed", "issue token failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "登录凭证生成失败，请稍后再试"})
 		return
 	}
 	if req.Code != "" {
@@ -5038,11 +5046,11 @@ func respondPaginated[T any](c *gin.Context, query *gorm.DB, page, pageSize int,
 func (h *Handler) verifyAuthEmailCode(c *gin.Context, email, code string) bool {
 	value, err := h.redis.Get(c.Request.Context(), authEmailCodeKey(email)).Result()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email code expired"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新获取"})
 		return false
 	}
 	if value != code {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email code"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码不正确，请重新输入"})
 		return false
 	}
 	return true

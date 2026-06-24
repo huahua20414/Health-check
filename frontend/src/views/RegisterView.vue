@@ -14,7 +14,7 @@
           <el-form-item label="邮箱验证码">
             <div class="inline-code">
               <el-input v-model="userRegisterForm.code" maxlength="6" placeholder="6 位验证码" />
-              <el-button :loading="loading.authCode" :disabled="!userRegisterForm.email" @click="sendUserCode">发送验证码</el-button>
+              <el-button :loading="loading.authCode" :disabled="!userRegisterForm.email || authCodeCooldown > 0" @click="sendUserCode">{{ codeButtonText }}</el-button>
             </div>
           </el-form-item>
           <el-form-item label="性别">
@@ -33,7 +33,7 @@
           <el-form-item label="邮箱验证码">
             <div class="inline-code">
               <el-input v-model="doctorRegisterForm.code" maxlength="6" placeholder="6 位验证码" />
-              <el-button :loading="loading.authCode" :disabled="!doctorRegisterForm.email" @click="sendDoctorCode">发送验证码</el-button>
+              <el-button :loading="loading.authCode" :disabled="!doctorRegisterForm.email || authCodeCooldown > 0" @click="sendDoctorCode">{{ codeButtonText }}</el-button>
             </div>
           </el-form-item>
           <el-form-item label="工号"><el-input v-model="doctorRegisterForm.employeeNo" /></el-form-item>
@@ -57,16 +57,18 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { calculateAgeFromIDCard, doctorDepartments, useHealthData } from '../composables/useHealthData'
-import { useDebouncedFn } from '../composables/useDebouncedFn'
 
 const route = useRoute()
 const router = useRouter()
 const isDoctorRegister = computed(() => route.params.role === 'doctor')
-const { userRegisterForm, doctorRegisterForm, loading, registerUser, registerDoctor, sendAuthEmailCode } = useHealthData()
-const sendUserCode = useDebouncedFn(() => sendAuthEmailCode(userRegisterForm.email), 800)
-const sendDoctorCode = useDebouncedFn(() => sendAuthEmailCode(doctorRegisterForm.email), 800)
+const { userRegisterForm, doctorRegisterForm, loading, authCodeCooldown, registerUser, registerDoctor, sendAuthEmailCode } = useHealthData()
 const userAge = computed(() => calculateAgeFromIDCard(userRegisterForm.idCard))
 const userAgeText = computed(() => (userAge.value === null ? '身份证校验通过后自动计算' : String(userAge.value) + ' 岁'))
+const codeButtonText = computed(() => {
+  if (loading.authCode) return '发送中'
+  if (authCodeCooldown.value > 0) return `${authCodeCooldown.value} 秒后重发`
+  return '发送验证码'
+})
 const canSubmit = computed(() => {
   if (isDoctorRegister.value) {
     return Boolean(doctorRegisterForm.name && doctorRegisterForm.email && doctorRegisterForm.code?.length === 6 && doctorRegisterForm.employeeNo && doctorRegisterForm.department && doctorRegisterForm.title)
@@ -76,9 +78,29 @@ const canSubmit = computed(() => {
 
 async function submit() {
   try {
-    if (isDoctorRegister.value) await registerDoctor()
-    else await registerUser()
-    router.push('/login')
+    if (isDoctorRegister.value) {
+      await registerDoctor()
+      router.push('/login')
+      return
+    }
+    const user = await registerUser()
+    if (user) router.push(user.role === 'doctor' ? '/doctor' : user.role === 'admin' ? '/admin' : '/')
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+}
+
+async function sendUserCode() {
+  try {
+    await sendAuthEmailCode(userRegisterForm.email)
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+}
+
+async function sendDoctorCode() {
+  try {
+    await sendAuthEmailCode(doctorRegisterForm.email)
   } catch (error) {
     ElMessage.error(error.message)
   }
