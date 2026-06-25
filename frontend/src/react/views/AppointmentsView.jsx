@@ -33,6 +33,18 @@ export function AppointmentsView() {
         ]} rows={h.myAppointments} />
       </Card>
       {selected && <Card title={`处理预约：${selected.orderNo || selected.id}`} actions={<Button variant="ghost" onClick={() => setSelected(null)}>关闭</Button>}>
+        {!!selected.appointmentItems?.length && (
+          <div className="package-item-picker appointment-item-summary">
+            <div className="package-item-picker-head"><span>体检项目</span><strong>本次预约已选项目</strong></div>
+            {selected.appointmentItems.map((item) => (
+              <div key={item.id} className={`package-item-option is-checked ${item.required ? 'is-required' : ''}`}>
+                <span>{item.required ? '必' : '选'}</span>
+                <strong>{item.item?.name || item.itemId}</strong>
+                <small>{item.required ? '必选' : `可选 · ${moneyText(item.price || 0)}`}</small>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="action-grid">
           <Button variant="secondary" onClick={() => h.updateAppointmentPayment(selected, selected.paymentStatus === 'paid' ? 'unpaid' : 'paid').catch((e) => h.notify('error', e.message))}>{selected.paymentStatus === 'paid' ? '撤销支付' : '标记已支付'}</Button>
           <Button variant="danger" onClick={() => h.cancelAppointment(selected).catch((e) => h.notify('error', e.message))}>取消预约</Button>

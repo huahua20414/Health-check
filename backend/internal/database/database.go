@@ -38,6 +38,7 @@ func Migrate(db *gorm.DB) error {
 		&models.PackageBrowseHistory{},
 		&models.ScheduleSlot{},
 		&models.Appointment{},
+		&models.AppointmentItem{},
 		&models.WaitlistEntry{},
 		&models.Report{},
 		&models.ServiceReview{},

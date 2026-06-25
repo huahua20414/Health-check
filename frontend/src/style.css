@@ -500,6 +500,60 @@ a { color: inherit; text-decoration: none; }
 .confirm-row span { color: var(--muted); font-size: 12px; font-weight: 800; }
 .confirm-row strong { line-height: 1.35; }
 .booking-extra-form { margin-top: 12px; }
+.package-item-picker {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+.package-item-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.package-item-picker-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.package-item-picker-head strong { font-size: 13px; }
+.package-item-option {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.package-item-option.is-checked { border-color: rgba(25,194,217,.46); background: var(--soft-cyan); }
+.package-item-option.is-required { background: #f8fafc; }
+.package-item-option input { width: 16px; height: 16px; }
+.package-item-option span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.package-item-option strong {
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.package-item-option small {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.appointment-item-summary { margin-bottom: 14px; }
+.appointment-item-summary .package-item-option {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+}
 .date-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -543,7 +597,8 @@ a { color: inherit; text-decoration: none; }
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
 }
-.muted { color: var(--muted); }
+.muted, .muted-text { color: var(--muted); }
+.muted-text { font-size: 13px; white-space: nowrap; }
 .empty-state { padding: 20px; color: var(--muted); text-align: center; }
 .action-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .faq-grid { display: grid; gap: 12px; }

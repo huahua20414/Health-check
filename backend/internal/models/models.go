@@ -36,15 +36,16 @@ type CheckupInstitution struct {
 }
 
 type CheckupPackage struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"size:128;not null"`
-	Category    string    `json:"category" gorm:"size:64;not null;default:'综合体检'"`
-	Description string    `json:"description" gorm:"type:text"`
-	Price       float64   `json:"price" gorm:"not null"`
-	Items       string    `json:"items" gorm:"type:text"`
-	Status      string    `json:"status" gorm:"size:16;not null;default:'active'"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID           uint          `json:"id" gorm:"primaryKey"`
+	Name         string        `json:"name" gorm:"size:128;not null"`
+	Category     string        `json:"category" gorm:"size:64;not null;default:'综合体检'"`
+	Description  string        `json:"description" gorm:"type:text"`
+	Price        float64       `json:"price" gorm:"not null"`
+	Items        string        `json:"items" gorm:"type:text"`
+	Status       string        `json:"status" gorm:"size:16;not null;default:'active'"`
+	PackageItems []PackageItem `json:"packageItems,omitempty" gorm:"foreignKey:PackageID"`
+	CreatedAt    time.Time     `json:"createdAt"`
+	UpdatedAt    time.Time     `json:"updatedAt"`
 }
 
 type CheckupItem struct {
@@ -72,6 +73,18 @@ type PackageItem struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
+type AppointmentItem struct {
+	ID            uint        `json:"id" gorm:"primaryKey"`
+	AppointmentID uint        `json:"appointmentId" gorm:"not null;index"`
+	PackageItemID uint        `json:"packageItemId" gorm:"not null;index"`
+	ItemID        uint        `json:"itemId" gorm:"not null;index"`
+	Required      bool        `json:"required" gorm:"not null;default:true"`
+	Price         float64     `json:"price" gorm:"not null;default:0"`
+	Item          CheckupItem `json:"item"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	UpdatedAt     time.Time   `json:"updatedAt"`
+}
+
 type Coupon struct {
 	ID          uint      `json:"id" gorm:"primaryKey"`
 	Name        string    `json:"name" gorm:"size:128;not null"`
@@ -89,40 +102,41 @@ type Coupon struct {
 }
 
 type Appointment struct {
-	ID              uint               `json:"id" gorm:"primaryKey"`
-	OrderNo         string             `json:"orderNo" gorm:"size:32;uniqueIndex"`
-	UserID          uint               `json:"userId" gorm:"not null;index"`
-	FamilyMemberID  uint               `json:"familyMemberId" gorm:"index"`
-	DoctorID        uint               `json:"doctorId" gorm:"index"`
-	InstitutionID   uint               `json:"institutionId" gorm:"not null;index"`
-	SlotID          uint               `json:"slotId" gorm:"index"`
-	PackageID       uint               `json:"packageId" gorm:"not null;index"`
-	CouponID        uint               `json:"couponId" gorm:"index"`
-	AppointmentType string             `json:"appointmentType" gorm:"size:32;not null;default:'个人体检'"`
-	Category        string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
-	Date            string             `json:"date" gorm:"size:16;not null"`
-	Period          string             `json:"period" gorm:"size:32;not null"`
-	StartTime       string             `json:"startTime" gorm:"size:8"`
-	EndTime         string             `json:"endTime" gorm:"size:8"`
-	Status          string             `json:"status" gorm:"size:24;not null;default:'booked'"`
-	Note            string             `json:"note" gorm:"type:text"`
-	PaymentStatus   string             `json:"paymentStatus" gorm:"size:24;not null;default:'unpaid'"`
-	OriginalAmount  float64            `json:"originalAmount" gorm:"not null;default:0"`
-	DiscountAmount  float64            `json:"discountAmount" gorm:"not null;default:0"`
-	PayableAmount   float64            `json:"payableAmount" gorm:"not null;default:0"`
-	InvoiceTitle    string             `json:"invoiceTitle" gorm:"size:128"`
-	InvoiceTaxNo    string             `json:"invoiceTaxNo" gorm:"size:64"`
-	InvoiceStatus   string             `json:"invoiceStatus" gorm:"size:24;not null;default:'none';index"`
-	User            User               `json:"user"`
-	FamilyMember    FamilyMember       `json:"familyMember"`
-	Doctor          User               `json:"doctor"`
-	Institution     CheckupInstitution `json:"institution"`
-	Package         CheckupPackage     `json:"package"`
-	Coupon          Coupon             `json:"coupon"`
-	Slot            ScheduleSlot       `json:"slot"`
-	Report          *Report            `json:"report,omitempty"`
-	CreatedAt       time.Time          `json:"createdAt"`
-	UpdatedAt       time.Time          `json:"updatedAt"`
+	ID               uint               `json:"id" gorm:"primaryKey"`
+	OrderNo          string             `json:"orderNo" gorm:"size:32;uniqueIndex"`
+	UserID           uint               `json:"userId" gorm:"not null;index"`
+	FamilyMemberID   uint               `json:"familyMemberId" gorm:"index"`
+	DoctorID         uint               `json:"doctorId" gorm:"index"`
+	InstitutionID    uint               `json:"institutionId" gorm:"not null;index"`
+	SlotID           uint               `json:"slotId" gorm:"index"`
+	PackageID        uint               `json:"packageId" gorm:"not null;index"`
+	CouponID         uint               `json:"couponId" gorm:"index"`
+	AppointmentType  string             `json:"appointmentType" gorm:"size:32;not null;default:'个人体检'"`
+	Category         string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
+	Date             string             `json:"date" gorm:"size:16;not null"`
+	Period           string             `json:"period" gorm:"size:32;not null"`
+	StartTime        string             `json:"startTime" gorm:"size:8"`
+	EndTime          string             `json:"endTime" gorm:"size:8"`
+	Status           string             `json:"status" gorm:"size:24;not null;default:'booked'"`
+	Note             string             `json:"note" gorm:"type:text"`
+	PaymentStatus    string             `json:"paymentStatus" gorm:"size:24;not null;default:'unpaid'"`
+	OriginalAmount   float64            `json:"originalAmount" gorm:"not null;default:0"`
+	DiscountAmount   float64            `json:"discountAmount" gorm:"not null;default:0"`
+	PayableAmount    float64            `json:"payableAmount" gorm:"not null;default:0"`
+	InvoiceTitle     string             `json:"invoiceTitle" gorm:"size:128"`
+	InvoiceTaxNo     string             `json:"invoiceTaxNo" gorm:"size:64"`
+	InvoiceStatus    string             `json:"invoiceStatus" gorm:"size:24;not null;default:'none';index"`
+	User             User               `json:"user"`
+	FamilyMember     FamilyMember       `json:"familyMember"`
+	Doctor           User               `json:"doctor"`
+	Institution      CheckupInstitution `json:"institution"`
+	Package          CheckupPackage     `json:"package"`
+	Coupon           Coupon             `json:"coupon"`
+	Slot             ScheduleSlot       `json:"slot"`
+	AppointmentItems []AppointmentItem  `json:"appointmentItems,omitempty" gorm:"foreignKey:AppointmentID"`
+	Report           *Report            `json:"report,omitempty"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	UpdatedAt        time.Time          `json:"updatedAt"`
 }
 
 type FamilyMember struct {

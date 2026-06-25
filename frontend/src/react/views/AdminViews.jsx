@@ -10,7 +10,7 @@ export function AdminDashboardView() {
     <>
       <PageHeader title="管理员工作台" subtitle="审核、用户、机构、套餐和号源管理。" />
       <div className="metrics-grid"><Metric label="待审核医生" value={h.pendingDoctors.length || summary.pendingDoctors || 0} tone="amber" /><Metric label="机构数量" value={h.institutions.length} /><Metric label="套餐数量" value={h.packages.length} tone="green" /><Metric label="邮件日志" value={h.mailLogs.length} tone="violet" /></div>
-      <Card title="待审核医生"><PaginatedTable columns={[{ title: '医生', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" onClick={() => h.updateUserStatus(r, 'active')}>通过</Button><Button size="sm" variant="danger" onClick={() => h.updateUserStatus(r, 'disabled')}>拒绝</Button></div> }]} rows={h.pendingDoctors} /></Card>
+      <Card title="待审核医生"><PaginatedTable columns={[{ title: '医生', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <DoctorReviewActions row={r} h={h} compact /> }]} rows={h.pendingDoctors} /></Card>
     </>
   )
 }
@@ -20,9 +20,32 @@ export function DoctorReviewView() {
   return (
     <>
       <PageHeader title="医生审核" subtitle="审核医生账号，并维护科室、职称与专长。" />
-      <Card title="医生列表"><PaginatedTable columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" onClick={() => h.updateUserStatus(r, 'active')}>通过</Button><Button size="sm" variant="danger" onClick={() => h.updateUserStatus(r, 'disabled')}>停用</Button></div> }]} rows={h.users.filter((u) => u.role === 'doctor')} /></Card>
+      <Card title="医生列表"><PaginatedTable columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <DoctorReviewActions row={r} h={h} /> }]} rows={h.users.filter((u) => u.role === 'doctor')} /></Card>
     </>
   )
+}
+
+function DoctorReviewActions({ row, h, compact = false }) {
+  if (row.status === 'pending') {
+    return (
+      <div className="row-actions">
+        <Button size="sm" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'active')}>通过</Button>
+        <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'disabled')}>{compact ? '拒绝' : '停用'}</Button>
+      </div>
+    )
+  }
+  if (row.status === 'active') {
+    return (
+      <div className="row-actions">
+        <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'disabled')}>停用</Button>
+        <span className="muted-text">已启用</span>
+      </div>
+    )
+  }
+  if (row.status === 'disabled') {
+    return <Button size="sm" variant="ghost" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'active')}>重新启用</Button>
+  }
+  return <span className="muted-text">无可用操作</span>
 }
 
 export function PackageManageView() {
@@ -109,11 +132,15 @@ function PackageItemPanel({ h }) {
   const f = h.forms.packageItem
   const [open, setOpen] = useState(false)
   const openCreate = () => { h.resetForm('packageItem'); setOpen(true) }
+  const openEdit = (row) => {
+    h.updateForm('packageItem', { packageId: row.packageId, itemId: row.itemId, sortOrder: row.sortOrder, required: row.required })
+    setOpen(true)
+  }
   const itemOptions = h.checkupItemRows.length ? h.checkupItemRows : h.checkupItems
   const save = () => h.savePackageItem().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
   return <Card title="套餐项目组合" actions={<Button size="sm" onClick={openCreate}>新增</Button>}>
-    <PaginatedTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageId }, { title: '项目', render: (r) => r.item?.name || r.itemId }, { title: '排序', render: (r) => r.sortOrder }, { title: '操作', render: (r) => <Button size="sm" variant="danger" onClick={() => h.deletePackageItem(r)}>移除</Button> }]} rows={h.packageItems} />
-    <Modal open={open} title="新增套餐项目组合" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.packageItem} onClick={save}>保存</Button></>}>
+    <PaginatedTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageId }, { title: '项目', render: (r) => r.item?.name || r.itemId }, { title: '排序', render: (r) => r.sortOrder }, { title: '类型', render: (r) => r.required ? '必选' : '可选' }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.deletePackageItem(r)}>移除</Button></div> }]} rows={h.packageItems} />
+    <Modal open={open} title="套餐项目组合" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.packageItem} onClick={save}>保存</Button></>}>
       <Field label="套餐"><Select value={f.packageId} onChange={(e) => h.updateForm('packageItem', { packageId: e.target.value })}><option value="">请选择套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
       <Field label="项目"><Select value={f.itemId} onChange={(e) => h.updateForm('packageItem', { itemId: e.target.value })}><option value="">请选择项目</option>{itemOptions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
       <Field label="排序"><TextInput type="number" value={f.sortOrder} onChange={(e) => h.updateForm('packageItem', { sortOrder: e.target.value })} /></Field>

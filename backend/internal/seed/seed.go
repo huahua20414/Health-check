@@ -616,6 +616,9 @@ func seedAppointments(db *gorm.DB, users []models.User, packages []models.Checku
 		if err := db.Create(&appointment).Error; err != nil {
 			return err
 		}
+		if err := seedAppointmentItems(db, appointment, appointmentIndex); err != nil {
+			return err
+		}
 		if err := db.Model(slot).Update("booked_count", 1).Error; err != nil {
 			return err
 		}
@@ -675,6 +678,34 @@ func appointmentNote(index int) string {
 		"",
 	}
 	return notes[index%len(notes)]
+}
+
+func seedAppointmentItems(db *gorm.DB, appointment models.Appointment, index int) error {
+	var links []models.PackageItem
+	if err := db.Preload("Item").Where("package_id = ?", appointment.PackageID).Order("sort_order asc, id asc").Find(&links).Error; err != nil {
+		return err
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	items := make([]models.AppointmentItem, 0, len(links))
+	for _, link := range links {
+		if !link.Required && (index+int(link.ID))%3 != 0 {
+			continue
+		}
+		price := 0.0
+		if !link.Required {
+			price = link.Item.Price
+		}
+		items = append(items, models.AppointmentItem{
+			AppointmentID: appointment.ID,
+			PackageItemID: link.ID,
+			ItemID:        link.ItemID,
+			Required:      link.Required,
+			Price:         price,
+		})
+	}
+	return db.Create(&items).Error
 }
 
 func packagesByCategory(packages []models.CheckupPackage) map[string]models.CheckupPackage {
@@ -840,6 +871,7 @@ func reset(db *gorm.DB) error {
 		&models.LoginLog{},
 		&models.RolePermission{},
 		&models.Report{},
+		&models.AppointmentItem{},
 		&models.Appointment{},
 		&models.WaitlistEntry{},
 		&models.ScheduleSlot{},

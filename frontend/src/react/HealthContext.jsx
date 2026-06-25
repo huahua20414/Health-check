@@ -28,7 +28,7 @@ const defaultForms = {
   login: { email: devAuthShortcutEmail, code: '', role: 'user' },
   userRegister: { name: '', email: '', code: '', gender: '', idCard: '' },
   doctorRegister: { name: '', email: '', code: '', employeeNo: '', department: '', title: '' },
-  appointment: { appointmentType: '个人体检', institutionId: '', packageId: '', familyMemberId: '', slotId: '', couponId: '', date: '', period: '', note: '', paymentStatus: 'unpaid', invoiceTitle: '', invoiceTaxNo: '' },
+  appointment: { appointmentType: '个人体检', institutionId: '', packageId: '', familyMemberId: '', slotId: '', couponId: '', date: '', period: '', note: '', paymentStatus: 'unpaid', invoiceTitle: '', invoiceTaxNo: '', selectedPackageItemIds: [] },
   waitlist: { appointmentType: '个人体检', institutionId: '', packageId: '', date: '', period: '', note: '' },
   profile: { name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true },
   email: { email: '', code: '' },

@@ -457,7 +457,7 @@ func (h *Handler) updateEmail(c *gin.Context) {
 
 func (h *Handler) packages(c *gin.Context) {
 	var packages []models.CheckupPackage
-	query := h.db.Model(&models.CheckupPackage{})
+	query := h.packageQueryWithItems()
 	if c.GetHeader("Authorization") == "" {
 		query = query.Where("status = ?", "active")
 	} else if status := c.Query("status"); status != "" {
@@ -486,7 +486,7 @@ func (h *Handler) packages(c *gin.Context) {
 
 func (h *Handler) popularPackages(c *gin.Context) {
 	var packages []models.CheckupPackage
-	query := h.db.Model(&models.CheckupPackage{}).
+	query := h.packageQueryWithItems().
 		Select("checkup_packages.*, COUNT(appointments.id) AS booking_count").
 		Joins("LEFT JOIN appointments ON appointments.package_id = checkup_packages.id AND appointments.status <> ?", "canceled").
 		Where("checkup_packages.status = ?", "active").
@@ -502,11 +502,12 @@ func (h *Handler) popularPackages(c *gin.Context) {
 
 func (h *Handler) recommendedPackages(c *gin.Context) {
 	var packages []models.CheckupPackage
-	query := h.db.Model(&models.CheckupPackage{}).Where("status = ?", "active").Order("price asc").Limit(6)
+	query := h.packageQueryWithItems().
+		Where("status = ?", "active").Order("price asc").Limit(6)
 	if user, ok := c.Get("user"); ok {
 		current, _ := user.(models.User)
 		if current.ID != 0 && current.Age >= 55 {
-			query = h.db.Model(&models.CheckupPackage{}).
+			query = h.packageQueryWithItems().
 				Where("status = ? AND (category = ? OR name LIKE ?)", "active", "老年体检", "%老年%").
 				Order("price asc").
 				Limit(6)
@@ -517,6 +518,18 @@ func (h *Handler) recommendedPackages(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, packages)
+}
+
+func (h *Handler) packageQueryWithItems() *gorm.DB {
+	query := h.db.Model(&models.CheckupPackage{})
+	if h.db.Migrator().HasTable(&models.PackageItem{}) && h.db.Migrator().HasTable(&models.CheckupItem{}) {
+		query = query.
+			Preload("PackageItems", func(db *gorm.DB) *gorm.DB {
+				return db.Order("package_items.sort_order asc, package_items.id asc")
+			}).
+			Preload("PackageItems.Item")
+	}
+	return query
 }
 
 func (h *Handler) institutions(c *gin.Context) {
@@ -790,6 +803,9 @@ func (h *Handler) appointmentExportQuery(c *gin.Context) *gorm.DB {
 func (h *Handler) buildAppointmentQuery(c *gin.Context, withReport bool) *gorm.DB {
 	current := currentUser(c)
 	query := h.db.Model(&models.Appointment{}).Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Slot")
+	if h.db.Migrator().HasTable(&models.AppointmentItem{}) && h.db.Migrator().HasTable(&models.CheckupItem{}) {
+		query = query.Preload("AppointmentItems.Item")
+	}
 	if withReport {
 		query = query.Preload("Report")
 	}
@@ -890,7 +906,11 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			result = gin.H{"type": "waitlist", "waitlist": wait}
 			return nil
 		}
-		pricing, pricingErr := h.appointmentPricing(tx, pkg, req.CouponID, slot.Date)
+		selectedItems, extraAmount, itemErr := h.selectedAppointmentItems(tx, req.PackageID, req.SelectedPackageItemIDs)
+		if itemErr != nil {
+			return itemErr
+		}
+		pricing, pricingErr := h.appointmentPricing(tx, pkg, req.CouponID, slot.Date, extraAmount)
 		if pricingErr != nil {
 			return pricingErr
 		}
@@ -926,14 +946,37 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		if err := tx.Create(&appointment).Error; err != nil {
 			return err
 		}
+		if len(selectedItems) > 0 && tx.Migrator().HasTable(&models.AppointmentItem{}) {
+			appointmentItems := make([]models.AppointmentItem, 0, len(selectedItems))
+			for _, selected := range selectedItems {
+				price := 0.0
+				if !selected.Required {
+					price = selected.Item.Price
+				}
+				appointmentItems = append(appointmentItems, models.AppointmentItem{
+					AppointmentID: appointment.ID,
+					PackageItemID: selected.ID,
+					ItemID:        selected.ItemID,
+					Required:      selected.Required,
+					Price:         price,
+				})
+			}
+			if err := tx.Create(&appointmentItems).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&slot).Update("booked_count", slot.BookedCount+1).Error; err != nil {
 			return err
 		}
-		tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Coupon").Preload("Slot").First(&appointment, appointment.ID)
+		appointmentQuery := tx.Preload("User").Preload("FamilyMember").Preload("Doctor").Preload("Institution").Preload("Package").Preload("Coupon").Preload("Slot")
+		if tx.Migrator().HasTable(&models.AppointmentItem{}) && tx.Migrator().HasTable(&models.CheckupItem{}) {
+			appointmentQuery = appointmentQuery.Preload("AppointmentItems.Item")
+		}
+		appointmentQuery.First(&appointment, appointment.ID)
 		result = gin.H{"type": "appointment", "appointment": appointment}
 		return nil
 	}); err != nil {
-		if strings.HasPrefix(err.Error(), "coupon ") {
+		if strings.HasPrefix(err.Error(), "coupon ") || strings.Contains(err.Error(), "selected package item") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -3984,8 +4027,9 @@ type appointmentPricing struct {
 	PayableAmount  float64
 }
 
-func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, couponID uint, appointmentDate string) (appointmentPricing, error) {
-	pricing := appointmentPricing{OriginalAmount: pkg.Price, PayableAmount: pkg.Price}
+func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, couponID uint, appointmentDate string, extraAmount float64) (appointmentPricing, error) {
+	originalAmount := pkg.Price + extraAmount
+	pricing := appointmentPricing{OriginalAmount: originalAmount, PayableAmount: originalAmount}
 	if couponID == 0 {
 		return pricing, nil
 	}
@@ -3999,7 +4043,7 @@ func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, cou
 	if coupon.PackageID != 0 && coupon.PackageID != pkg.ID {
 		return pricing, fmt.Errorf("coupon does not apply to this package")
 	}
-	if coupon.MinAmount > 0 && pkg.Price < coupon.MinAmount {
+	if coupon.MinAmount > 0 && originalAmount < coupon.MinAmount {
 		return pricing, fmt.Errorf("coupon minimum amount not reached")
 	}
 	if appointmentDate != "" {
@@ -4012,17 +4056,54 @@ func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, cou
 	}
 	discount := coupon.Value
 	if coupon.Type == "percent" {
-		discount = pkg.Price * coupon.Value / 100
+		discount = originalAmount * coupon.Value / 100
 	}
 	if discount < 0 {
 		discount = 0
 	}
-	if discount > pkg.Price {
-		discount = pkg.Price
+	if discount > originalAmount {
+		discount = originalAmount
 	}
 	pricing.DiscountAmount = discount
-	pricing.PayableAmount = pkg.Price - discount
+	pricing.PayableAmount = originalAmount - discount
 	return pricing, nil
+}
+
+func (h *Handler) selectedAppointmentItems(db *gorm.DB, packageID uint, selectedIDs []uint) ([]models.PackageItem, float64, error) {
+	if !db.Migrator().HasTable(&models.PackageItem{}) || !db.Migrator().HasTable(&models.CheckupItem{}) {
+		return nil, 0, nil
+	}
+	var links []models.PackageItem
+	if err := db.Preload("Item").
+		Where("package_id = ?", packageID).
+		Order("sort_order asc, id asc").
+		Find(&links).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(links) == 0 {
+		return nil, 0, nil
+	}
+	selected := make(map[uint]bool, len(selectedIDs))
+	for _, id := range selectedIDs {
+		if id != 0 {
+			selected[id] = true
+		}
+	}
+	result := make([]models.PackageItem, 0, len(links))
+	extraAmount := 0.0
+	for _, link := range links {
+		if link.Required || selected[link.ID] {
+			result = append(result, link)
+			if !link.Required {
+				extraAmount += link.Item.Price
+			}
+			delete(selected, link.ID)
+		}
+	}
+	if len(selected) > 0 {
+		return nil, 0, fmt.Errorf("selected package item does not belong to this package")
+	}
+	return result, extraAmount, nil
 }
 
 func (h *Handler) familyMemberBelongsTo(userID, familyMemberID uint) bool {
@@ -4369,18 +4450,19 @@ type registerDoctorRequest struct {
 }
 
 type appointmentRequest struct {
-	PackageID       uint   `json:"packageId" binding:"required"`
-	InstitutionID   uint   `json:"institutionId" binding:"required"`
-	FamilyMemberID  uint   `json:"familyMemberId"`
-	CouponID        uint   `json:"couponId"`
-	SlotID          uint   `json:"slotId"`
-	AppointmentType string `json:"appointmentType" binding:"required"`
-	Date            string `json:"date" binding:"required"`
-	Period          string `json:"period" binding:"required"`
-	Note            string `json:"note"`
-	PaymentStatus   string `json:"paymentStatus"`
-	InvoiceTitle    string `json:"invoiceTitle"`
-	InvoiceTaxNo    string `json:"invoiceTaxNo"`
+	PackageID              uint   `json:"packageId" binding:"required"`
+	InstitutionID          uint   `json:"institutionId" binding:"required"`
+	FamilyMemberID         uint   `json:"familyMemberId"`
+	CouponID               uint   `json:"couponId"`
+	SlotID                 uint   `json:"slotId"`
+	SelectedPackageItemIDs []uint `json:"selectedPackageItemIds"`
+	AppointmentType        string `json:"appointmentType" binding:"required"`
+	Date                   string `json:"date" binding:"required"`
+	Period                 string `json:"period" binding:"required"`
+	Note                   string `json:"note"`
+	PaymentStatus          string `json:"paymentStatus"`
+	InvoiceTitle           string `json:"invoiceTitle"`
+	InvoiceTaxNo           string `json:"invoiceTaxNo"`
 }
 
 type rescheduleRequest struct {

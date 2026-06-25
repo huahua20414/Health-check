@@ -12,6 +12,9 @@ export function BookingView() {
   const [step, setStep] = useState(0)
   const form = h.forms.appointment
   const selectedPackage = h.packages.find((pkg) => pkg.id === Number(form.packageId))
+  const selectedPackageItems = [...(selectedPackage?.packageItems || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || Number(a.id || 0) - Number(b.id || 0))
+  const selectedPackageItemIds = new Set((form.selectedPackageItemIds || []).map(Number))
+  const optionalAmount = selectedPackageItems.filter((item) => !item.required && selectedPackageItemIds.has(item.id)).reduce((sum, item) => sum + Number(item.item?.price || 0), 0)
   const selectedInstitution = h.institutions.find((item) => item.id === Number(form.institutionId))
   const selectedSlot = h.slots.find((slot) => slot.id === Number(form.slotId))
   const selectedMember = h.familyMembers.find((member) => member.id === Number(form.familyMemberId))
@@ -33,6 +36,18 @@ export function BookingView() {
     }
     setStep((current) => Math.min(current + 1, bookingSteps.length - 1))
   }
+  const selectPackage = (pkg) => {
+    const requiredIds = (pkg.packageItems || []).filter((item) => item.required).map((item) => item.id)
+    h.updateForm('appointment', { packageId: pkg.id, selectedPackageItemIds: requiredIds, slotId: '', date: '', period: '' })
+  }
+  const toggleOptionalItem = (item) => {
+    if (item.required) return
+    const current = new Set((form.selectedPackageItemIds || []).map(Number))
+    if (current.has(item.id)) current.delete(item.id)
+    else current.add(item.id)
+    for (const required of selectedPackageItems.filter((link) => link.required)) current.add(required.id)
+    h.updateForm('appointment', { selectedPackageItemIds: Array.from(current) })
+  }
   const submit = async () => {
     if (!form.packageId || !form.institutionId || (!form.slotId && !form.period)) {
       h.notify('warn', '请先完成套餐、机构和号源选择')
@@ -50,10 +65,11 @@ export function BookingView() {
           <>
             <div className="package-grid booking-package-grid">
               {h.packages.map((pkg) => (
-                <button key={pkg.id} className={`choice-card ${Number(form.packageId) === pkg.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { packageId: pkg.id, slotId: '', date: '', period: '' })}>
+                <button key={pkg.id} className={`choice-card ${Number(form.packageId) === pkg.id ? 'is-selected' : ''}`} onClick={() => selectPackage(pkg)}>
                   <span>{pkg.category || '综合体检'}</span>
                   <strong>{pkg.name}</strong>
                   <small>{pkg.description || pkg.items}</small>
+                  {!!pkg.packageItems?.length && <small>{pkg.packageItems.filter((item) => item.required).length} 项必选 · {pkg.packageItems.filter((item) => !item.required).length} 项可选</small>}
                   <b>{moneyText(pkg.price)}</b>
                 </button>
               ))}
@@ -112,10 +128,27 @@ export function BookingView() {
           <div className="booking-confirm">
             <ConfirmRow label="预约类型" value={form.appointmentType} />
             <ConfirmRow label="套餐" value={selectedPackage ? `${selectedPackage.name} · ${moneyText(selectedPackage.price)}` : '未选择'} />
+            {optionalAmount > 0 && <ConfirmRow label="可选项目" value={`加选 ${moneyText(optionalAmount)}`} />}
             <ConfirmRow label="机构" value={selectedInstitution?.name || '未选择'} />
             <ConfirmRow label="日期" value={form.date || '未选择'} />
             <ConfirmRow label="时间" value={selectedSlot ? `${selectedSlot.startTime}-${selectedSlot.endTime}` : form.period || '未选择'} />
             <ConfirmRow label="体检人" value={selectedMember ? `${selectedMember.name} · ${selectedMember.relation}` : '本人'} />
+            {!!selectedPackageItems.length && (
+              <div className="package-item-picker">
+                <div className="package-item-picker-head"><span>套餐项目</span><strong>必选固定，可选项目按需勾选</strong></div>
+                {selectedPackageItems.map((link) => {
+                  const checked = link.required || selectedPackageItemIds.has(link.id)
+                  return (
+                    <label key={link.id} className={`package-item-option ${checked ? 'is-checked' : ''} ${link.required ? 'is-required' : ''}`}>
+                      <input type="checkbox" checked={checked} disabled={link.required} onChange={() => toggleOptionalItem(link)} />
+                      <span>{link.sortOrder || '-'}</span>
+                      <strong>{link.item?.name || link.itemId}</strong>
+                      <small>{link.required ? '必选' : `可选 · ${moneyText(link.item?.price || 0)}`}</small>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
             <div className="form-grid compact booking-extra-form">
               <Field label="预约类型"><Select value={form.appointmentType} onChange={(e) => h.updateForm('appointment', { appointmentType: e.target.value })}>{appointmentTypes.map((t) => <option key={t}>{t}</option>)}</Select></Field>
               <Field label="家庭成员"><Select value={form.familyMemberId} onChange={(e) => h.updateForm('appointment', { familyMemberId: e.target.value })}><option value="">本人</option>{h.familyMembers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.relation}</option>)}</Select></Field>
