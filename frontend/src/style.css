@@ -365,6 +365,62 @@ a { color: inherit; text-decoration: none; }
   font-weight: 800;
 }
 .steps .active { color: var(--cyan); background: var(--soft-cyan); border-color: var(--cyan); }
+.steps .done { color: #15915b; background: var(--soft-green); border-color: rgba(51,196,129,.36); }
+.booking-step-card { min-height: 520px; }
+.booking-package-grid { margin-bottom: 0; }
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.choice-card {
+  min-height: 150px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 18px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+  color: var(--ink);
+}
+.choice-card span, .choice-card small { color: var(--muted); }
+.choice-card span { font-size: 12px; font-weight: 800; }
+.choice-card strong { font-size: 18px; line-height: 1.25; }
+.choice-card small { line-height: 1.45; }
+.choice-card b { margin-top: auto; color: #057f91; font-size: 20px; }
+.choice-card.is-selected {
+  border-color: var(--blue);
+  background: var(--soft-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+.booking-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.booking-confirm {
+  display: grid;
+  gap: 10px;
+}
+.confirm-row {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+.confirm-row span { color: var(--muted); font-size: 12px; font-weight: 800; }
+.confirm-row strong { line-height: 1.35; }
+.booking-extra-form { margin-top: 12px; }
 .date-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -450,5 +506,8 @@ a { color: inherit; text-decoration: none; }
   .workspace { padding: 0 16px 28px; }
   .metrics-grid, .two-col, .management-grid, .auth-panel, .form-grid, .form-grid.compact, .mini-form, .steps { grid-template-columns: 1fr; }
   .date-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .booking-actions { justify-content: stretch; }
+  .booking-actions .btn { flex: 1; }
+  .confirm-row { grid-template-columns: 1fr; gap: 6px; }
   .auth-copy { padding: 36px; }
 }

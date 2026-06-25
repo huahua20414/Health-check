@@ -1,12 +1,21 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button, Card, Field, PageHeader, Select, TextInput, Textarea, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { appointmentTypes } from '../utils'
+import { appointmentTypes, moneyText } from '../utils'
+
+const bookingSteps = ['选择套餐', '选择机构', '选择号源', '确认提交']
 
 export function BookingView() {
   const h = useHealth()
+  const navigate = useNavigate()
+  const [step, setStep] = useState(0)
   const form = h.forms.appointment
   const selectedPackage = h.packages.find((pkg) => pkg.id === Number(form.packageId))
+  const selectedInstitution = h.institutions.find((item) => item.id === Number(form.institutionId))
+  const selectedSlot = h.slots.find((slot) => slot.id === Number(form.slotId))
+  const selectedMember = h.familyMembers.find((member) => member.id === Number(form.familyMemberId))
+  const selectedCoupon = h.activeCoupons.find((coupon) => coupon.id === Number(form.couponId))
   const days = useMemo(() => nextDays(14), [])
   const visibleDate = form.date || days[0]?.value || ''
   const filteredSlots = h.slots.filter((slot) => {
@@ -16,26 +25,56 @@ export function BookingView() {
   })
   const slotsByTime = groupSlotsByDateTime(filteredSlots)
   const selectedDaySlots = slotsByTime[visibleDate] || []
+  const canNext = [Boolean(form.packageId), Boolean(form.institutionId), Boolean(form.slotId || form.period), true][step]
+  const next = () => {
+    if (!canNext) {
+      h.notify('warn', ['请选择套餐', '请选择体检机构', '请选择日期和号源', ''][step])
+      return
+    }
+    setStep((current) => Math.min(current + 1, bookingSteps.length - 1))
+  }
+  const submit = async () => {
+    if (!form.packageId || !form.institutionId || (!form.slotId && !form.period)) {
+      h.notify('warn', '请先完成套餐、机构和号源选择')
+      return
+    }
+    await h.createAppointment()
+    navigate('/my-appointments')
+  }
   return (
     <>
       <PageHeader title="预约体检" subtitle="选择机构、套餐和未来两周号源，医生由后端按可用号自动分配。" />
-      <div className="steps"><span>1 选机构</span><span>2 选套餐</span><span className="active">3 选日期时段</span><span>4 支付/提交</span></div>
-      <div className="two-col">
-        <Card title="预约信息">
-          <div className="form-grid">
-            <Field label="预约类型"><Select value={form.appointmentType} onChange={(e) => h.updateForm('appointment', { appointmentType: e.target.value })}>{appointmentTypes.map((t) => <option key={t}>{t}</option>)}</Select></Field>
-            <Field label="机构"><Select value={form.institutionId} onChange={(e) => h.updateForm('appointment', { institutionId: e.target.value })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
-            <Field label="套餐"><Select value={form.packageId} onChange={(e) => h.updateForm('appointment', { packageId: e.target.value })}><option value="">请选择套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
-            <Field label="家庭成员"><Select value={form.familyMemberId} onChange={(e) => h.updateForm('appointment', { familyMemberId: e.target.value })}><option value="">本人</option>{h.familyMembers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.relation}</option>)}</Select></Field>
-            <Field label="日期"><TextInput type="date" value={form.date} onChange={(e) => h.updateForm('appointment', { date: e.target.value })} /></Field>
-            <Field label="时段"><TextInput value={form.period} onChange={(e) => h.updateForm('appointment', { period: e.target.value, slotId: '' })} placeholder="请选择右侧号源" /></Field>
-            <Field label="优惠券"><Select value={form.couponId} onChange={(e) => h.updateForm('appointment', { couponId: e.target.value })}><option value="">不使用</option>{h.activeCoupons.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
-            <Field label="发票抬头"><TextInput value={form.invoiceTitle} onChange={(e) => h.updateForm('appointment', { invoiceTitle: e.target.value })} /></Field>
+      <div className="steps">{bookingSteps.map((label, index) => <span key={label} className={index === step ? 'active' : index < step ? 'done' : ''}>{index + 1} {label}</span>)}</div>
+      <Card title={bookingSteps[step]} className="booking-step-card">
+        {step === 0 && (
+          <>
+            <div className="package-grid booking-package-grid">
+              {h.packages.map((pkg) => (
+                <button key={pkg.id} className={`choice-card ${Number(form.packageId) === pkg.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { packageId: pkg.id, slotId: '', date: '', period: '' })}>
+                  <span>{pkg.category || '综合体检'}</span>
+                  <strong>{pkg.name}</strong>
+                  <small>{pkg.description || pkg.items}</small>
+                  <b>{moneyText(pkg.price)}</b>
+                </button>
+              ))}
+            </div>
+            {!h.packages.length && <p className="muted">暂无可预约套餐。</p>}
+          </>
+        )}
+        {step === 1 && (
+          <div className="choice-grid">
+            {h.institutions.map((institution) => (
+              <button key={institution.id} className={`choice-card ${Number(form.institutionId) === institution.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { institutionId: institution.id, slotId: '', date: '', period: '' })}>
+                <span>{institution.openHours || '营业中'}</span>
+                <strong>{institution.name}</strong>
+                <small>{institution.address}</small>
+                <small>{institution.phone}</small>
+              </button>
+            ))}
           </div>
-          <Field label="备注"><Textarea value={form.note} onChange={(e) => h.updateForm('appointment', { note: e.target.value })} /></Field>
-          <Button loading={h.loading.appointment} onClick={() => h.createAppointment().catch((e) => h.notify('error', e.message))}>提交预约</Button>
-        </Card>
-        <Card title="未来两周号源">
+        )}
+        {step === 2 && (
+          <>
           <div className="date-strip">
             {days.map((day) => (
               <button key={day.value} className={`date-chip ${visibleDate === day.value ? 'is-active' : ''}`} onClick={() => h.updateForm('appointment', { date: day.value, slotId: '', period: '' })}>
@@ -57,10 +96,42 @@ export function BookingView() {
             })}
           </div>
           {!selectedDaySlots.length && <p className="muted">当前筛选下暂无号源，请切换机构或套餐。</p>}
-        </Card>
-      </div>
+          </>
+        )}
+        {step === 3 && (
+          <div className="booking-confirm">
+            <ConfirmRow label="预约类型" value={form.appointmentType} />
+            <ConfirmRow label="套餐" value={selectedPackage ? `${selectedPackage.name} · ${moneyText(selectedPackage.price)}` : '未选择'} />
+            <ConfirmRow label="机构" value={selectedInstitution?.name || '未选择'} />
+            <ConfirmRow label="日期" value={form.date || '未选择'} />
+            <ConfirmRow label="时间" value={selectedSlot ? `${selectedSlot.startTime}-${selectedSlot.endTime}` : form.period || '未选择'} />
+            <ConfirmRow label="体检人" value={selectedMember ? `${selectedMember.name} · ${selectedMember.relation}` : '本人'} />
+            <div className="form-grid compact booking-extra-form">
+              <Field label="预约类型"><Select value={form.appointmentType} onChange={(e) => h.updateForm('appointment', { appointmentType: e.target.value })}>{appointmentTypes.map((t) => <option key={t}>{t}</option>)}</Select></Field>
+              <Field label="家庭成员"><Select value={form.familyMemberId} onChange={(e) => h.updateForm('appointment', { familyMemberId: e.target.value })}><option value="">本人</option>{h.familyMembers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.relation}</option>)}</Select></Field>
+              <Field label="优惠券"><Select value={form.couponId} onChange={(e) => h.updateForm('appointment', { couponId: e.target.value })}><option value="">不使用</option>{h.activeCoupons.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
+              <Field label="发票抬头"><TextInput value={form.invoiceTitle} onChange={(e) => h.updateForm('appointment', { invoiceTitle: e.target.value })} /></Field>
+              <Field label="发票税号"><TextInput value={form.invoiceTaxNo} onChange={(e) => h.updateForm('appointment', { invoiceTaxNo: e.target.value })} /></Field>
+              <Field label="备注"><Textarea value={form.note} onChange={(e) => h.updateForm('appointment', { note: e.target.value })} /></Field>
+            </div>
+            {selectedCoupon && <p className="muted">已选择优惠券：{selectedCoupon.name}</p>}
+          </div>
+        )}
+        <div className="booking-actions">
+          <Button variant="ghost" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>上一步</Button>
+          {step < bookingSteps.length - 1 ? (
+            <Button disabled={!canNext} onClick={next}>下一步</Button>
+          ) : (
+            <Button loading={h.loading.appointment} onClick={() => submit().catch((e) => h.notify('error', e.message))}>提交预约</Button>
+          )}
+        </div>
+      </Card>
     </>
   )
+}
+
+function ConfirmRow({ label, value }) {
+  return <div className="confirm-row"><span>{label}</span><strong>{value}</strong></div>
 }
 
 function nextDays(count) {
