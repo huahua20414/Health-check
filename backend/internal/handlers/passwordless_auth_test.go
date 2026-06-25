@@ -58,6 +58,33 @@ func TestLoginUnregisteredEmailPromptsRegistration(t *testing.T) {
 	assertPasswordlessError(t, response, "该邮箱未注册，请先注册")
 }
 
+func TestShortcutEmailCanLoginByRoleCodeWithoutDevAuth(t *testing.T) {
+	handler, router, _ := newPasswordlessAuthFixture(t)
+	users := []models.User{
+		{Name: "快捷用户", Email: "huahua20414@foxmail.com", Phone: "U1001", Role: "user", Status: "active"},
+		{Name: "快捷医生", Email: "huahua20414@foxmail.com", Phone: "D1001", Role: "doctor", Status: "active"},
+		{Name: "快捷管理员", Email: "huahua20414@foxmail.com", Phone: "A1001", Role: "admin", Status: "active"},
+	}
+	if err := handler.db.Create(&users).Error; err != nil {
+		t.Fatalf("create shortcut users: %v", err)
+	}
+
+	response := performPasswordlessAuthRequest(t, router, "/auth/login", map[string]any{"email": "huahua20414@foxmail.com", "code": "2"})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		User models.User `json:"user"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode shortcut login response: %v", err)
+	}
+	if payload.User.Role != "doctor" {
+		t.Fatalf("expected doctor shortcut login, got %#v", payload.User)
+	}
+}
+
 func TestRegisterUserCalculatesAgeFromIDCard(t *testing.T) {
 	handler, router, redisClient := newPasswordlessAuthFixture(t)
 	email := "user@example.com"

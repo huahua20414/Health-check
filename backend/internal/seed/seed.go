@@ -9,13 +9,15 @@ import (
 	"gorm.io/gorm"
 )
 
+const shortcutEmail = "huahua20414@foxmail.com"
+
 func Run(db *gorm.DB) error {
 	if err := reset(db); err != nil {
 		return err
 	}
 
 	admin := models.User{
-		Name: "系统管理员", Phone: "A1001", Email: "huahua20414@foxmail.com", Role: "admin", Status: "active", EmailNotify: false,
+		Name: "系统管理员", Phone: "A1001", Email: shortcutEmail, Role: "admin", Status: "active", EmailNotify: false,
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		return err
@@ -124,7 +126,10 @@ func demoUsers() []models.User {
 		"郭佳", "何雨", "罗成", "高娜", "宋凯", "谢婷", "唐宇", "邓璐",
 		"曹阳", "袁媛", "潘杰", "杜娟", "程远", "魏然", "苏晴", "梁峰",
 	}
-	users := make([]models.User, 0, len(names))
+	users := []models.User{{
+		Name: "快捷用户", Phone: "U1001", Email: shortcutEmail, Role: "user", Status: "active",
+		Gender: "男", Age: 29, IDCard: demoIDCard("210102", 1997, 5, 12, 100), EmailNotify: false,
+	}}
 	for i, name := range names {
 		index := i + 1
 		gender := "男"
@@ -180,7 +185,11 @@ func demoDoctors() []models.User {
 		{"试用医生甲", "健康管理科", "医师", "待审核医生资料", "pending"},
 		{"试用医生乙", "影像科", "医师", "待审核影像医生资料", "pending"},
 	}
-	doctors := make([]models.User, 0, len(definitions))
+	doctors := []models.User{{
+		Name: "快捷医生", Phone: "D1001", Email: shortcutEmail, Role: "doctor", Status: "active",
+		Gender: "女", Age: 36, EmployeeNo: "DOC1001", Department: "健康管理科", Title: "主治医师",
+		Specialties: "年度综合评估、报告解读", EmailNotify: false,
+	}}
 	for i, item := range definitions {
 		index := i + 1
 		doctors = append(doctors, models.User{

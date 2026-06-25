@@ -16,9 +16,9 @@
 make test
 ```
 
-访问前端：http://localhost:5173
+访问前端：http://localhost:5174
 
-后端健康检查：http://localhost:8080/api/health
+后端健康检查：http://localhost:8081/api/health
 
 ## 常用命令
 
