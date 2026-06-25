@@ -46,7 +46,7 @@ const defaultForms = {
   supportTicketReply: { id: null, reply: '', status: 'replied' },
   reminder: { date: nextDateString() },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
-  packageItem: { packageId: '', itemId: '', sortOrder: 0, required: true },
+  packageItem: { id: null, packageId: '', itemId: '', sortOrder: 0, required: true },
   schedule: { id: null, doctorId: '', institutionId: '', date: '', period: '上午', category: '', startTime: '08:30', endTime: '09:00', capacity: 1, status: 'available' },
   report: { appointmentId: '', summary: '', conclusion: '', recommendation: '' },
 }
@@ -404,12 +404,14 @@ export function HealthProvider({ children }) {
     archiveCheckupItem: (row) => action('checkupItem', '体检项目已归档', async () => { await request(`/checkup-items/${row.id}`, { method: 'DELETE' }); await loaders.loadCheckupItemsPage() }),
     savePackageItem: () => action('packageItem', '套餐项目组合已保存', async () => {
       const body = JSON.stringify({
+        id: forms.packageItem.id,
         packageId: Number(forms.packageItem.packageId || 0),
         itemId: Number(forms.packageItem.itemId || 0),
         sortOrder: Number(forms.packageItem.sortOrder || 0),
         required: forms.packageItem.required !== false,
       })
-      await request('/package-items', { method: 'POST', body })
+      if (forms.packageItem.id) await request(`/package-items/${forms.packageItem.id}`, { method: 'PATCH', body })
+      else await request('/package-items', { method: 'POST', body })
       resetForm('packageItem')
       await loaders.loadPackageItemsPage()
     }),

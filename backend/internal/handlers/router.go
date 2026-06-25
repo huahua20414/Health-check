@@ -142,6 +142,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.DELETE("/checkup-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.archiveCheckupItem)
 	protected.GET("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.packageItems)
 	protected.POST("/package-items", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.upsertPackageItem)
+	protected.PATCH("/package-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.updatePackageItem)
 	protected.GET("/package-items/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportPackageItems)
 	protected.POST("/package-items/import", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.importPackageItems)
 	protected.DELETE("/package-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.deletePackageItem)
@@ -3546,6 +3547,46 @@ func (h *Handler) upsertPackageItem(c *gin.Context) {
 	}
 	h.db.Preload("Package").Preload("Item").First(&link, link.ID)
 	h.recordOperation(c, "upsert", "package_item", strconv.Itoa(int(link.ID)), "success", fmt.Sprintf("package=%d item=%d", req.PackageID, req.ItemID))
+	c.JSON(http.StatusOK, link)
+}
+
+func (h *Handler) updatePackageItem(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package item id"})
+		return
+	}
+	var req packageItemRequest
+	if !bind(c, &req) {
+		return
+	}
+	var link models.PackageItem
+	if err := h.db.First(&link, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "package item not found"})
+		return
+	}
+	var duplicate models.PackageItem
+	err = h.db.Where("package_id = ? AND item_id = ? AND id <> ?", req.PackageID, req.ItemID, id).First(&duplicate).Error
+	if err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "package item already exists"})
+		return
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	updates := map[string]any{
+		"package_id": req.PackageID,
+		"item_id":    req.ItemID,
+		"sort_order": req.SortOrder,
+		"required":   req.Required,
+	}
+	if err := h.db.Model(&link).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.Preload("Package").Preload("Item").First(&link, id)
+	h.recordOperation(c, "update", "package_item", strconv.Itoa(id), "success", fmt.Sprintf("package=%d item=%d", req.PackageID, req.ItemID))
 	c.JSON(http.StatusOK, link)
 }
 

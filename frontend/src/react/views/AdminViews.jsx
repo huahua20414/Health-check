@@ -133,7 +133,7 @@ function PackageItemPanel({ h }) {
   const [open, setOpen] = useState(false)
   const openCreate = () => { h.resetForm('packageItem'); setOpen(true) }
   const openEdit = (row) => {
-    h.updateForm('packageItem', { packageId: row.packageId, itemId: row.itemId, sortOrder: row.sortOrder, required: row.required })
+    h.updateForm('packageItem', { id: row.id, packageId: row.packageId, itemId: row.itemId, sortOrder: row.sortOrder, required: row.required })
     setOpen(true)
   }
   const itemOptions = h.checkupItemRows.length ? h.checkupItemRows : h.checkupItems

@@ -89,6 +89,46 @@ func TestImportPackageItemsRejectsMissingItem(t *testing.T) {
 	assertPackageItemOperationLogCount(t, db, fixture.admin.ID, "import", 1)
 }
 
+func TestUpdatePackageItemEditsExistingRowByID(t *testing.T) {
+	handler, db, fixture := newPackageItemExchangeFixture(t)
+	router := newPackageItemExchangeRouter(handler, fixture.admin)
+
+	response := performPackageItemJSONRequest(t, router, http.MethodPatch, "/package-items/40", packageItemRequest{
+		PackageID: fixture.pkg.ID,
+		ItemID:    fixture.bloodItem.ID,
+		SortOrder: 8,
+		Required:  false,
+	})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	assertPackageItem(t, db, fixture.pkg.ID, fixture.bloodItem.ID, 8, false)
+	assertPackageItemOperationLogCount(t, db, fixture.admin.ID, "update", 1)
+}
+
+func TestUpdatePackageItemRejectsDuplicatePackageAndItem(t *testing.T) {
+	handler, db, fixture := newPackageItemExchangeFixture(t)
+	router := newPackageItemExchangeRouter(handler, fixture.admin)
+	if err := db.Create(&models.PackageItem{ID: 41, PackageID: fixture.pkg.ID, ItemID: fixture.ctItem.ID, SortOrder: 2, Required: true}).Error; err != nil {
+		t.Fatalf("create duplicate target row: %v", err)
+	}
+
+	response := performPackageItemJSONRequest(t, router, http.MethodPatch, "/package-items/40", packageItemRequest{
+		PackageID: fixture.pkg.ID,
+		ItemID:    fixture.ctItem.ID,
+		SortOrder: 3,
+		Required:  true,
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "package item already exists")
+	assertPackageItem(t, db, fixture.pkg.ID, fixture.bloodItem.ID, 1, true)
+	assertPackageItemOperationLogCount(t, db, fixture.admin.ID, "update", 0)
+}
+
 type packageItemExchangeFixture struct {
 	admin     models.User
 	pkg       models.CheckupPackage
@@ -136,6 +176,7 @@ func newPackageItemExchangeRouter(handler *Handler, current models.User) *gin.En
 	router.GET("/package-items", handler.packageItems)
 	router.GET("/package-items/export", handler.exportPackageItems)
 	router.POST("/package-items/import", handler.importPackageItems)
+	router.PATCH("/package-items/:id", handler.updatePackageItem)
 	return router
 }
 
@@ -163,6 +204,19 @@ func performPackageItemExchangeRequest(t *testing.T, router *gin.Engine, method,
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func performPackageItemJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal json body: %v", err)
+	}
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec
