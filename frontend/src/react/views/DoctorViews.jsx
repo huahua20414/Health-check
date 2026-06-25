@@ -1,5 +1,5 @@
-import React from 'react'
-import { Button, Card, Field, PageHeader, PaginatedTable, Select, StatusTag, Textarea } from '../components/UI.jsx'
+import React, { useState } from 'react'
+import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, StatusTag, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 
 export function DoctorAppointmentsView() {
@@ -14,19 +14,19 @@ export function DoctorAppointmentsView() {
 
 export function DoctorReportsView() {
   const h = useHealth()
+  const [open, setOpen] = useState(false)
+  const openCreate = () => { h.resetForm('report'); setOpen(true) }
+  const save = () => h.createReport().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
   return (
     <>
-      <PageHeader title="报告录入" subtitle="医生生成或更新体检报告。" />
-      <div className="two-col">
-        <Card title="报告表单">
-          <Field label="预约"><Select value={h.forms.report.appointmentId} onChange={(e) => h.updateForm('report', { appointmentId: e.target.value })}><option value="">请选择预约</option>{h.appointments.map((a) => <option key={a.id} value={a.id}>{a.user?.name || '客户'} · {a.package?.name || a.appointmentType}</option>)}</Select></Field>
-          <Field label="检查摘要"><Textarea value={h.forms.report.summary} onChange={(e) => h.updateForm('report', { summary: e.target.value })} /></Field>
-          <Field label="体检结论"><Textarea value={h.forms.report.conclusion} onChange={(e) => h.updateForm('report', { conclusion: e.target.value })} /></Field>
-          <Field label="健康建议"><Textarea value={h.forms.report.recommendation} onChange={(e) => h.updateForm('report', { recommendation: e.target.value })} /></Field>
-          <Button loading={h.loading.report} onClick={() => h.createReport().catch((e) => h.notify('error', e.message))}>保存报告</Button>
-        </Card>
-        <Card title="已生成报告"><PaginatedTable columns={[{ title: '编号', render: (r) => r.reportNo || r.id }, { title: '客户', render: (r) => r.user?.name || '-' }, { title: '操作', render: (r) => <Button size="sm" variant="ghost" onClick={() => h.downloadReport(r)}>下载</Button> }]} rows={h.reports} /></Card>
-      </div>
+      <PageHeader title="报告录入" subtitle="医生生成或更新体检报告。" actions={<Button onClick={openCreate}>录入报告</Button>} />
+      <Card title="已生成报告"><PaginatedTable columns={[{ title: '编号', render: (r) => r.reportNo || r.id }, { title: '客户', render: (r) => r.user?.name || '-' }, { title: '操作', render: (r) => <Button size="sm" variant="ghost" onClick={() => h.downloadReport(r)}>下载</Button> }]} rows={h.reports} /></Card>
+      <Modal open={open} title="报告录入" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.report} onClick={save}>保存报告</Button></>}>
+        <Field label="预约"><Select value={h.forms.report.appointmentId} onChange={(e) => h.updateForm('report', { appointmentId: e.target.value })}><option value="">请选择预约</option>{h.appointments.map((a) => <option key={a.id} value={a.id}>{a.user?.name || '客户'} · {a.package?.name || a.appointmentType}</option>)}</Select></Field>
+        <Field label="检查摘要"><Textarea value={h.forms.report.summary} onChange={(e) => h.updateForm('report', { summary: e.target.value })} /></Field>
+        <Field label="体检结论"><Textarea value={h.forms.report.conclusion} onChange={(e) => h.updateForm('report', { conclusion: e.target.value })} /></Field>
+        <Field label="健康建议"><Textarea value={h.forms.report.recommendation} onChange={(e) => h.updateForm('report', { recommendation: e.target.value })} /></Field>
+      </Modal>
     </>
   )
 }

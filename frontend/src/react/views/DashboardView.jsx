@@ -1,10 +1,12 @@
 import React from 'react'
-import { Card, DataTable, Metric, PageHeader, StatusTag } from '../components/UI.jsx'
+import { useNavigate } from 'react-router-dom'
+import { Button, Card, DataTable, Metric, PageHeader, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { moneyText, statusText } from '../utils'
 
 export function DashboardView() {
   const h = useHealth()
+  const navigate = useNavigate()
   if (h.role === 'doctor') return <DoctorDashboard h={h} />
   if (h.role === 'admin') return <AdminLiteDashboard h={h} />
   return (
@@ -25,7 +27,7 @@ export function DashboardView() {
             { title: '项目', render: (r) => r.package?.name || r.appointmentType },
             { title: '机构', render: (r) => r.institution?.name || '-' },
             { title: '状态', render: (r) => <StatusTag status={r.status} /> },
-            { title: '操作', render: (r) => r.status === 'reported' ? '查看 / 下载 / 评价' : '改期 / 取消 / 发票' },
+            { title: '操作', render: (r) => <Button size="sm" variant="ghost" onClick={() => navigate(r.status === 'reported' ? '/my-reports' : '/my-appointments')}>{r.status === 'reported' ? '查看报告' : '处理预约'}</Button> },
           ]} rows={h.myAppointments.slice(0, 5)} />
         </Card>
       </div>

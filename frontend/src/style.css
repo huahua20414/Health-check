@@ -169,6 +169,58 @@ a { color: inherit; text-decoration: none; }
 .card p { color: var(--muted); line-height: 1.55; }
 .card-head p { margin: 6px 0 0; font-size: 13px; }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, .42);
+}
+.modal-panel {
+  width: min(760px, 100%);
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .24);
+}
+.modal-head {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h3 { margin: 0; font-size: 20px; }
+.modal-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -199,6 +251,30 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+}
+.detail-list {
+  display: grid;
+  gap: 10px;
+}
+.detail-list p {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.detail-list p:last-child { border-bottom: 0; }
+.detail-list span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.detail-list strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 760;
+  overflow-wrap: anywhere;
 }
 
 .btn {
@@ -513,5 +589,8 @@ a { color: inherit; text-decoration: none; }
   .booking-actions { justify-content: stretch; }
   .booking-actions .btn { flex: 1; }
   .confirm-row { grid-template-columns: 1fr; gap: 6px; }
+  .modal-backdrop { padding: 12px; align-items: end; }
+  .modal-panel { max-height: 92vh; }
+  .modal-actions { flex-direction: column-reverse; }
   .auth-copy { padding: 36px; }
 }

@@ -14,6 +14,22 @@ export function Card({ title, subtitle, actions, children, className = '' }) {
   )
 }
 
+export function Modal({ open, title, actions, children, onClose }) {
+  if (!open) return null
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.() }}>
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-head">
+          <h3>{title}</h3>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="关闭">×</button>
+        </div>
+        <div className="modal-body">{children}</div>
+        {actions && <div className="modal-actions">{actions}</div>}
+      </section>
+    </div>
+  )
+}
+
 export function Metric({ label, value, tone = 'cyan' }) {
   return <div className={`metric metric-${tone}`}><strong>{value}</strong><span>{label}</span></div>
 }
