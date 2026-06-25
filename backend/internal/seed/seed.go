@@ -249,32 +249,31 @@ func seedFamilyMembers(db *gorm.DB, users []models.User) error {
 
 func demoScheduleSlots(now time.Time, doctors []models.User, institutions []models.CheckupInstitution, packages []models.CheckupPackage) []models.ScheduleSlot {
 	activeDoctors := filterActiveDoctors(doctors)
-	startTimes := []string{"08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"}
 	categories := packageCategories(packages)
-	offsets := []int{-2, -1, 0, 1, 2, 3, 4}
-	slots := make([]models.ScheduleSlot, 0, len(offsets)*len(startTimes)*2)
+	rules := demoDoctorShiftRules(activeDoctors, institutions, categories)
+	startDate := dayStart(now)
+	slots := make([]models.ScheduleSlot, 0, len(rules)*14*15)
 	usedDoctorTimes := make(map[string]bool)
-	doctorCursor := 0
-	for dayIndex, offset := range offsets {
-		date := now.AddDate(0, 0, offset).Format("2006-01-02")
-		for timeIndex, start := range startTimes {
-			doctorCount := 1
-			if timeIndex%5 == 1 {
-				doctorCount = 2
+	for offset := 0; offset < 14; offset++ {
+		day := startDate.AddDate(0, 0, offset)
+		date := day.Format("2006-01-02")
+		weekday := int(day.Weekday())
+		for _, rule := range rules {
+			if !rule.Workdays[weekday] {
+				continue
 			}
-			if timeIndex == 3 || timeIndex == 9 {
-				doctorCount = 3
-			}
-			for repeat := 0; repeat < doctorCount; repeat++ {
-				doctor := nextAvailableDoctor(activeDoctors, &doctorCursor, usedDoctorTimes, date, start)
-				category := categories[(dayIndex+timeIndex+repeat)%len(categories)]
-				institution := institutions[(dayIndex+repeat+timeIndex)%len(institutions)]
+			for _, start := range shiftTimes(rule.Shift) {
+				key := fmt.Sprintf("%d|%s|%s", rule.Doctor.ID, date, start)
+				if usedDoctorTimes[key] {
+					continue
+				}
+				usedDoctorTimes[key] = true
 				slots = append(slots, models.ScheduleSlot{
-					DoctorID:      doctor.ID,
-					InstitutionID: institution.ID,
+					DoctorID:      rule.Doctor.ID,
+					InstitutionID: rule.Institution.ID,
 					Date:          date,
 					Period:        periodForStart(start),
-					Category:      category,
+					Category:      rule.Category,
 					StartTime:     start,
 					EndTime:       addHalfHour(start),
 					Capacity:      1,
@@ -284,7 +283,68 @@ func demoScheduleSlots(now time.Time, doctors []models.User, institutions []mode
 			}
 		}
 	}
-	return appendCoverageSlots(slots, activeDoctors, institutions, categories, now, usedDoctorTimes, &doctorCursor)
+	return appendTwoWeekCoverageSlots(slots, activeDoctors, institutions, categories, startDate, usedDoctorTimes)
+}
+
+type doctorShiftRule struct {
+	Doctor      models.User
+	Institution models.CheckupInstitution
+	Category    string
+	Shift       string
+	Workdays    map[int]bool
+}
+
+func demoDoctorShiftRules(doctors []models.User, institutions []models.CheckupInstitution, categories []string) []doctorShiftRule {
+	rules := make([]doctorShiftRule, 0, len(doctors)*2)
+	categoryWeights := map[string]int{
+		"健康管理科": 0,
+		"内科":    1,
+		"检验科":   1,
+		"影像科":   3,
+		"妇科":    4,
+		"老年医学科": 5,
+		"心电科":   2,
+	}
+	for i, doctor := range doctors {
+		categoryIndex, ok := categoryWeights[doctor.Department]
+		if !ok {
+			categoryIndex = i
+		}
+		category := categories[categoryIndex%len(categories)]
+		institution := institutions[(i+i/3)%len(institutions)]
+		rules = append(rules, doctorShiftRule{
+			Doctor:      doctor,
+			Institution: institution,
+			Category:    category,
+			Shift:       "上午",
+			Workdays:    workdaySet((i+1)%7, (i+3)%7, (i+5)%7),
+		})
+		if i%3 != 1 {
+			rules = append(rules, doctorShiftRule{
+				Doctor:      doctor,
+				Institution: institutions[(i+1)%len(institutions)],
+				Category:    categories[(categoryIndex+i+2)%len(categories)],
+				Shift:       "下午",
+				Workdays:    workdaySet((i+2)%7, (i+4)%7),
+			})
+		}
+	}
+	return rules
+}
+
+func workdaySet(days ...int) map[int]bool {
+	result := make(map[int]bool, len(days))
+	for _, day := range days {
+		result[day] = true
+	}
+	return result
+}
+
+func shiftTimes(shift string) []string {
+	if shift == "下午" {
+		return []string{"13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"}
+	}
+	return []string{"08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30"}
 }
 
 func filterActiveDoctors(doctors []models.User) []models.User {
@@ -309,13 +369,40 @@ func packageCategories(packages []models.CheckupPackage) []string {
 	return categories
 }
 
-func appendCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, institutions []models.CheckupInstitution, categories []string, now time.Time, usedDoctorTimes map[string]bool, doctorCursor *int) []models.ScheduleSlot {
+func appendTwoWeekCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, institutions []models.CheckupInstitution, categories []string, startDate time.Time, usedDoctorTimes map[string]bool) []models.ScheduleSlot {
+	allTimes := []string{"08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"}
+	exists := make(map[string]bool, len(slots))
+	for _, slot := range slots {
+		exists[fmt.Sprintf("%s|%s", slot.Date, slot.StartTime)] = true
+	}
+	cursor := 0
+	for offset := 0; offset < 14; offset++ {
+		date := startDate.AddDate(0, 0, offset).Format("2006-01-02")
+		for timeIndex, start := range allTimes {
+			if exists[fmt.Sprintf("%s|%s", date, start)] {
+				continue
+			}
+			doctor := nextAvailableDoctor(doctors, &cursor, usedDoctorTimes, date, start)
+			slots = append(slots, models.ScheduleSlot{
+				DoctorID:      doctor.ID,
+				InstitutionID: institutions[(offset+timeIndex)%len(institutions)].ID,
+				Date:          date,
+				Period:        periodForStart(start),
+				Category:      categories[(offset+timeIndex)%len(categories)],
+				StartTime:     start,
+				EndTime:       addHalfHour(start),
+				Capacity:      1,
+				BookedCount:   0,
+				Status:        "available",
+			})
+		}
+	}
 	coverageTimes := []string{"10:00", "11:00", "13:30", "15:00", "16:00", "16:30"}
 	for institutionIndex, institution := range institutions {
 		for categoryIndex, category := range categories {
 			start := coverageTimes[(institutionIndex+categoryIndex)%len(coverageTimes)]
-			date := now.AddDate(0, 0, 5+institutionIndex+categoryIndex/len(coverageTimes)).Format("2006-01-02")
-			doctor := nextAvailableDoctor(doctors, doctorCursor, usedDoctorTimes, date, start)
+			date := startDate.AddDate(0, 0, 5+institutionIndex+categoryIndex/len(coverageTimes)).Format("2006-01-02")
+			doctor := nextAvailableDoctor(doctors, &cursor, usedDoctorTimes, date, start)
 			slots = append(slots, models.ScheduleSlot{
 				DoctorID:      doctor.ID,
 				InstitutionID: institution.ID,
@@ -331,6 +418,10 @@ func appendCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, ins
 		}
 	}
 	return slots
+}
+
+func dayStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
 func nextAvailableDoctor(doctors []models.User, cursor *int, usedDoctorTimes map[string]bool, date, start string) models.User {

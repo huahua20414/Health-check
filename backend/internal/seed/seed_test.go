@@ -2,6 +2,7 @@ package seed
 
 import (
 	"testing"
+	"time"
 
 	"health-checkup/backend/internal/database"
 	"health-checkup/backend/internal/models"
@@ -26,11 +27,30 @@ func TestRunSeedsRichDemoBusinessData(t *testing.T) {
 
 	assertDoctorDepartmentsAreUneven(t, db)
 	assertEveryDemoTimeHasSlots(t, db)
+	assertNextTwoWeeksHaveCompleteSlotTimes(t, db)
 	assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t, db)
 	assertSomeTimesHaveMultipleDoctors(t, db)
 	assertSomeSlotsAreFull(t, db)
 	assertNoSlotIsOverbooked(t, db)
 	assertSeededIDCardsAreValid(t, db)
+}
+
+func assertNextTwoWeeksHaveCompleteSlotTimes(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	today := time.Now()
+	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	for offset := 0; offset < 14; offset++ {
+		date := today.AddDate(0, 0, offset).Format("2006-01-02")
+		for _, startTime := range []string{"08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"} {
+			var count int64
+			if err := db.Model(&models.ScheduleSlot{}).Where("date = ? AND start_time = ?", date, startTime).Count(&count).Error; err != nil {
+				t.Fatalf("count slots for %s %s: %v", date, startTime, err)
+			}
+			if count == 0 {
+				t.Fatalf("expected at least one slot for %s %s", date, startTime)
+			}
+		}
+	}
 }
 
 func openSeedTestDB(t *testing.T) *gorm.DB {

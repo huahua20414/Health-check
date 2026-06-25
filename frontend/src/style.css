@@ -365,9 +365,33 @@ a { color: inherit; text-decoration: none; }
   font-weight: 800;
 }
 .steps .active { color: var(--cyan); background: var(--soft-cyan); border-color: var(--cyan); }
-.slot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.date-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.date-chip {
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.date-chip strong { font-size: 14px; line-height: 1.1; }
+.date-chip span { color: var(--muted); font-size: 12px; }
+.date-chip.is-active {
+  border-color: var(--cyan);
+  background: var(--soft-cyan);
+  color: #057f91;
+}
+.slot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .slot-card {
-  min-height: 82px;
+  min-height: 96px;
   display: grid;
   gap: 6px;
   padding: 12px;
@@ -376,7 +400,13 @@ a { color: inherit; text-decoration: none; }
   border-radius: 8px;
   background: var(--soft-cyan);
 }
+.slot-card strong { line-height: 1.2; }
+.slot-card span { color: var(--muted); font-size: 12px; }
 .slot-card.is-full { border-color: rgba(245,158,11,.45); background: var(--soft-amber); }
+.slot-card.is-selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
 .muted { color: var(--muted); }
 .empty-state { padding: 20px; color: var(--muted); text-align: center; }
 .action-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -419,5 +449,6 @@ a { color: inherit; text-decoration: none; }
   .topbar, .page-title { align-items: flex-start; flex-direction: column; }
   .workspace { padding: 0 16px 28px; }
   .metrics-grid, .two-col, .management-grid, .auth-panel, .form-grid, .form-grid.compact, .mini-form, .steps { grid-template-columns: 1fr; }
+  .date-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .auth-copy { padding: 36px; }
 }
