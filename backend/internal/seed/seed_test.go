@@ -24,8 +24,10 @@ func TestRunSeedsRichDemoBusinessData(t *testing.T) {
 	assertMinCount(t, db, &models.ScheduleSlot{}, "status = ?", []any{"available"}, 130)
 	assertMinCount(t, db, &models.Appointment{}, "status <> ?", []any{"canceled"}, 60)
 	assertMinCount(t, db, &models.WaitlistEntry{}, "status = ?", []any{"waiting"}, 10)
+	assertMinCount(t, db, &models.PackageItem{}, "1 = ?", []any{1}, 20)
 
 	assertDoctorDepartmentsAreUneven(t, db)
+	assertEveryPackageHasItems(t, db)
 	assertEveryDemoTimeHasSlots(t, db)
 	assertNextTwoWeeksHaveCompleteSlotTimes(t, db)
 	assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t, db)
@@ -33,6 +35,23 @@ func TestRunSeedsRichDemoBusinessData(t *testing.T) {
 	assertSomeSlotsAreFull(t, db)
 	assertNoSlotIsOverbooked(t, db)
 	assertSeededIDCardsAreValid(t, db)
+}
+
+func assertEveryPackageHasItems(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var packages []models.CheckupPackage
+	if err := db.Where("status = ?", "active").Find(&packages).Error; err != nil {
+		t.Fatalf("query packages: %v", err)
+	}
+	for _, pkg := range packages {
+		var count int64
+		if err := db.Model(&models.PackageItem{}).Where("package_id = ?", pkg.ID).Count(&count).Error; err != nil {
+			t.Fatalf("count package items for %s: %v", pkg.Name, err)
+		}
+		if count == 0 {
+			t.Fatalf("expected package %q to have package item links", pkg.Name)
+		}
+	}
 }
 
 func TestEnsureFutureScheduleSlotsIsIdempotentAndRollsForward(t *testing.T) {

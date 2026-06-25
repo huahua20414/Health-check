@@ -108,6 +108,9 @@ func Run(db *gorm.DB) error {
 	if err := db.Create(&items).Error; err != nil {
 		return err
 	}
+	if err := seedPackageItems(db, packages, items); err != nil {
+		return err
+	}
 
 	coupons := []models.Coupon{
 		{Name: "新客体检立减", Code: "NEW50", Type: "amount", Value: 50, MinAmount: 199, Status: "active", Description: "新用户预约体检可用，结算页展示活动价。"},
@@ -288,6 +291,41 @@ func seedFamilyMembers(db *gorm.DB, users []models.User) error {
 		})
 	}
 	return db.Create(&members).Error
+}
+
+func seedPackageItems(db *gorm.DB, packages []models.CheckupPackage, items []models.CheckupItem) error {
+	itemByName := make(map[string]models.CheckupItem, len(items))
+	for _, item := range items {
+		itemByName[item.Name] = item
+	}
+	definitions := map[string][]string{
+		"入职基础体检": {"一般检查", "血常规", "尿常规", "肝肾功能"},
+		"慢病风险筛查": {"一般检查", "血常规", "肝肾功能", "心电图"},
+		"年度综合体检": {"一般检查", "血常规", "尿常规", "肝肾功能", "心电图", "腹部彩超"},
+		"影像专项检查": {"一般检查", "腹部彩超", "心电图"},
+		"女性专项体检": {"一般检查", "血常规", "尿常规", "腹部彩超"},
+		"老年健康评估": {"一般检查", "血常规", "肝肾功能", "心电图", "腹部彩超"},
+	}
+	var links []models.PackageItem
+	for _, pkg := range packages {
+		names := definitions[pkg.Name]
+		if len(names) == 0 {
+			names = []string{"一般检查", "血常规", "肝肾功能"}
+		}
+		for index, name := range names {
+			item, ok := itemByName[name]
+			if !ok {
+				continue
+			}
+			links = append(links, models.PackageItem{
+				PackageID: pkg.ID,
+				ItemID:    item.ID,
+				SortOrder: index + 1,
+				Required:  index < 3,
+			})
+		}
+	}
+	return db.Create(&links).Error
 }
 
 func demoScheduleSlots(now time.Time, doctors []models.User, institutions []models.CheckupInstitution, packages []models.CheckupPackage) []models.ScheduleSlot {
