@@ -86,11 +86,21 @@ export function BookingView() {
             {selectedDaySlots.map((group) => {
               const chosen = group.availableSlot || group.slots[0]
               const full = group.remaining <= 0
+              if (full) {
+                return (
+                  <div key={`${group.date}-${group.startTime}`} className="slot-card is-full">
+                    <strong>{group.startTime}-{group.endTime}</strong>
+                    <span>{group.doctorCount} 位医生 · 已满</span>
+                    <StatusTag status="full" />
+                    <Button size="sm" variant="secondary" loading={h.loading.appointment} onClick={() => h.joinWaitlist(chosen).then(() => navigate('/my-appointments')).catch((e) => h.notify('error', e.message))}>加入候补</Button>
+                  </div>
+                )
+              }
               return (
-                <button key={`${group.date}-${group.startTime}`} className={`slot-card ${full ? 'is-full' : ''} ${Number(form.slotId) === chosen.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { slotId: chosen.id, date: group.date, period: group.period || group.startTime })}>
+                <button key={`${group.date}-${group.startTime}`} className={`slot-card ${Number(form.slotId) === chosen.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { slotId: chosen.id, date: group.date, period: group.period || group.startTime })}>
                   <strong>{group.startTime}-{group.endTime}</strong>
                   <span>{group.doctorCount} 位医生 · 余 {group.remaining}</span>
-                  <StatusTag status={full ? 'full' : 'available'} />
+                  <StatusTag status="available" />
                 </button>
               )
             })}

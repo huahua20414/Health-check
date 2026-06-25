@@ -459,6 +459,7 @@ a { color: inherit; text-decoration: none; }
 .slot-card strong { line-height: 1.2; }
 .slot-card span { color: var(--muted); font-size: 12px; }
 .slot-card.is-full { border-color: rgba(245,158,11,.45); background: var(--soft-amber); }
+.slot-card .btn { justify-self: start; margin-top: 2px; }
 .slot-card.is-selected {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
