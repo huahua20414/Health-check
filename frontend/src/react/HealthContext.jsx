@@ -402,7 +402,17 @@ export function HealthProvider({ children }) {
     archiveInstitution: (row) => action('institution', '体检机构已归档', async () => { await request(`/institutions/${row.id}`, { method: 'DELETE' }); await loaders.loadInstitutionsPage() }),
     saveCheckupItem: () => action('checkupItem', '体检项目已保存', async () => { const body = JSON.stringify({ ...forms.checkupItem, price: Number(forms.checkupItem.price || 0), durationMin: Number(forms.checkupItem.durationMin || 10) }); if (forms.checkupItem.id) await request(`/checkup-items/${forms.checkupItem.id}`, { method: 'PATCH', body }); else await request('/checkup-items', { method: 'POST', body }); resetForm('checkupItem'); await loaders.loadCheckupItemsPage() }),
     archiveCheckupItem: (row) => action('checkupItem', '体检项目已归档', async () => { await request(`/checkup-items/${row.id}`, { method: 'DELETE' }); await loaders.loadCheckupItemsPage() }),
-    savePackageItem: () => action('packageItem', '套餐项目组合已保存', async () => { await request('/package-items', { method: 'POST', body: JSON.stringify(forms.packageItem) }); await loaders.loadPackageItemsPage() }),
+    savePackageItem: () => action('packageItem', '套餐项目组合已保存', async () => {
+      const body = JSON.stringify({
+        packageId: Number(forms.packageItem.packageId || 0),
+        itemId: Number(forms.packageItem.itemId || 0),
+        sortOrder: Number(forms.packageItem.sortOrder || 0),
+        required: forms.packageItem.required !== false,
+      })
+      await request('/package-items', { method: 'POST', body })
+      resetForm('packageItem')
+      await loaders.loadPackageItemsPage()
+    }),
     deletePackageItem: (row) => action('packageItem', '套餐项目已移除', async () => { await request(`/package-items/${row.id}`, { method: 'DELETE' }); await loaders.loadPackageItemsPage() }),
     saveScheduleSlot: () => action('schedule', '排班号源已保存', async () => { const body = JSON.stringify({ ...forms.schedule, capacity: Number(forms.schedule.capacity || 1) }); if (forms.schedule.id) await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body }); else await request('/schedule/slots', { method: 'POST', body }); resetForm('schedule'); await loaders.loadSlotsPage() }),
     archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => { await request(`/schedule/slots/${row.id}`, { method: 'DELETE' }); await loaders.loadSlotsPage() }),

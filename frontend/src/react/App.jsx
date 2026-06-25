@@ -12,7 +12,7 @@ import { ProfileView } from './views/ProfileView.jsx'
 import { FamilyView } from './views/FamilyView.jsx'
 import { NotificationsView } from './views/NotificationsView.jsx'
 import { DoctorAppointmentsView, DoctorReportsView, PeopleView } from './views/DoctorViews.jsx'
-import { AdminDashboardView, DoctorReviewView, PackageManageView, ResourceManageView, OperationsView } from './views/AdminViews.jsx'
+import { AdminDashboardView, DoctorReviewView, PackageManageView, ResourceManageView } from './views/AdminViews.jsx'
 import { homePath } from './utils.js'
 
 function Guarded({ roles, children }) {
@@ -62,7 +62,6 @@ function AppRoutes() {
           <Route path="admin/doctors" element={<Guarded roles={['admin']}><DoctorReviewView /></Guarded>} />
           <Route path="admin/packages" element={<Guarded roles={['admin']}><PackageManageView /></Guarded>} />
           <Route path="admin/service-resources" element={<Guarded roles={['admin']}><ResourceManageView /></Guarded>} />
-          <Route path="admin/operations" element={<Guarded roles={['admin']}><OperationsView /></Guarded>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
