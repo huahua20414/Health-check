@@ -47,7 +47,7 @@ const defaultForms = {
   reminder: { date: nextDateString() },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
   packageItem: { packageId: '', itemId: '', sortOrder: 0, required: true },
-  schedule: { id: null, doctorId: '', institutionId: '', date: '', period: '上午', category: '', startTime: '08:30', endTime: '', capacity: 1, status: 'available' },
+  schedule: { id: null, doctorId: '', institutionId: '', date: '', period: '上午', category: '', startTime: '08:30', endTime: '09:00', capacity: 1, status: 'available' },
   report: { appointmentId: '', summary: '', conclusion: '', recommendation: '' },
 }
 

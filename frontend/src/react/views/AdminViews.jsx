@@ -78,7 +78,44 @@ function PackageItemPanel({ h }) {
 
 function SchedulePanel({ h }) {
   const f = h.forms.schedule
-  return <Card title="医生号源"><PaginatedTable columns={[{ title: '医生', render: (r) => r.doctor?.name || r.doctorId }, { title: '日期', render: (r) => r.date }, { title: '时段', render: (r) => r.startTime || r.period }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }]} rows={h.scheduleSlotRows.length ? h.scheduleSlotRows : h.slots} /><div className="mini-form"><Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">医生</option>{h.users.filter((u) => u.role === 'doctor').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select><TextInput type="date" value={f.date} onChange={(e) => h.updateForm('schedule', { date: e.target.value })} /><TextInput placeholder="08:30" value={f.startTime} onChange={(e) => h.updateForm('schedule', { startTime: e.target.value })} /><Button onClick={() => h.saveScheduleSlot()}>保存</Button></div></Card>
+  const rows = h.scheduleSlotRows.length ? h.scheduleSlotRows : h.slots
+  const doctors = h.users.filter((u) => u.role === 'doctor' && u.status === 'active')
+  const categories = [...new Set(h.packages.map((p) => p.category).filter(Boolean))]
+  const editSlot = (slot) => h.updateForm('schedule', {
+    id: slot.id,
+    doctorId: slot.doctorId,
+    institutionId: slot.institutionId,
+    date: slot.date,
+    period: slot.period || '上午',
+    category: slot.category || '',
+    startTime: slot.startTime || '08:30',
+    endTime: slot.endTime || '',
+    capacity: slot.capacity || 1,
+    status: slot.status || 'available',
+  })
+  return <Card title="医生号源"><PaginatedTable columns={[
+    { title: '医生', render: (r) => r.doctor?.name || r.doctorId },
+    { title: '机构', render: (r) => r.institution?.name || r.institutionId },
+    { title: '日期', render: (r) => r.date },
+    { title: '时段', render: (r) => `${r.startTime || ''}-${r.endTime || ''}` },
+    { title: '分类', render: (r) => r.category || '-' },
+    { title: '余号', render: (r) => `${Math.max(0, Number(r.capacity || 0) - Number(r.bookedCount || 0))}/${r.capacity || 0}` },
+    { title: '状态', render: (r) => <StatusTag status={r.status} /> },
+    { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => editSlot(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveScheduleSlot(r)}>归档</Button></div> },
+  ]} rows={rows} />
+    <div className="mini-form schedule-form">
+      <Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select>
+      <Select value={f.institutionId} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value })}><option value="">机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select>
+      <Select value={f.category} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</Select>
+      <TextInput type="date" value={f.date} onChange={(e) => h.updateForm('schedule', { date: e.target.value })} />
+      <TextInput placeholder="开始 08:30" value={f.startTime} onChange={(e) => h.updateForm('schedule', { startTime: e.target.value })} />
+      <TextInput placeholder="结束 09:00" value={f.endTime} onChange={(e) => h.updateForm('schedule', { endTime: e.target.value })} />
+      <Select value={f.period} onChange={(e) => h.updateForm('schedule', { period: e.target.value })}><option value="上午">上午</option><option value="下午">下午</option></Select>
+      <TextInput type="number" min="1" value={f.capacity} onChange={(e) => h.updateForm('schedule', { capacity: e.target.value })} />
+      <Select value={f.status} onChange={(e) => h.updateForm('schedule', { status: e.target.value })}><option value="available">可预约</option><option value="disabled">停用</option></Select>
+      <div className="row-actions"><Button onClick={() => h.saveScheduleSlot()}>{f.id ? '保存编辑' : '新增号源'}</Button>{f.id && <Button variant="ghost" onClick={() => h.resetForm('schedule')}>取消编辑</Button>}</div>
+    </div>
+  </Card>
 }
 
 export function OperationsView() {
