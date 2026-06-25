@@ -10,6 +10,7 @@ import (
 	"health-checkup/backend/internal/config"
 	"health-checkup/backend/internal/database"
 	"health-checkup/backend/internal/handlers"
+	"health-checkup/backend/internal/scheduler"
 	"health-checkup/backend/internal/seed"
 )
 
@@ -30,10 +31,12 @@ func main() {
 
 	switch command {
 	case "serve":
+		ctx := context.Background()
 		redisClient := cache.Open(cfg.RedisAddr)
-		if err := cache.Ping(context.Background(), redisClient); err != nil {
+		if err := cache.Ping(ctx, redisClient); err != nil {
 			log.Fatalf("connect redis: %v", err)
 		}
+		scheduler.StartScheduleSlotScheduler(ctx, db)
 		router := handlers.NewRouter(db, redisClient, cfg)
 		if err := router.Run(cfg.Addr); err != nil {
 			log.Fatalf("start server: %v", err)

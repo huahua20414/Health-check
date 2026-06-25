@@ -35,6 +35,62 @@ func TestRunSeedsRichDemoBusinessData(t *testing.T) {
 	assertSeededIDCardsAreValid(t, db)
 }
 
+func TestEnsureFutureScheduleSlotsIsIdempotentAndRollsForward(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := Run(db); err != nil {
+		t.Fatalf("run seed: %v", err)
+	}
+	initialSlots := countRows(t, db, &models.ScheduleSlot{})
+	bookedSlotID, bookedCount := firstBookedSlot(t, db)
+
+	created, err := EnsureFutureScheduleSlots(db, time.Now(), 14)
+	if err != nil {
+		t.Fatalf("ensure future schedule slots: %v", err)
+	}
+	if created != 0 {
+		t.Fatalf("expected idempotent ensure to create 0 slots, got %d", created)
+	}
+	assertCount(t, db, &models.ScheduleSlot{}, initialSlots)
+	assertSlotBookedCount(t, db, bookedSlotID, bookedCount)
+
+	tomorrow := time.Now().AddDate(0, 0, 1)
+	created, err = EnsureFutureScheduleSlots(db, tomorrow, 14)
+	if err != nil {
+		t.Fatalf("ensure rolled future schedule slots: %v", err)
+	}
+	if created == 0 {
+		t.Fatalf("expected rolled ensure to create slots for the new last day")
+	}
+	assertMaxScheduleSlotDate(t, db, dayStart(tomorrow).AddDate(0, 0, 13).Format("2006-01-02"))
+	assertSlotBookedCount(t, db, bookedSlotID, bookedCount)
+}
+
+func TestEnsureFutureScheduleSlotsDoesNotRecreateDeletedSlot(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := Run(db); err != nil {
+		t.Fatalf("run seed: %v", err)
+	}
+	var slot models.ScheduleSlot
+	if err := db.Where("booked_count = 0").First(&slot).Error; err != nil {
+		t.Fatalf("find empty slot: %v", err)
+	}
+	if err := db.Model(&models.ScheduleSlot{}).Where("id = ?", slot.ID).Update("status", "deleted").Error; err != nil {
+		t.Fatalf("mark slot deleted: %v", err)
+	}
+	if _, err := EnsureFutureScheduleSlots(db, time.Now(), 14); err != nil {
+		t.Fatalf("ensure future schedule slots: %v", err)
+	}
+	var count int64
+	if err := db.Model(&models.ScheduleSlot{}).
+		Where("doctor_id = ? AND date = ? AND start_time = ?", slot.DoctorID, slot.Date, slot.StartTime).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count exact slot: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected deleted generated slot not to be recreated, got %d matching rows", count)
+	}
+}
+
 func assertNextTwoWeeksHaveCompleteSlotTimes(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	today := time.Now()
@@ -50,6 +106,54 @@ func assertNextTwoWeeksHaveCompleteSlotTimes(t *testing.T, db *gorm.DB) {
 				t.Fatalf("expected at least one slot for %s %s", date, startTime)
 			}
 		}
+	}
+}
+
+func countRows(t *testing.T, db *gorm.DB, model any) int64 {
+	t.Helper()
+	var count int64
+	if err := db.Model(model).Count(&count).Error; err != nil {
+		t.Fatalf("count %T: %v", model, err)
+	}
+	return count
+}
+
+func assertCount(t *testing.T, db *gorm.DB, model any, want int64) {
+	t.Helper()
+	got := countRows(t, db, model)
+	if got != want {
+		t.Fatalf("expected %d rows for %T, got %d", want, model, got)
+	}
+}
+
+func firstBookedSlot(t *testing.T, db *gorm.DB) (uint, int) {
+	t.Helper()
+	var slot models.ScheduleSlot
+	if err := db.Where("booked_count > 0").First(&slot).Error; err != nil {
+		t.Fatalf("find booked slot: %v", err)
+	}
+	return slot.ID, slot.BookedCount
+}
+
+func assertSlotBookedCount(t *testing.T, db *gorm.DB, slotID uint, want int) {
+	t.Helper()
+	var slot models.ScheduleSlot
+	if err := db.First(&slot, slotID).Error; err != nil {
+		t.Fatalf("find slot %d: %v", slotID, err)
+	}
+	if slot.BookedCount != want {
+		t.Fatalf("expected slot %d booked_count %d, got %d", slotID, want, slot.BookedCount)
+	}
+}
+
+func assertMaxScheduleSlotDate(t *testing.T, db *gorm.DB, want string) {
+	t.Helper()
+	var maxDate string
+	if err := db.Model(&models.ScheduleSlot{}).Select("MAX(date)").Scan(&maxDate).Error; err != nil {
+		t.Fatalf("query max slot date: %v", err)
+	}
+	if maxDate != want {
+		t.Fatalf("expected max schedule slot date %s, got %s", want, maxDate)
 	}
 }
 

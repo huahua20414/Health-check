@@ -11,6 +11,49 @@ import (
 
 const shortcutEmail = "huahua20414@foxmail.com"
 
+func EnsureFutureScheduleSlots(db *gorm.DB, now time.Time, days int) (int, error) {
+	if days <= 0 {
+		days = 14
+	}
+	var doctors []models.User
+	if err := db.Where("role = ? AND status = ?", "doctor", "active").Find(&doctors).Error; err != nil {
+		return 0, err
+	}
+	var institutions []models.CheckupInstitution
+	if err := db.Where("status = ?", "active").Find(&institutions).Error; err != nil {
+		return 0, err
+	}
+	var packages []models.CheckupPackage
+	if err := db.Where("status = ?", "active").Find(&packages).Error; err != nil {
+		return 0, err
+	}
+	if len(doctors) == 0 || len(institutions) == 0 || len(packages) == 0 {
+		return 0, nil
+	}
+	slots := futureScheduleSlots(now, days, doctors, institutions, packages)
+	created := 0
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, slot := range slots {
+			exists, err := scheduleSlotExists(tx, slot)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+			if err := tx.Create(&slot).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return created, nil
+}
+
 func Run(db *gorm.DB) error {
 	if err := reset(db); err != nil {
 		return err
@@ -248,13 +291,16 @@ func seedFamilyMembers(db *gorm.DB, users []models.User) error {
 }
 
 func demoScheduleSlots(now time.Time, doctors []models.User, institutions []models.CheckupInstitution, packages []models.CheckupPackage) []models.ScheduleSlot {
-	activeDoctors := filterActiveDoctors(doctors)
+	return futureScheduleSlots(now, 14, filterActiveDoctors(doctors), institutions, packages)
+}
+
+func futureScheduleSlots(now time.Time, days int, activeDoctors []models.User, institutions []models.CheckupInstitution, packages []models.CheckupPackage) []models.ScheduleSlot {
 	categories := packageCategories(packages)
 	rules := demoDoctorShiftRules(activeDoctors, institutions, categories)
 	startDate := dayStart(now)
-	slots := make([]models.ScheduleSlot, 0, len(rules)*14*15)
+	slots := make([]models.ScheduleSlot, 0, len(rules)*days*15)
 	usedDoctorTimes := make(map[string]bool)
-	for offset := 0; offset < 14; offset++ {
+	for offset := 0; offset < days; offset++ {
 		day := startDate.AddDate(0, 0, offset)
 		date := day.Format("2006-01-02")
 		weekday := int(day.Weekday())
@@ -283,7 +329,7 @@ func demoScheduleSlots(now time.Time, doctors []models.User, institutions []mode
 			}
 		}
 	}
-	return appendTwoWeekCoverageSlots(slots, activeDoctors, institutions, categories, startDate, usedDoctorTimes)
+	return appendFutureCoverageSlots(slots, activeDoctors, institutions, categories, startDate, days, usedDoctorTimes)
 }
 
 type doctorShiftRule struct {
@@ -369,14 +415,14 @@ func packageCategories(packages []models.CheckupPackage) []string {
 	return categories
 }
 
-func appendTwoWeekCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, institutions []models.CheckupInstitution, categories []string, startDate time.Time, usedDoctorTimes map[string]bool) []models.ScheduleSlot {
+func appendFutureCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, institutions []models.CheckupInstitution, categories []string, startDate time.Time, days int, usedDoctorTimes map[string]bool) []models.ScheduleSlot {
 	allTimes := []string{"08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"}
 	exists := make(map[string]bool, len(slots))
 	for _, slot := range slots {
 		exists[fmt.Sprintf("%s|%s", slot.Date, slot.StartTime)] = true
 	}
 	cursor := 0
-	for offset := 0; offset < 14; offset++ {
+	for offset := 0; offset < days; offset++ {
 		date := startDate.AddDate(0, 0, offset).Format("2006-01-02")
 		for timeIndex, start := range allTimes {
 			if exists[fmt.Sprintf("%s|%s", date, start)] {
@@ -401,7 +447,11 @@ func appendTwoWeekCoverageSlots(slots []models.ScheduleSlot, doctors []models.Us
 	for institutionIndex, institution := range institutions {
 		for categoryIndex, category := range categories {
 			start := coverageTimes[(institutionIndex+categoryIndex)%len(coverageTimes)]
-			date := startDate.AddDate(0, 0, 5+institutionIndex+categoryIndex/len(coverageTimes)).Format("2006-01-02")
+			offset := 5 + institutionIndex + categoryIndex/len(coverageTimes)
+			if offset >= days {
+				offset = days - 1
+			}
+			date := startDate.AddDate(0, 0, offset).Format("2006-01-02")
 			doctor := nextAvailableDoctor(doctors, &cursor, usedDoctorTimes, date, start)
 			slots = append(slots, models.ScheduleSlot{
 				DoctorID:      doctor.ID,
@@ -422,6 +472,20 @@ func appendTwoWeekCoverageSlots(slots []models.ScheduleSlot, doctors []models.Us
 
 func dayStart(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+func scheduleSlotExists(db *gorm.DB, slot models.ScheduleSlot) (bool, error) {
+	var count int64
+	err := db.Model(&models.ScheduleSlot{}).
+		Where("doctor_id = ? AND date = ? AND start_time = ?", slot.DoctorID, slot.Date, slot.StartTime).
+		Count(&count).Error
+	if err != nil || count > 0 {
+		return count > 0, err
+	}
+	err = db.Model(&models.ScheduleSlot{}).
+		Where("doctor_id = ? AND date = ? AND status <> ? AND start_time < ? AND end_time > ?", slot.DoctorID, slot.Date, "deleted", slot.EndTime, slot.StartTime).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func nextAvailableDoctor(doctors []models.User, cursor *int, usedDoctorTimes map[string]bool, date, start string) models.User {
