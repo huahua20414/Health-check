@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Field, PageHeader, Select, TextInput, Textarea, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { appointmentTypes, moneyText } from '../utils'
+import { appointmentTypes, localDateString, moneyText } from '../utils'
 
 const bookingSteps = ['选择套餐', '选择机构', '选择号源', '确认提交']
 
@@ -11,7 +11,7 @@ export function BookingView() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   useEffect(() => {
-    h.loadSlotsPage({ page: 1, pageSize: 2000, status: 'available', availableOnly: 'true', fromDate: localDateValue(new Date()) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
+    h.loadSlotsPage({ page: 1, pageSize: 2000, status: 'available', availableOnly: 'true', fromDate: localDateString(new Date()) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
     h.loadFamilyMembersPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
   }, [])
   const form = h.forms.appointment
@@ -190,18 +190,11 @@ function nextDays(count) {
     const date = new Date(today)
     date.setDate(today.getDate() + index)
     return {
-      value: localDateValue(date),
+      value: localDateString(date),
       day: `${date.getMonth() + 1}/${date.getDate()}`,
       week: index === 0 ? '今天' : formatter.format(date),
     }
   })
-}
-
-function localDateValue(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
 }
 
 function groupSlotsByDateTime(slots) {

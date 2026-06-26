@@ -72,7 +72,19 @@ export function moneyText(value) {
 
 export function formatDate(value) {
   if (!value) return '-'
-  return new Date(value).toLocaleDateString('zh-CN')
+  const text = String(value)
+  const datePart = text.match(/^(\d{4}-\d{2}-\d{2})/)?.[1]
+  if (datePart) return datePart
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return localDateString(date)
+}
+
+export function localDateString(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function normalizeIDCard(value) {
@@ -134,7 +146,7 @@ export function toQuery(params = {}) {
 export function nextDateString() {
   const date = new Date()
   date.setDate(date.getDate() + 1)
-  return date.toISOString().slice(0, 10)
+  return localDateString(date)
 }
 
 export function homePath(role) {

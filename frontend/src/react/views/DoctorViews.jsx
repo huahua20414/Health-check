@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, StatusTag, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
+import { formatDate } from '../utils'
 
 export function DoctorAppointmentsView() {
   const h = useHealth()
@@ -16,7 +17,7 @@ export function DoctorAppointmentsView() {
       <Card title="预约列表"><PaginatedTable columns={[
         { title: '客户', render: (r) => r.user?.name || '-' },
         { title: '套餐', render: (r) => r.package?.name || r.appointmentType },
-        { title: '时间', render: (r) => `${r.date || ''} ${r.startTime || ''}` },
+        { title: '时间', render: (r) => `${formatDate(r.date)} ${r.startTime || ''}` },
         { title: '状态', render: (r) => <StatusTag status={r.status} /> },
         { title: '操作', render: (r) => <DoctorAppointmentActions row={r} h={h} navigate={navigate} markDone={markDone} /> },
       ]} rows={h.appointments} /></Card>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { moneyText, paymentStatusText } from '../utils'
+import { formatDate, moneyText, paymentStatusText } from '../utils'
 
 export function AppointmentsView() {
   const h = useHealth()
@@ -30,7 +30,7 @@ export function AppointmentsView() {
         <PaginatedTable columns={[
           { title: '订单', render: (r) => r.orderNo || r.id },
           { title: '套餐', render: (r) => r.package?.name || r.appointmentType },
-          { title: '日期', render: (r) => `${r.date || '-'} ${r.startTime || ''}` },
+          { title: '日期', render: (r) => `${formatDate(r.date)} ${r.startTime || ''}` },
           { title: '支付', render: (r) => paymentStatusText(r.paymentStatus) },
           { title: '状态', render: (r) => <StatusTag status={r.status} /> },
           { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => h.downloadAppointment(r)}>下载</Button><Button size="sm" variant="secondary" onClick={() => setSelected(r)}>处理</Button></div> },
@@ -59,7 +59,7 @@ export function AppointmentsView() {
         <Field label="评分"><Select value={h.forms.review.rating} onChange={(e) => h.updateForm('review', { rating: e.target.value })}>{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{n} 星</option>)}</Select></Field>
         <Field label="评价内容"><Textarea value={h.forms.review.content} onChange={(e) => h.updateForm('review', { content: e.target.value })} /></Field>
       </Modal>
-      <Card title="候补记录"><PaginatedTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.appointmentType }, { title: '日期', render: (r) => r.date }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <Button size="sm" variant="danger" onClick={() => h.cancelWaitlist(r).catch((e) => h.notify('error', e.message))}>取消候补</Button> }]} rows={h.waitlist} /></Card>
+      <Card title="候补记录"><PaginatedTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.appointmentType }, { title: '日期', render: (r) => formatDate(r.date) }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <Button size="sm" variant="danger" onClick={() => h.cancelWaitlist(r).catch((e) => h.notify('error', e.message))}>取消候补</Button> }]} rows={h.waitlist} /></Card>
     </>
   )
 }

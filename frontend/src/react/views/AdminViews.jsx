@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Metric, Modal, PageHeader, PaginatedTable, RemoteTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { doctorDepartments, moneyText, normalizeIDCard } from '../utils'
+import { doctorDepartments, formatDate, moneyText, normalizeIDCard } from '../utils'
 
 export function AdminDashboardView() {
   const h = useHealth()
@@ -268,7 +268,7 @@ function SchedulePanel({ h }) {
   return <Card title="医生号源" actions={<Button size="sm" onClick={openCreate}>新增</Button>}><RemoteTable columns={[
     { title: '医生', render: (r) => r.doctor?.name || r.doctorId },
     { title: '机构', render: (r) => r.institution?.name || r.institutionId },
-    { title: '日期', render: (r) => r.date },
+    { title: '日期', render: (r) => formatDate(r.date) },
     { title: '时段', render: (r) => `${r.startTime || ''}-${r.endTime || ''}` },
     { title: '分类', render: (r) => r.category || '-' },
     { title: '余号', render: (r) => `${Math.max(0, Number(r.capacity || 0) - Number(r.bookedCount || 0))}/${r.capacity || 0}` },

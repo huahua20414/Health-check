@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, DataTable, Metric, PageHeader, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { moneyText, statusText } from '../utils'
+import { formatDate, moneyText } from '../utils'
 
 export function DashboardView() {
   const h = useHealth()
@@ -28,6 +28,7 @@ export function DashboardView() {
   return (
     <>
       <PageHeader title="用户工作台" subtitle="套餐、预约、候补、报告、通知集中入口。" />
+      <AnnouncementList announcements={h.activeAnnouncements} />
       <div className="metrics-grid">
         <Metric label="最近预约" value={h.myAppointments.length} />
         <Metric label="候补中" value={h.waitlist.length} tone="violet" />
@@ -42,6 +43,7 @@ export function DashboardView() {
           <DataTable columns={[
             { title: '项目', render: (r) => r.package?.name || r.appointmentType },
             { title: '机构', render: (r) => r.institution?.name || '-' },
+            { title: '日期', render: (r) => `${formatDate(r.date)} ${r.startTime || ''}` },
             { title: '状态', render: (r) => <StatusTag status={r.status} /> },
             { title: '操作', render: (r) => <Button size="sm" variant="ghost" onClick={() => navigate(r.status === 'reported' ? '/my-reports' : '/my-appointments')}>{r.status === 'reported' ? '查看报告' : '处理预约'}</Button> },
           ]} rows={h.myAppointments.slice(0, 5)} />
@@ -55,9 +57,31 @@ function DoctorDashboard({ h }) {
   return (
     <>
       <PageHeader title="医生工作台" subtitle="预约处理、状态确认、报告录入、客户档案查询。" />
+      <AnnouncementList announcements={h.activeAnnouncements} />
       <div className="metrics-grid"><Metric label="今日待处理" value={h.pendingDoctorCount} /><Metric label="待生成报告" value={h.appointments.filter((a) => a.status === 'checked').length} tone="amber" /><Metric label="已完成" value={h.reportedCount} tone="green" /></div>
-      <Card title="预约处理队列"><DataTable columns={[{ title: '客户', render: (r) => r.user?.name || '-' }, { title: '套餐', render: (r) => r.package?.name || r.appointmentType }, { title: '时间', render: (r) => `${r.date || ''} ${r.startTime || ''}` }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }]} rows={h.appointments.slice(0, 8)} /></Card>
+      <Card title="预约处理队列"><DataTable columns={[{ title: '客户', render: (r) => r.user?.name || '-' }, { title: '套餐', render: (r) => r.package?.name || r.appointmentType }, { title: '时间', render: (r) => `${formatDate(r.date)} ${r.startTime || ''}` }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }]} rows={h.appointments.slice(0, 8)} /></Card>
     </>
+  )
+}
+
+function AnnouncementList({ announcements = [] }) {
+  const visible = announcements.slice(0, 5)
+  return (
+    <Card title="公告列表" subtitle="关闭弹窗后仍可在这里查看最近公告。">
+      {visible.length ? (
+        <div className="stack-list">
+          {visible.map((item) => (
+            <div className="accent-row" key={item.id}>
+              <div>
+                <strong>{item.title}</strong>
+                <span>{item.content}</span>
+              </div>
+              <b>{formatDate(item.publishedAt || item.createdAt)}</b>
+            </div>
+          ))}
+        </div>
+      ) : <span className="muted-text">暂无公告</span>}
+    </Card>
   )
 }
 

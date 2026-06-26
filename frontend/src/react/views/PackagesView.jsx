@@ -2,7 +2,7 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, DataTable, PageHeader, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { moneyText } from '../utils'
+import { formatDate, moneyText } from '../utils'
 
 export function PackagesView() {
   const h = useHealth()
@@ -22,7 +22,7 @@ export function PackagesView() {
       </div>
       <div className="two-col">
         <Card title="热门套餐"><DataTable columns={[{ title: '套餐', render: (r) => r.name }, { title: '价格', render: (r) => moneyText(r.price) }]} rows={h.popularPackages.slice(0, 5)} /></Card>
-        <Card title="浏览记录"><DataTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageName || '-' }, { title: '时间', render: (r) => r.createdAt ? new Date(r.createdAt).toLocaleString('zh-CN') : '-' }]} rows={h.browseHistories.slice(0, 5)} /></Card>
+        <Card title="浏览记录"><DataTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageName || '-' }, { title: '时间', render: (r) => formatDate(r.createdAt) }]} rows={h.browseHistories.slice(0, 5)} /></Card>
       </div>
     </>
   )
