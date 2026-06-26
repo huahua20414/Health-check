@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronDown, ChevronRight, ClipboardList, Database, FileText, Home, LogOut, Megaphone, RefreshCcw, Settings, ShieldCheck, User, Users } from 'lucide-react'
+import { Bell, Calendar, ChevronDown, ChevronRight, ClipboardList, Database, FileText, Home, LogOut, Megaphone, Moon, RefreshCcw, Settings, ShieldCheck, Sun, User, Users } from 'lucide-react'
 import { Button } from './UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 
@@ -58,9 +58,17 @@ export function AppShell() {
   const health = useHealth()
   const navigate = useNavigate()
   const [closedGroups, setClosedGroups] = useState({})
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light')
   const visible = menuItems.filter((item) => item.roles.includes(health.role)).map((item) => item.children ? { ...item, children: item.children.filter((child) => child.roles.includes(health.role)) } : item)
+  useEffect(() => {
+    document.body.dataset.theme = theme
+    localStorage.setItem('theme', theme)
+  }, [theme])
   function toggleGroup(label) {
     setClosedGroups((current) => ({ ...current, [label]: !current[label] }))
+  }
+  function toggleTheme() {
+    setTheme((current) => current === 'dark' ? 'light' : 'dark')
   }
   async function handleLogout() {
     await health.logout()
@@ -86,7 +94,7 @@ export function AppShell() {
       <section className="main-panel">
         <header className="topbar">
           <div><span className="eyebrow">熙心健康体检管理系统</span><h2>{roleLabel(health.role)}</h2></div>
-          <div className="top-actions"><span className="role-pill">{roleLabel(health.role)}</span><Button variant="ghost" loading={health.loading.load} onClick={health.loadAll}><RefreshCcw size={15} />刷新</Button><Button variant="danger" loading={health.loading.logout} onClick={handleLogout}><LogOut size={15} />退出</Button></div>
+          <div className="top-actions"><span className="role-pill">{roleLabel(health.role)}</span><Button className="theme-toggle" variant="ghost" title={theme === 'dark' ? '切换到亮色' : '切换到暗色'} aria-label={theme === 'dark' ? '切换到亮色' : '切换到暗色'} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</Button><Button variant="ghost" loading={health.loading.load} onClick={health.loadAll}><RefreshCcw size={15} />刷新</Button><Button variant="danger" loading={health.loading.logout} onClick={handleLogout}><LogOut size={15} />退出</Button></div>
         </header>
         <main className="workspace"><Outlet /></main>
       </section>
