@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, PaginatedTable, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { formatDate } from '../utils'
@@ -6,6 +6,10 @@ import { formatDate } from '../utils'
 export function NotificationsView() {
   const h = useHealth()
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    h.loadNotificationsPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+    h.loadSupportTicketsPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+  }, [])
   const openCreate = () => { h.resetForm('supportTicket'); setOpen(true) }
   const save = () => h.createSupportTicket().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
   return (

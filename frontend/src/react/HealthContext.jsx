@@ -58,6 +58,7 @@ const dataKeys = [
   'notifications', 'adminNotifications', 'supportTickets', 'adminSupportTickets', 'loginLogs', 'operationLogs',
   'rolePermissions', 'rolePermissionRows', 'permissionCodes', 'systemSettings', 'systemSettingRows', 'coupons',
   'activeCoupons', 'reviews', 'announcements', 'activeAnnouncements', 'checkupItems', 'checkupItemRows', 'packageItems',
+  'doctorUsers', 'pendingDoctorUsers', 'activeDoctors',
 ]
 
 function initialData() {
@@ -65,7 +66,7 @@ function initialData() {
 }
 
 function initialPaginations() {
-  return Object.fromEntries(['appointments', 'users', 'doctors', 'reports', 'waitlist', 'mailLogs', 'loginLogs', 'operationLogs', 'rolePermissions', 'systemSettings', 'packages', 'institutions', 'notifications', 'adminNotifications', 'supportTickets', 'adminSupportTickets', 'coupons', 'reviews', 'announcements', 'checkupItems', 'packageItems', 'slots'].map((key) => [key, { ...emptyPagination }]))
+  return Object.fromEntries(['appointments', 'users', 'doctors', 'pendingDoctors', 'activeDoctors', 'reports', 'waitlist', 'mailLogs', 'loginLogs', 'operationLogs', 'rolePermissions', 'systemSettings', 'packages', 'institutions', 'notifications', 'adminNotifications', 'supportTickets', 'adminSupportTickets', 'familyMembers', 'coupons', 'reviews', 'announcements', 'checkupItems', 'packageItems', 'slots'].map((key) => [key, { ...emptyPagination }]))
 }
 
 function useObjectState(initial) {
@@ -141,7 +142,12 @@ export function HealthProvider({ children }) {
   const requestPage = useCallback(async (path, key, params = {}) => {
     const query = toQuery(params)
     const result = await request(`${path}${query ? `?${query}` : ''}`)
-    setPaginations((current) => ({ ...current, [key]: { ...current[key], ...(result.pagination || {}) } }))
+    const pagination = result.pagination || (Array.isArray(result.items) ? {
+      page: result.page,
+      pageSize: result.pageSize,
+      total: result.total,
+    } : {})
+    setPaginations((current) => ({ ...current, [key]: { ...current[key], ...pagination } }))
     return result.items || result
   }, [])
 
@@ -171,33 +177,20 @@ export function HealthProvider({ children }) {
         return
       }
       const userRole = JSON.parse(localStorage.getItem('currentUser') || 'null')?.role || currentUser?.role
-      const [appointments, reports, slots, notifications] = await Promise.all([
-        request('/appointments'),
-        request('/reports'),
-        request('/schedule/slots'),
-        request('/notifications'),
-      ])
-      const protectedData = { ...base, appointments, reports, slots, notifications }
+      const protectedData = { ...base, users: currentUser ? [currentUser] : [] }
       if (userRole === 'user') {
-        const [waitlist, familyMembers, favorites, browseHistories, supportTickets] = await Promise.all([
-          request('/waitlist'),
-          request('/family-members'),
+        const [favorites, browseHistories] = await Promise.all([
           request('/package-favorites'),
-          request('/package-browses'),
-          request('/support-tickets'),
+          request('/package-browses?page=1&pageSize=5').then((result) => result.items || result),
         ])
-        Object.assign(protectedData, { waitlist, familyMembers, favorites, browseHistories, supportTickets })
+        Object.assign(protectedData, { favorites, browseHistories })
       }
-      if (userRole === 'doctor' || userRole === 'admin') protectedData.users = await request('/users')
-      else protectedData.users = currentUser ? [currentUser] : []
       if (userRole === 'admin') {
-        const [mailLogs, checkupItems, packageItems, dashboard] = await Promise.all([
-          request('/mail-logs'),
-          request('/checkup-items'),
-          request('/package-items'),
+        const [dashboard, pendingDoctors] = await Promise.all([
           request('/admin/dashboard'),
+          request('/users?role=doctor&status=pending&page=1&pageSize=8').then((result) => result.items || result),
         ])
-        Object.assign(protectedData, { mailLogs, checkupItems, packageItems })
+        protectedData.pendingDoctorUsers = pendingDoctors
         setAdminDashboard(dashboard)
       }
       updateData(protectedData)
@@ -321,7 +314,7 @@ export function HealthProvider({ children }) {
   const loaders = useMemo(() => ({
     loadAppointmentsPage: (params = {}) => loadPage('/appointments', 'appointments', 'appointments', params),
     loadReportsPage: (params = {}) => loadPage('/reports', 'reports', 'reports', params),
-    loadUsersPage: (params = {}, key = 'users') => loadPage('/users', key, 'users', params),
+    loadUsersPage: (params = {}, key = 'users', stateKey = 'users') => loadPage('/users', key, stateKey, params),
     loadWaitlistPage: (params = {}) => loadPage('/waitlist', 'waitlist', 'waitlist', params),
     loadMailLogsPage: (params = {}) => loadPage('/mail-logs', 'mailLogs', 'mailLogs', params),
     loadLoginLogsPage: (params = {}) => loadPage('/login-logs', 'loginLogs', 'loginLogs', params),
@@ -332,6 +325,7 @@ export function HealthProvider({ children }) {
     loadInstitutionsPage: (params = {}) => loadPage('/institutions', 'institutions', 'institutionRows', params),
     loadNotificationsPage: (params = {}) => loadPage('/notifications', 'notifications', 'notifications', params),
     loadSupportTicketsPage: (params = {}) => loadPage('/support-tickets', 'supportTickets', 'supportTickets', params),
+    loadFamilyMembersPage: (params = {}) => loadPage('/family-members', 'familyMembers', 'familyMembers', params),
     loadAdminNotificationsPage: (params = {}) => loadPage('/admin/notifications', 'adminNotifications', 'adminNotifications', params),
     loadAdminSupportTicketsPage: (params = {}) => loadPage('/admin/support-tickets', 'adminSupportTickets', 'adminSupportTickets', params),
     loadCouponsPage: (params = {}) => loadPage('/coupons', 'coupons', 'coupons', params),
@@ -376,7 +370,7 @@ export function HealthProvider({ children }) {
       await request('/appointments', { method: 'POST', body: JSON.stringify(body) })
       await loadAll()
     }),
-    cancelAppointment: (row) => action('status', '预约已取消', async () => { await request(`/appointments/${row.id}/cancel`, { method: 'PATCH' }); await loadAll() }),
+    cancelAppointment: (row) => action('status', '预约已取消', async () => { await request(`/appointments/${row.id}/cancel`, { method: 'PATCH' }); await loaders.loadAppointmentsPage({ page: 1, pageSize: 20 }) }),
     cancelWaitlist: (row) => action('status', '候补已取消', async () => { await request(`/waitlist/${row.id}/cancel`, { method: 'PATCH' }); await loaders.loadWaitlistPage() }),
     updateAppointmentPayment: (appointment, paymentStatus) => action('appointment', paymentStatus === 'paid' ? '支付状态已标记为已支付' : '已撤销支付状态', async () => { await request(`/appointments/${appointment.id}/payment`, { method: 'PATCH', body: JSON.stringify({ paymentStatus }) }); await loaders.loadAppointmentsPage() }),
     saveInvoice: () => action('appointment', '发票信息已保存', async () => { await request(`/appointments/${forms.invoice.appointmentId}/invoice`, { method: 'PATCH', body: JSON.stringify({ invoiceTitle: forms.invoice.invoiceTitle, invoiceTaxNo: forms.invoice.invoiceTaxNo }) }); await loaders.loadAppointmentsPage() }),
@@ -392,9 +386,9 @@ export function HealthProvider({ children }) {
       if (forms.familyMember.id) await request(`/family-members/${forms.familyMember.id}`, { method: 'PATCH', body })
       else await request('/family-members', { method: 'POST', body })
       resetForm('familyMember')
-      await loadAll()
+      await loaders.loadFamilyMembersPage({ page: 1, pageSize: 20 })
     }),
-    deleteFamilyMember: (member) => action('familyMember', '家庭成员已删除', async () => { await request(`/family-members/${member.id}`, { method: 'DELETE' }); await loadAll() }),
+    deleteFamilyMember: (member) => action('familyMember', '家庭成员已删除', async () => { await request(`/family-members/${member.id}`, { method: 'DELETE' }); await loaders.loadFamilyMembersPage({ page: 1, pageSize: 20 }) }),
     toggleFavorite: (pkg) => action('favorite', data.favorites.some((i) => i.packageId === pkg.id) ? '已取消收藏' : '已收藏套餐', async () => { const exists = data.favorites.some((i) => i.packageId === pkg.id); await request(`/package-favorites/${pkg.id}`, { method: exists ? 'DELETE' : 'POST' }); await loadAll() }),
     recordPackageBrowse: async (pkg) => { if (getAuthToken() && role === 'user' && pkg?.id) await request(`/packages/${pkg.id}/browse`, { method: 'POST' }).catch(() => null) },
     saveProfile: () => action('profile', '个人资料已保存', async () => {
@@ -406,8 +400,8 @@ export function HealthProvider({ children }) {
     }),
     sendEmailCode: () => action('emailCode', '验证码已发送，请查看目标邮箱', async () => request('/profile/email-code', { method: 'POST', body: JSON.stringify({ email: forms.email.email }) })),
     updateEmail: () => action('emailUpdate', '邮箱已验证并更新', async () => { const user = await request('/profile/email', { method: 'PATCH', body: JSON.stringify(forms.email) }); saveUser(user); await loadAll() }),
-    markDone: (row) => action('status', '已标记完成体检，可继续生成报告', async () => { await request(`/appointments/${row.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'checked' }) }); updateForm('report', { appointmentId: row.id }); await loadAll() }),
-    createReport: () => action('report', '报告已生成', async () => { await request('/reports', { method: 'POST', body: JSON.stringify(forms.report) }); await loadAll() }),
+    markDone: (row) => action('status', '已标记完成体检，可继续生成报告', async () => { await request(`/appointments/${row.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'checked' }) }); updateForm('report', { appointmentId: row.id }); await loaders.loadAppointmentsPage({ page: 1, pageSize: 20 }) }),
+    createReport: () => action('report', '报告已生成', async () => { await request('/reports', { method: 'POST', body: JSON.stringify(forms.report) }); await loaders.loadReportsPage({ page: 1, pageSize: 20 }); await loaders.loadAppointmentsPage({ page: 1, pageSize: 20 }) }),
     updateUserStatus: (user, status) => action('status', '状态已更新', async () => { await request(`/users/${user.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }); await loadAll() }),
     updateDoctorProfile: (user, payload) => action('doctorProfile', '医生资料已更新', async () => { await request(`/users/${user.id}/doctor-profile`, { method: 'PATCH', body: JSON.stringify({ ...payload, specialties: Array.isArray(payload.specialties) ? payload.specialties.join(',') : payload.specialties }) }); await loadAll() }),
     savePackage: () => action('package', '套餐已保存', async () => {
@@ -473,10 +467,10 @@ export function HealthProvider({ children }) {
       bookedCount: data.appointments.filter((item) => item.status === 'booked').length,
       reportedCount: data.appointments.filter((item) => item.status === 'reported').length,
       pendingDoctorCount: data.appointments.filter((item) => item.status !== 'reported').length,
-      pendingDoctors: data.users.filter((item) => item.role === 'doctor' && item.status === 'pending'),
+      pendingDoctors: data.pendingDoctorUsers.length ? data.pendingDoctorUsers : data.users.filter((item) => item.role === 'doctor' && item.status === 'pending'),
       peopleRows: Array.from(peopleMap.values()),
     }
-  }, [currentUser, data.appointments, data.reports, data.users, isAdmin, isAuthenticated, isDoctor, isUser, role])
+  }, [currentUser, data.appointments, data.pendingDoctorUsers, data.reports, data.users, isAdmin, isAuthenticated, isDoctor, isUser, role])
 
   const value = useMemo(() => ({
     currentUser,

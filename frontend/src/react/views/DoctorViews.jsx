@@ -6,6 +6,9 @@ import { useHealth } from '../HealthContext.jsx'
 export function DoctorAppointmentsView() {
   const h = useHealth()
   const navigate = useNavigate()
+  useEffect(() => {
+    h.loadAppointmentsPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+  }, [])
   const markDone = (row) => h.markDone(row).then(() => navigate('/reports?draft=1')).catch((e) => h.notify('error', e.message))
   return (
     <>
@@ -37,6 +40,10 @@ export function DoctorReportsView() {
   const draftRequested = new URLSearchParams(window.location.search).get('draft') === '1'
   const reportableAppointments = h.appointments.filter((appointment) => appointment.status === 'checked' || appointment.status === 'reported')
   useEffect(() => {
+    h.loadReportsPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+    h.loadAppointmentsPage({ status: 'checked', page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
+  }, [])
+  useEffect(() => {
     if (draftRequested && h.forms.report.appointmentId) setOpen(true)
   }, [draftRequested, h.forms.report.appointmentId])
   const openCreate = () => { h.resetForm('report'); setOpen(true) }
@@ -58,6 +65,12 @@ export function DoctorReportsView() {
 export function PeopleView({ admin = false }) {
   const h = useHealth()
   const rows = admin ? h.users : h.peopleRows
+  useEffect(() => {
+    if (!admin) {
+      h.loadAppointmentsPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
+      h.loadReportsPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
+    }
+  }, [admin])
   return (
     <>
       <PageHeader title={admin ? '用户管理' : '客户档案'} subtitle={admin ? '管理员管理用户与账号状态。' : '医生查看预约和报告相关客户档案。'} />

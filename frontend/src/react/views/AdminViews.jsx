@@ -18,8 +18,8 @@ export function AdminDashboardView() {
 export function DoctorReviewView() {
   const h = useHealth()
   const [filters, setFilters] = useState({ page: 1, pageSize: 10, role: 'doctor' })
-  useEffect(() => { h.loadUsersPage(filters, 'doctors').catch((e) => h.notify('error', e.message)) }, [filters.page, filters.pageSize])
-  const refresh = () => h.loadUsersPage(filters, 'doctors').catch((e) => h.notify('error', e.message))
+  useEffect(() => { h.loadUsersPage(filters, 'doctors', 'doctorUsers').catch((e) => h.notify('error', e.message)) }, [filters.page, filters.pageSize])
+  const refresh = () => h.loadUsersPage(filters, 'doctors', 'doctorUsers').catch((e) => h.notify('error', e.message))
   const updateStatus = (row, status) => h.updateUserStatus(row, status).then(refresh).catch((e) => h.notify('error', e.message))
   return (
     <>
@@ -27,7 +27,7 @@ export function DoctorReviewView() {
       <Card title="医生列表">
         <RemoteTable
           columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <DoctorReviewActions row={r} h={h} onStatus={updateStatus} /> }]}
-          rows={h.users}
+          rows={h.doctorUsers}
           pagination={h.paginations.doctors}
           onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
           onPageSizeChange={(pageSize) => setFilters((current) => ({ ...current, page: 1, pageSize }))}
@@ -121,7 +121,7 @@ export function PackageManageView() {
 
 export function ResourceManageView() {
   const h = useHealth()
-  useEffect(() => { h.loadInstitutionsPage(); h.loadCheckupItemsPage(); h.loadUsersPage({ role: 'doctor', status: 'active', pageSize: 100 }, 'doctors') }, [])
+  useEffect(() => { h.loadInstitutionsPage(); h.loadCheckupItemsPage(); h.loadUsersPage({ role: 'doctor', status: 'active', pageSize: 100 }, 'activeDoctors', 'activeDoctors') }, [])
   return (
     <>
       <PageHeader title="项目与排班" subtitle="机构、体检项目、套餐项目组合和医生号源。" />
@@ -211,7 +211,7 @@ function SchedulePanel({ h }) {
   const [params, setParams] = useState({ page: 1, pageSize: 10 })
   useEffect(() => { h.loadSlotsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
   const rows = h.scheduleSlotRows.length ? h.scheduleSlotRows : h.slots
-  const doctors = h.users.filter((u) => u.role === 'doctor' && u.status === 'active')
+  const doctors = h.activeDoctors.length ? h.activeDoctors : h.users.filter((u) => u.role === 'doctor' && u.status === 'active')
   const categories = [...new Set(h.packages.map((p) => p.category).filter(Boolean))]
   const openCreate = () => { h.resetForm('schedule'); setOpen(true) }
   const openEdit = (slot) => {

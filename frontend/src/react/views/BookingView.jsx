@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Field, PageHeader, Select, TextInput, Textarea, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
@@ -10,6 +10,10 @@ export function BookingView() {
   const h = useHealth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
+  useEffect(() => {
+    h.loadSlotsPage({ page: 1, pageSize: 200, status: 'available' }).catch((e) => h.notify('error', e.message))
+    h.loadFamilyMembersPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
+  }, [])
   const form = h.forms.appointment
   const selectedPackage = h.packages.find((pkg) => pkg.id === Number(form.packageId))
   const selectedPackageItems = [...(selectedPackage?.packageItems || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || Number(a.id || 0) - Number(b.id || 0))

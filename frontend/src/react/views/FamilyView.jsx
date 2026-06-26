@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, TextInput } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { calculateAgeFromIDCard } from '../utils'
@@ -7,6 +7,9 @@ export function FamilyView() {
   const h = useHealth()
   const f = h.forms.familyMember
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    h.loadFamilyMembersPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+  }, [])
   const openCreate = () => { h.resetForm('familyMember'); setOpen(true) }
   const openEdit = (member) => { h.updateForm('familyMember', member); setOpen(true) }
   const save = () => h.saveFamilyMember().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))

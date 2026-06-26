@@ -1,10 +1,13 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Button, Card, PageHeader, PaginatedTable } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { formatDate } from '../utils'
 
 export function ReportsView() {
   const h = useHealth()
+  useEffect(() => {
+    h.loadReportsPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+  }, [])
   return (
     <>
       <PageHeader title="我的报告" subtitle="查看和下载体检报告。" />

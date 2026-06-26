@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { moneyText, paymentStatusText } from '../utils'
@@ -7,6 +7,10 @@ export function AppointmentsView() {
   const h = useHealth()
   const [selected, setSelected] = useState(null)
   const [modal, setModal] = useState('')
+  useEffect(() => {
+    h.loadAppointmentsPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+    h.loadWaitlistPage({ page: 1, pageSize: 20 }).catch((e) => h.notify('error', e.message))
+  }, [])
   const openInvoice = (appointment) => {
     setSelected(appointment)
     h.updateForm('invoice', { appointmentId: appointment.id, invoiceTitle: appointment.invoiceTitle || '', invoiceTaxNo: appointment.invoiceTaxNo || '' })

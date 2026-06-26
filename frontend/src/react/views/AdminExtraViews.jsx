@@ -266,9 +266,10 @@ function SettingPanel() {
   const h = useHealth()
   const [params, setParams] = usePagedParams()
   const [open, setOpen] = useState(false)
+  const settingForm = h.forms.systemSetting || { id: null, key: '', label: '', value: '', valueType: 'string', group: '', status: 'active', description: '' }
   useEffect(() => { h.loadSystemSettingsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
   const openEdit = (row) => { h.updateForm('systemSetting', row); setOpen(true) }
-  const save = () => h.updateSystemSetting(h.forms.systemSetting).then(() => { setOpen(false); h.loadSystemSettingsPage(params) }).catch((e) => h.notify('error', e.message))
+  const save = () => h.updateSystemSetting(settingForm).then(() => { setOpen(false); h.loadSystemSettingsPage(params) }).catch((e) => h.notify('error', e.message))
   return (
     <Card title="系统设置" actions={<Button size="sm" variant="ghost" onClick={() => h.exportBlob('/system-settings/export', 'system-settings.csv', 'exportSystemSettings')}>导出</Button>}>
       <RemoteTable
@@ -279,13 +280,13 @@ function SettingPanel() {
         onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))}
       />
       <Modal open={open} title="编辑系统设置" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.systemSetting} onClick={save}>保存</Button></>}>
-        <Field label="名称"><TextInput value={h.forms.systemSetting.label || ''} onChange={(e) => h.updateForm('systemSetting', { label: e.target.value })} /></Field>
-        <Field label="值"><Textarea value={h.forms.systemSetting.value || ''} onChange={(e) => h.updateForm('systemSetting', { value: e.target.value })} /></Field>
+        <Field label="名称"><TextInput value={settingForm.label || ''} onChange={(e) => h.updateForm('systemSetting', { label: e.target.value })} /></Field>
+        <Field label="值"><Textarea value={settingForm.value || ''} onChange={(e) => h.updateForm('systemSetting', { value: e.target.value })} /></Field>
         <div className="form-grid">
-          <Field label="类型"><Select value={h.forms.systemSetting.valueType || 'string'} onChange={(e) => h.updateForm('systemSetting', { valueType: e.target.value })}><option value="string">字符串</option><option value="number">数字</option><option value="bool">布尔</option><option value="json">JSON</option></Select></Field>
-          <Field label="状态"><Select value={h.forms.systemSetting.status || 'active'} onChange={(e) => h.updateForm('systemSetting', { status: e.target.value })}><option value="active">启用</option><option value="disabled">停用</option></Select></Field>
+          <Field label="类型"><Select value={settingForm.valueType || 'string'} onChange={(e) => h.updateForm('systemSetting', { valueType: e.target.value })}><option value="string">字符串</option><option value="number">数字</option><option value="bool">布尔</option><option value="json">JSON</option></Select></Field>
+          <Field label="状态"><Select value={settingForm.status || 'active'} onChange={(e) => h.updateForm('systemSetting', { status: e.target.value })}><option value="active">启用</option><option value="disabled">停用</option></Select></Field>
         </div>
-        <Field label="说明"><Textarea value={h.forms.systemSetting.description || ''} onChange={(e) => h.updateForm('systemSetting', { description: e.target.value })} /></Field>
+        <Field label="说明"><Textarea value={settingForm.description || ''} onChange={(e) => h.updateForm('systemSetting', { description: e.target.value })} /></Field>
       </Modal>
     </Card>
   )

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, DataTable, Metric, PageHeader, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
@@ -7,6 +7,22 @@ import { moneyText, statusText } from '../utils'
 export function DashboardView() {
   const h = useHealth()
   const navigate = useNavigate()
+  useEffect(() => {
+    if (h.role === 'user') {
+      h.loadAppointmentsPage({ page: 1, pageSize: 5 }).catch((e) => h.notify('error', e.message))
+      h.loadWaitlistPage({ page: 1, pageSize: 5 }).catch((e) => h.notify('error', e.message))
+      h.loadReportsPage({ page: 1, pageSize: 5 }).catch((e) => h.notify('error', e.message))
+    }
+    if (h.role === 'doctor') {
+      h.loadAppointmentsPage({ page: 1, pageSize: 8 }).catch((e) => h.notify('error', e.message))
+      h.loadReportsPage({ page: 1, pageSize: 5 }).catch((e) => h.notify('error', e.message))
+    }
+    if (h.role === 'admin') {
+      h.loadAdminDashboard().catch((e) => h.notify('error', e.message))
+      h.loadUsersPage({ role: 'doctor', status: 'pending', page: 1, pageSize: 8 }, 'pendingDoctors', 'pendingDoctorUsers').catch((e) => h.notify('error', e.message))
+      h.loadMailLogsPage({ status: 'failed', page: 1, pageSize: 1 }).catch((e) => h.notify('error', e.message))
+    }
+  }, [h.role])
   if (h.role === 'doctor') return <DoctorDashboard h={h} />
   if (h.role === 'admin') return <AdminLiteDashboard h={h} />
   return (
