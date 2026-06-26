@@ -45,12 +45,7 @@ export function AppointmentsView() {
             ))}
           </div>
         )}
-        <div className="action-grid">
-          <Button variant="secondary" onClick={() => h.updateAppointmentPayment(selected, selected.paymentStatus === 'paid' ? 'unpaid' : 'paid').catch((e) => h.notify('error', e.message))}>{selected.paymentStatus === 'paid' ? '撤销支付' : '标记已支付'}</Button>
-          <Button variant="danger" onClick={() => h.cancelAppointment(selected).catch((e) => h.notify('error', e.message))}>取消预约</Button>
-          <Button variant="ghost" onClick={() => openInvoice(selected)}>填写发票</Button>
-          <Button variant="ghost" onClick={() => openReview(selected)}>评价</Button>
-        </div>
+        <AppointmentActions appointment={selected} h={h} openInvoice={openInvoice} openReview={openReview} />
       </Card>}
       <Modal open={modal === 'invoice'} title={`填写发票：${selected?.orderNo || selected?.id || ''}`} onClose={() => setModal('')} actions={<><Button variant="ghost" onClick={() => setModal('')}>取消</Button><Button loading={h.loading.appointment} onClick={saveInvoice}>保存发票</Button></>}>
         <Field label="发票抬头"><TextInput value={h.forms.invoice.invoiceTitle} onChange={(e) => h.updateForm('invoice', { invoiceTitle: e.target.value })} /></Field>
@@ -62,5 +57,19 @@ export function AppointmentsView() {
       </Modal>
       <Card title="候补记录"><PaginatedTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.appointmentType }, { title: '日期', render: (r) => r.date }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <Button size="sm" variant="danger" onClick={() => h.cancelWaitlist(r).catch((e) => h.notify('error', e.message))}>取消候补</Button> }]} rows={h.waitlist} /></Card>
     </>
+  )
+}
+
+function AppointmentActions({ appointment, h, openInvoice, openReview }) {
+  const canEditBooking = appointment.status === 'booked'
+  const canReview = appointment.status === 'checked' || appointment.status === 'reported'
+  return (
+    <div className="action-grid">
+      {canEditBooking && <Button variant="secondary" onClick={() => h.updateAppointmentPayment(appointment, appointment.paymentStatus === 'paid' ? 'unpaid' : 'paid').catch((e) => h.notify('error', e.message))}>{appointment.paymentStatus === 'paid' ? '撤销支付' : '标记已支付'}</Button>}
+      {canEditBooking && <Button variant="danger" onClick={() => h.cancelAppointment(appointment).catch((e) => h.notify('error', e.message))}>取消预约</Button>}
+      {appointment.status !== 'canceled' && <Button variant="ghost" onClick={() => openInvoice(appointment)}>填写发票</Button>}
+      {canReview && <Button variant="ghost" onClick={() => openReview(appointment)}>评价</Button>}
+      {!canEditBooking && !canReview && appointment.status === 'canceled' && <span className="muted-text">已取消预约无可用操作</span>}
+    </div>
   )
 }

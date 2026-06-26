@@ -45,6 +45,7 @@ const defaultForms = {
   supportTicket: { subject: '', content: '' },
   supportTicketReply: { id: null, reply: '', status: 'replied' },
   reminder: { date: nextDateString() },
+  systemSetting: { id: null, key: '', label: '', value: '', valueType: 'string', group: '', status: 'active', description: '' },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
   packageItem: { id: null, packageId: '', itemId: '', sortOrder: 0, required: true },
   schedule: { id: null, doctorId: '', institutionId: '', date: '', period: '上午', category: '', startTime: '08:30', endTime: '09:00', capacity: 1, status: 'available' },
@@ -424,7 +425,7 @@ export function HealthProvider({ children }) {
     saveAnnouncement: () => action('announcement', '公告已保存', async () => { const body = JSON.stringify(forms.announcement); if (forms.announcement.id) await request(`/announcements/${forms.announcement.id}`, { method: 'PATCH', body }); else await request('/announcements', { method: 'POST', body }); resetForm('announcement'); await loaders.loadAnnouncementsPage() }),
     archiveAnnouncement: (row) => action('announcement', '公告已归档', async () => { await request(`/announcements/${row.id}`, { method: 'DELETE' }); await loaders.loadAnnouncementsPage() }),
     sendAdminNotification: () => action('adminNotification', '通知已发送', async () => { await request('/admin/notifications', { method: 'POST', body: JSON.stringify(forms.notification) }); resetForm('notification'); await loaders.loadAdminNotificationsPage() }),
-    sendCheckupReminders: () => action('reminder', '体检前提醒已生成', async () => { await request('/admin/notifications/reminders', { method: 'POST', body: JSON.stringify(forms.reminder) }); await loaders.loadAdminNotificationsPage() }),
+    sendCheckupReminders: (payload) => action('reminder', '体检前提醒已生成', async () => { await request('/admin/notifications/reminders', { method: 'POST', body: JSON.stringify(payload || forms.reminder) }); await loaders.loadAdminNotificationsPage() }),
     updateAdminNotificationStatus: (row, status) => action('adminNotification', status === 'archived' ? '通知已归档' : '通知状态已更新', async () => { if (status === 'archived') await request(`/admin/notifications/${row.id}`, { method: 'DELETE' }); else await request(`/admin/notifications/${row.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }); await loaders.loadAdminNotificationsPage() }),
     saveSupportTicketReply: () => action('adminNotification', '客服工单已处理', async () => { await request(`/admin/support-tickets/${forms.supportTicketReply.id}/reply`, { method: 'PATCH', body: JSON.stringify(forms.supportTicketReply) }); resetForm('supportTicketReply'); await loaders.loadAdminSupportTicketsPage() }),
     updateRolePermission: (permission) => action('permission', '权限配置已更新', async () => { await request(`/role-permissions/${permission.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: permission.enabled }) }); await loaders.loadRolePermissionsPage() }),
@@ -441,9 +442,8 @@ export function HealthProvider({ children }) {
     data.appointments.forEach((item) => { if (item.user?.id) peopleMap.set(`user-${item.user.id}`, { ...item.user, source: '预约客户' }) })
     data.reports.forEach((report) => {
       if (report.user?.id) peopleMap.set(`user-${report.user.id}`, { ...report.user, source: '报告客户' })
-      if (report.doctor?.id) peopleMap.set(`doctor-${report.doctor.id}`, { ...report.doctor, source: '报告医生' })
     })
-    if (currentUser?.id) peopleMap.set(`current-${currentUser.role}-${currentUser.id}`, { ...currentUser, source: '当前登录' })
+    if (currentUser?.id && currentUser.role === 'user') peopleMap.set(`current-${currentUser.role}-${currentUser.id}`, { ...currentUser, source: '当前登录' })
     return {
       role,
       isAuthenticated,

@@ -12,7 +12,8 @@ import { ProfileView } from './views/ProfileView.jsx'
 import { FamilyView } from './views/FamilyView.jsx'
 import { NotificationsView } from './views/NotificationsView.jsx'
 import { DoctorAppointmentsView, DoctorReportsView, PeopleView } from './views/DoctorViews.jsx'
-import { AdminDashboardView, DoctorReviewView, PackageManageView, ResourceManageView } from './views/AdminViews.jsx'
+import { AdminDashboardView, AdminUsersView, DoctorReviewView, PackageManageView, ResourceManageView } from './views/AdminViews.jsx'
+import { AdminCommunicationView, AdminEngagementView, AdminSystemView } from './views/AdminExtraViews.jsx'
 import { homePath } from './utils.js'
 
 function Guarded({ roles, children }) {
@@ -58,10 +59,13 @@ function AppRoutes() {
           <Route path="reports" element={<Guarded roles={['doctor']}><DoctorReportsView /></Guarded>} />
           <Route path="people" element={<Guarded roles={['doctor']}><PeopleView /></Guarded>} />
           <Route path="admin" element={<Guarded roles={['admin']}><AdminDashboardView /></Guarded>} />
-          <Route path="admin/users" element={<Guarded roles={['admin']}><PeopleView admin /></Guarded>} />
+          <Route path="admin/users" element={<Guarded roles={['admin']}><AdminUsersView /></Guarded>} />
           <Route path="admin/doctors" element={<Guarded roles={['admin']}><DoctorReviewView /></Guarded>} />
           <Route path="admin/packages" element={<Guarded roles={['admin']}><PackageManageView /></Guarded>} />
           <Route path="admin/service-resources" element={<Guarded roles={['admin']}><ResourceManageView /></Guarded>} />
+          <Route path="admin/engagement" element={<Guarded roles={['admin']}><AdminEngagementView /></Guarded>} />
+          <Route path="admin/communication" element={<Guarded roles={['admin']}><AdminCommunicationView /></Guarded>} />
+          <Route path="admin/system" element={<Guarded roles={['admin']}><AdminSystemView /></Guarded>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

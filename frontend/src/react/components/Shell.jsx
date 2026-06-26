@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronDown, ChevronRight, ClipboardList, Database, FileText, Home, LogOut, RefreshCcw, ShieldCheck, User, Users } from 'lucide-react'
+import { Bell, Calendar, ChevronDown, ChevronRight, ClipboardList, Database, FileText, Home, LogOut, Megaphone, RefreshCcw, Settings, ShieldCheck, User, Users } from 'lucide-react'
 import { Button } from './UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 
-const iconMap = { Home, Database, Calendar, ClipboardList, FileText, User, Users, Bell, ShieldCheck }
+const iconMap = { Home, Database, Calendar, ClipboardList, FileText, User, Users, Bell, ShieldCheck, Megaphone, Settings }
 
 export const menuItems = [
   { path: '/', label: '工作台', icon: 'Home', roles: ['user'] },
@@ -35,6 +35,13 @@ export const menuItems = [
   { label: '体检服务管理', icon: 'Database', roles: ['admin'], children: [
     { path: '/admin/packages', label: '套餐管理', icon: 'Database', roles: ['admin'] },
     { path: '/admin/service-resources', label: '项目与排班', icon: 'Calendar', roles: ['admin'] },
+  ] },
+  { label: '运营支持', icon: 'Megaphone', roles: ['admin'], children: [
+    { path: '/admin/engagement', label: '营销与公告', icon: 'Megaphone', roles: ['admin'] },
+    { path: '/admin/communication', label: '通知与客服', icon: 'Bell', roles: ['admin'] },
+  ] },
+  { label: '系统治理', icon: 'Settings', roles: ['admin'], children: [
+    { path: '/admin/system', label: '日志与设置', icon: 'Settings', roles: ['admin'] },
   ] },
 ]
 

@@ -6,7 +6,7 @@ import { useHealth } from '../HealthContext.jsx'
 export function DoctorAppointmentsView() {
   const h = useHealth()
   const navigate = useNavigate()
-  const markDone = (row) => h.markDone(row).then(() => navigate('/reports')).catch((e) => h.notify('error', e.message))
+  const markDone = (row) => h.markDone(row).then(() => navigate('/reports?draft=1')).catch((e) => h.notify('error', e.message))
   return (
     <>
       <PageHeader title="预约处理" subtitle="医生查看预约并更新体检状态。" />
@@ -26,7 +26,7 @@ function DoctorAppointmentActions({ row, h, navigate, markDone }) {
     return <Button size="sm" loading={h.loading.status} onClick={() => markDone(row)}>标记完成</Button>
   }
   if (row.status === 'checked') {
-    return <Button size="sm" variant="ghost" onClick={() => { h.updateForm('report', { appointmentId: row.id }); navigate('/reports') }}>录入报告</Button>
+    return <Button size="sm" variant="ghost" onClick={() => { h.updateForm('report', { appointmentId: row.id }); navigate('/reports?draft=1') }}>录入报告</Button>
   }
   return <span className="muted-text">无可用操作</span>
 }
@@ -34,10 +34,11 @@ function DoctorAppointmentActions({ row, h, navigate, markDone }) {
 export function DoctorReportsView() {
   const h = useHealth()
   const [open, setOpen] = useState(false)
+  const draftRequested = new URLSearchParams(window.location.search).get('draft') === '1'
   const reportableAppointments = h.appointments.filter((appointment) => appointment.status === 'checked' || appointment.status === 'reported')
   useEffect(() => {
-    if (h.forms.report.appointmentId) setOpen(true)
-  }, [h.forms.report.appointmentId])
+    if (draftRequested && h.forms.report.appointmentId) setOpen(true)
+  }, [draftRequested, h.forms.report.appointmentId])
   const openCreate = () => { h.resetForm('report'); setOpen(true) }
   const save = () => h.createReport().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
   return (

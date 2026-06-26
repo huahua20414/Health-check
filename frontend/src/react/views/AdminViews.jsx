@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Card, Field, Metric, Modal, PageHeader, PaginatedTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
+import { Button, Card, Field, Metric, Modal, PageHeader, PaginatedTable, RemoteTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { doctorDepartments, moneyText } from '../utils'
 
@@ -17,33 +17,80 @@ export function AdminDashboardView() {
 
 export function DoctorReviewView() {
   const h = useHealth()
+  const [filters, setFilters] = useState({ page: 1, pageSize: 10, role: 'doctor' })
+  useEffect(() => { h.loadUsersPage(filters, 'doctors').catch((e) => h.notify('error', e.message)) }, [filters.page, filters.pageSize])
+  const refresh = () => h.loadUsersPage(filters, 'doctors').catch((e) => h.notify('error', e.message))
+  const updateStatus = (row, status) => h.updateUserStatus(row, status).then(refresh).catch((e) => h.notify('error', e.message))
   return (
     <>
       <PageHeader title="医生审核" subtitle="审核医生账号，并维护科室、职称与专长。" />
-      <Card title="医生列表"><PaginatedTable columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <DoctorReviewActions row={r} h={h} /> }]} rows={h.users.filter((u) => u.role === 'doctor')} /></Card>
+      <Card title="医生列表">
+        <RemoteTable
+          columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <DoctorReviewActions row={r} h={h} onStatus={updateStatus} /> }]}
+          rows={h.users}
+          pagination={h.paginations.doctors}
+          onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
+          onPageSizeChange={(pageSize) => setFilters((current) => ({ ...current, page: 1, pageSize }))}
+        />
+      </Card>
     </>
   )
 }
 
-function DoctorReviewActions({ row, h, compact = false }) {
+export function AdminUsersView() {
+  const h = useHealth()
+  const [filters, setFilters] = useState({ page: 1, pageSize: 10, keyword: '', role: '', status: '' })
+  const [draft, setDraft] = useState({ keyword: '', role: '', status: '' })
+  useEffect(() => { h.loadUsersPage(filters).catch((e) => h.notify('error', e.message)) }, [filters.page, filters.pageSize, filters.keyword, filters.role, filters.status])
+  const apply = () => setFilters((current) => ({ ...current, page: 1, ...draft }))
+  const reset = () => {
+    setDraft({ keyword: '', role: '', status: '' })
+    setFilters((current) => ({ ...current, page: 1, keyword: '', role: '', status: '' }))
+  }
+  const refresh = () => h.loadUsersPage(filters).catch((e) => h.notify('error', e.message))
+  const updateStatus = (row, status) => h.updateUserStatus(row, status).then(refresh).catch((e) => h.notify('error', e.message))
+  return (
+    <>
+      <PageHeader title="用户管理" subtitle="管理员查看账号、按角色和状态筛选，并维护启停状态。" />
+      <Card title="账号列表">
+        <div className="filter-bar">
+          <TextInput placeholder="姓名、邮箱、工号" value={draft.keyword} onChange={(e) => setDraft((current) => ({ ...current, keyword: e.target.value }))} />
+          <Select value={draft.role} onChange={(e) => setDraft((current) => ({ ...current, role: e.target.value }))}><option value="">全部角色</option><option value="user">用户</option><option value="doctor">医生</option><option value="admin">管理员</option></Select>
+          <Select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value }))}><option value="">全部状态</option><option value="active">启用</option><option value="pending">待审核</option><option value="disabled">停用</option></Select>
+          <div className="row-actions"><Button onClick={apply}>查询</Button><Button variant="ghost" onClick={reset}>重置</Button><Button variant="ghost" onClick={() => h.exportBlob('/users/export', 'users.csv', 'exportUsers')}>导出</Button></div>
+        </div>
+        <RemoteTable
+          columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '角色', render: (r) => r.role }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <DoctorReviewActions row={r} h={h} onStatus={updateStatus} /> }]}
+          rows={h.users}
+          pagination={h.paginations.users}
+          onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
+          onPageSizeChange={(pageSize) => setFilters((current) => ({ ...current, page: 1, pageSize }))}
+        />
+      </Card>
+    </>
+  )
+}
+
+function DoctorReviewActions({ row, h, compact = false, onStatus }) {
+  const update = onStatus || ((user, status) => h.updateUserStatus(user, status))
   if (row.status === 'pending') {
     return (
       <div className="row-actions">
-        <Button size="sm" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'active')}>通过</Button>
-        <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'disabled')}>{compact ? '拒绝' : '停用'}</Button>
+        <Button size="sm" loading={h.loading.status} onClick={() => update(row, 'active')}>通过</Button>
+        <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => update(row, 'disabled')}>{compact ? '拒绝' : '停用'}</Button>
       </div>
     )
   }
   if (row.status === 'active') {
     return (
       <div className="row-actions">
-        <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'disabled')}>停用</Button>
+        <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => update(row, 'disabled')}>停用</Button>
         <span className="muted-text">已启用</span>
       </div>
     )
   }
   if (row.status === 'disabled') {
-    return <Button size="sm" variant="ghost" loading={h.loading.status} onClick={() => h.updateUserStatus(row, 'active')}>重新启用</Button>
+    return <Button size="sm" variant="ghost" loading={h.loading.status} onClick={() => update(row, 'active')}>重新启用</Button>
   }
   return <span className="muted-text">无可用操作</span>
 }
@@ -74,7 +121,7 @@ export function PackageManageView() {
 
 export function ResourceManageView() {
   const h = useHealth()
-  useEffect(() => { h.loadInstitutionsPage(); h.loadCheckupItemsPage(); h.loadPackageItemsPage(); h.loadSlotsPage() }, [])
+  useEffect(() => { h.loadInstitutionsPage(); h.loadCheckupItemsPage(); h.loadUsersPage({ role: 'doctor', status: 'active', pageSize: 100 }, 'doctors') }, [])
   return (
     <>
       <PageHeader title="项目与排班" subtitle="机构、体检项目、套餐项目组合和医生号源。" />
@@ -131,15 +178,24 @@ function CheckupItemPanel({ h }) {
 function PackageItemPanel({ h }) {
   const f = h.forms.packageItem
   const [open, setOpen] = useState(false)
+  const [params, setParams] = useState({ page: 1, pageSize: 10 })
+  useEffect(() => { h.loadPackageItemsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
   const openCreate = () => { h.resetForm('packageItem'); setOpen(true) }
   const openEdit = (row) => {
     h.updateForm('packageItem', { id: row.id, packageId: row.packageId, itemId: row.itemId, sortOrder: row.sortOrder, required: row.required })
     setOpen(true)
   }
   const itemOptions = h.checkupItemRows.length ? h.checkupItemRows : h.checkupItems
-  const save = () => h.savePackageItem().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
+  const reload = () => h.loadPackageItemsPage(params).catch((e) => h.notify('error', e.message))
+  const save = () => h.savePackageItem().then(() => { setOpen(false); reload() }).catch((e) => h.notify('error', e.message))
   return <Card title="套餐项目组合" actions={<Button size="sm" onClick={openCreate}>新增</Button>}>
-    <PaginatedTable columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageId }, { title: '项目', render: (r) => r.item?.name || r.itemId }, { title: '排序', render: (r) => r.sortOrder }, { title: '类型', render: (r) => r.required ? '必选' : '可选' }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.deletePackageItem(r)}>移除</Button></div> }]} rows={h.packageItems} />
+    <RemoteTable
+      columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageId }, { title: '项目', render: (r) => r.item?.name || r.itemId }, { title: '排序', render: (r) => r.sortOrder }, { title: '类型', render: (r) => r.required ? '必选' : '可选' }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.deletePackageItem(r).then(reload).catch((e) => h.notify('error', e.message))}>移除</Button></div> }]}
+      rows={h.packageItems}
+      pagination={h.paginations.packageItems}
+      onPageChange={(page) => setParams((current) => ({ ...current, page }))}
+      onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))}
+    />
     <Modal open={open} title="套餐项目组合" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.packageItem} onClick={save}>保存</Button></>}>
       <Field label="套餐"><Select value={f.packageId} onChange={(e) => h.updateForm('packageItem', { packageId: e.target.value })}><option value="">请选择套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
       <Field label="项目"><Select value={f.itemId} onChange={(e) => h.updateForm('packageItem', { itemId: e.target.value })}><option value="">请选择项目</option>{itemOptions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
@@ -152,6 +208,8 @@ function PackageItemPanel({ h }) {
 function SchedulePanel({ h }) {
   const f = h.forms.schedule
   const [open, setOpen] = useState(false)
+  const [params, setParams] = useState({ page: 1, pageSize: 10 })
+  useEffect(() => { h.loadSlotsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
   const rows = h.scheduleSlotRows.length ? h.scheduleSlotRows : h.slots
   const doctors = h.users.filter((u) => u.role === 'doctor' && u.status === 'active')
   const categories = [...new Set(h.packages.map((p) => p.category).filter(Boolean))]
@@ -171,8 +229,9 @@ function SchedulePanel({ h }) {
     })
     setOpen(true)
   }
-  const save = () => h.saveScheduleSlot().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
-  return <Card title="医生号源" actions={<Button size="sm" onClick={openCreate}>新增</Button>}><PaginatedTable columns={[
+  const reload = () => h.loadSlotsPage(params).catch((e) => h.notify('error', e.message))
+  const save = () => h.saveScheduleSlot().then(() => { setOpen(false); reload() }).catch((e) => h.notify('error', e.message))
+  return <Card title="医生号源" actions={<Button size="sm" onClick={openCreate}>新增</Button>}><RemoteTable columns={[
     { title: '医生', render: (r) => r.doctor?.name || r.doctorId },
     { title: '机构', render: (r) => r.institution?.name || r.institutionId },
     { title: '日期', render: (r) => r.date },
@@ -180,8 +239,8 @@ function SchedulePanel({ h }) {
     { title: '分类', render: (r) => r.category || '-' },
     { title: '余号', render: (r) => `${Math.max(0, Number(r.capacity || 0) - Number(r.bookedCount || 0))}/${r.capacity || 0}` },
     { title: '状态', render: (r) => <StatusTag status={r.status} /> },
-    { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveScheduleSlot(r)}>归档</Button></div> },
-  ]} rows={rows} />
+    { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveScheduleSlot(r).then(reload).catch((e) => h.notify('error', e.message))}>归档</Button></div> },
+  ]} rows={rows} pagination={h.paginations.slots} onPageChange={(page) => setParams((current) => ({ ...current, page }))} onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))} />
     <Modal open={open} title={f.id ? '编辑医生号源' : '新增医生号源'} onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.schedule} onClick={save}>{f.id ? '保存编辑' : '新增号源'}</Button></>}>
       <div className="form-grid">
         <Field label="医生"><Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>

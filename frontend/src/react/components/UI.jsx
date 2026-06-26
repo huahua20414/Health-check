@@ -65,7 +65,7 @@ export function DataTable({ columns, rows, empty = '暂无数据' }) {
         <thead><tr>{columns.map((col) => <th key={col.key || col.title}>{col.title}</th>)}</tr></thead>
         <tbody>
           {!rows?.length && <tr><td colSpan={columns.length}><Empty text={empty} /></td></tr>}
-          {rows?.map((row, index) => <tr key={row.id || index}>{columns.map((col) => <td key={col.key || col.title}>{col.render ? col.render(row, index) : row[col.key]}</td>)}</tr>)}
+          {rows?.map((row, index) => <tr key={row.__rowKey || `${row.id || 'row'}-${index}`}>{columns.map((col) => <td key={col.key || col.title}>{col.render ? col.render(row, index) : row[col.key]}</td>)}</tr>)}
         </tbody>
       </table>
     </div>
@@ -103,6 +103,18 @@ export function PaginatedTable({ columns, rows, empty = '暂无数据', initialP
     <>
       <DataTable columns={columns} rows={pageRows} empty={empty} />
       <Pagination page={safePage} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />
+    </>
+  )
+}
+
+export function RemoteTable({ columns, rows, pagination, empty = '暂无数据', onPageChange, onPageSizeChange }) {
+  const page = pagination?.page || 1
+  const pageSize = pagination?.pageSize || 10
+  const total = pagination?.total ?? rows?.length ?? 0
+  return (
+    <>
+      <DataTable columns={columns} rows={rows || []} empty={empty} />
+      <Pagination page={page} pageSize={pageSize} total={total} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} />
     </>
   )
 }
