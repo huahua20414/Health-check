@@ -51,7 +51,7 @@ function Icon({ name }) {
 }
 
 function MenuLink({ item }) {
-  return <NavLink to={item.path} end={item.path === '/'} className={({ isActive }) => `side-link ${isActive ? 'is-active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span></NavLink>
+  return <NavLink to={item.path} end className={({ isActive }) => `side-link ${isActive ? 'is-active' : ''}`}><Icon name={item.icon} /><span>{item.label}</span></NavLink>
 }
 
 export function AppShell() {

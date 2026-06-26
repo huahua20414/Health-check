@@ -987,7 +987,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	}
 	if payload, ok := result.(gin.H); ok && payload["type"] == "appointment" {
 		if appointment, ok := payload["appointment"].(models.Appointment); ok {
-			h.sendAppointmentMail(appointment, "体检预约成功")
+			go h.sendAppointmentMail(appointment, "体检预约成功")
 			h.createAppointmentNotifications(appointment, "appointment_success", "预约成功", "您的体检预约已成功，系统已模拟发送短信提醒。")
 		}
 	} else if payload, ok := result.(gin.H); ok && payload["type"] == "waitlist" {
@@ -1457,6 +1457,10 @@ func (h *Handler) updateScheduleSlot(c *gin.Context) {
 		return
 	}
 	if !h.ensureScheduleSlotDoesNotOverlap(c, slot, uint(id)) {
+		return
+	}
+	if existing.BookedCount > 0 && scheduleSlotAssignmentChanged(existing, slot) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "booked schedule slot cannot change doctor, institution, date or time"})
 		return
 	}
 	updates := map[string]any{
@@ -4415,6 +4419,16 @@ func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, boo
 		BookedCount:   bookedCount,
 		Status:        normalizeStatus(req.Status, "available"),
 	}, true
+}
+
+func scheduleSlotAssignmentChanged(existing, next models.ScheduleSlot) bool {
+	return existing.DoctorID != next.DoctorID ||
+		existing.InstitutionID != next.InstitutionID ||
+		existing.Date != next.Date ||
+		existing.Period != next.Period ||
+		existing.Category != next.Category ||
+		existing.StartTime != next.StartTime ||
+		existing.EndTime != next.EndTime
 }
 
 func (h *Handler) ensureScheduleSlotDoesNotOverlap(c *gin.Context, slot models.ScheduleSlot, excludeID uint) bool {

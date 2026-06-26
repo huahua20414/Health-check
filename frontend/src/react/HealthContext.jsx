@@ -441,7 +441,18 @@ export function HealthProvider({ children }) {
       await loaders.loadPackageItemsPage()
     }),
     deletePackageItem: (row) => action('packageItem', '套餐项目已移除', async () => { await request(`/package-items/${row.id}`, { method: 'DELETE' }); await loaders.loadPackageItemsPage() }),
-    saveScheduleSlot: () => action('schedule', '排班号源已保存', async () => { const body = JSON.stringify({ ...forms.schedule, capacity: Number(forms.schedule.capacity || 1) }); if (forms.schedule.id) await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body }); else await request('/schedule/slots', { method: 'POST', body }); resetForm('schedule'); await loaders.loadSlotsPage() }),
+    saveScheduleSlot: () => action('schedule', '排班号源已保存', async () => {
+      const body = JSON.stringify({
+        ...forms.schedule,
+        doctorId: Number(forms.schedule.doctorId || 0),
+        institutionId: Number(forms.schedule.institutionId || 0),
+        capacity: Number(forms.schedule.capacity || 1),
+      })
+      if (forms.schedule.id) await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body })
+      else await request('/schedule/slots', { method: 'POST', body })
+      resetForm('schedule')
+      await loaders.loadSlotsPage()
+    }),
     archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => { await request(`/schedule/slots/${row.id}`, { method: 'DELETE' }); await loaders.loadSlotsPage() }),
     saveCoupon: () => action('coupon', '优惠券已保存', async () => { const body = JSON.stringify({ ...forms.coupon, value: Number(forms.coupon.value || 0), minAmount: Number(forms.coupon.minAmount || 0), packageId: Number(forms.coupon.packageId || 0) }); if (forms.coupon.id) await request(`/coupons/${forms.coupon.id}`, { method: 'PATCH', body }); else await request('/coupons', { method: 'POST', body }); resetForm('coupon'); await loaders.loadCouponsPage() }),
     archiveCoupon: (row) => action('coupon', '优惠券已归档', async () => { await request(`/coupons/${row.id}`, { method: 'DELETE' }); await loaders.loadCouponsPage() }),
