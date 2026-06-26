@@ -59,6 +59,18 @@ func TestUserNotificationsHideArchivedRows(t *testing.T) {
 	}
 }
 
+func TestUserNotificationsSupportPagination(t *testing.T) {
+	handler, _, fixture := newNotificationAdminFixture(t)
+	router := newNotificationAdminRouter(handler, fixture.user)
+
+	response := performNotificationAdminRequest(t, router, http.MethodGet, "/notifications?page=1&pageSize=10")
+
+	payload := decodeNotificationPage(t, response)
+	if payload.Total != 1 || len(payload.Items) != 1 || payload.Items[0].ID != fixture.userUnread.ID {
+		t.Fatalf("user notification page returned wrong rows: %#v", payload)
+	}
+}
+
 func TestUserCanToggleOwnNotificationReadStatus(t *testing.T) {
 	handler, db, fixture := newNotificationAdminFixture(t)
 	router := newNotificationAdminRouter(handler, fixture.user)

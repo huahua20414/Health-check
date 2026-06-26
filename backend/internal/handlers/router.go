@@ -2034,7 +2034,7 @@ func (h *Handler) packageBrowses(c *gin.Context) {
 func (h *Handler) notifications(c *gin.Context) {
 	current := currentUser(c)
 	var notifications []models.Notification
-	query := h.db.Where("user_id = ? AND status <> ?", current.ID, "archived").Order("created_at desc")
+	query := h.db.Model(&models.Notification{}).Where("user_id = ? AND status <> ?", current.ID, "archived").Order("created_at desc")
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}
