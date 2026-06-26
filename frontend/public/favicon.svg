@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="熙心健康体检">
+  <rect width="64" height="64" rx="14" fill="#0b1220"/>
+  <path d="M32 10c12.15 0 22 9.85 22 22s-9.85 22-22 22S10 44.15 10 32 19.85 10 32 10Z" fill="#142033"/>
+  <path d="M29 18h6v11h11v6H35v11h-6V35H18v-6h11V18Z" fill="#2dd4e7"/>
+  <path d="M17 39h8l4-7 6 13 5-9h7" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
