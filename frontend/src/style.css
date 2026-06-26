@@ -690,12 +690,30 @@ a { color: inherit; text-decoration: none; }
   top: 24px;
   z-index: 100;
   max-width: min(380px, calc(100vw - 48px));
-  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 12px 14px 16px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--panel);
   box-shadow: var(--shadow);
   font-weight: 760;
+}
+.toast span {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.45;
+}
+.toast button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--ghost-button-border);
+  border-radius: 8px;
+  background: var(--ghost-button-bg);
+  color: var(--ghost-button-text);
+  line-height: 1;
 }
 .toast-success { color: var(--success-text); border-color: rgba(51,196,129,.35); }
 .toast-error { color: var(--red); border-color: rgba(239,68,68,.35); }

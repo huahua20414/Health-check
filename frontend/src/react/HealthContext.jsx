@@ -99,6 +99,10 @@ export function HealthProvider({ children }) {
     window.clearTimeout(notify.timer)
     notify.timer = window.setTimeout(() => setToast(null), 3200)
   }, [])
+  const dismissToast = useCallback(() => {
+    window.clearTimeout(notify.timer)
+    setToast(null)
+  }, [notify])
   const saveUser = useCallback((user) => {
     setCurrentUser(user)
     if (user) localStorage.setItem('currentUser', JSON.stringify(user))
@@ -151,43 +155,50 @@ export function HealthProvider({ children }) {
     if (loading.load) return
     setLoadingKey('load', true)
     try {
-      const base = {
-        packages: await request('/packages'),
-        popularPackages: await request('/packages/popular'),
-        recommendedPackages: await request('/packages/recommended'),
-        activeCoupons: await request('/coupons/active'),
-        activeAnnouncements: await request('/announcements/active'),
-        institutions: await request('/institutions'),
-      }
-      setSupportInfo(await request('/support'))
+      const [packages, popularPackages, recommendedPackages, activeCoupons, activeAnnouncements, institutions, support] = await Promise.all([
+        request('/packages'),
+        request('/packages/popular'),
+        request('/packages/recommended'),
+        request('/coupons/active'),
+        request('/announcements/active'),
+        request('/institutions'),
+        request('/support'),
+      ])
+      const base = { packages, popularPackages, recommendedPackages, activeCoupons, activeAnnouncements, institutions }
+      setSupportInfo(support)
       if (!getAuthToken()) {
         updateData(base)
         return
       }
       const userRole = JSON.parse(localStorage.getItem('currentUser') || 'null')?.role || currentUser?.role
-      const protectedData = {
-        ...base,
-        appointments: await request('/appointments'),
-        reports: await request('/reports'),
-        slots: await request('/schedule/slots'),
-        notifications: await request('/notifications'),
-      }
+      const [appointments, reports, slots, notifications] = await Promise.all([
+        request('/appointments'),
+        request('/reports'),
+        request('/schedule/slots'),
+        request('/notifications'),
+      ])
+      const protectedData = { ...base, appointments, reports, slots, notifications }
       if (userRole === 'user') {
-        Object.assign(protectedData, {
-          waitlist: await request('/waitlist'),
-          familyMembers: await request('/family-members'),
-          favorites: await request('/package-favorites'),
-          browseHistories: await request('/package-browses'),
-          supportTickets: await request('/support-tickets'),
-        })
+        const [waitlist, familyMembers, favorites, browseHistories, supportTickets] = await Promise.all([
+          request('/waitlist'),
+          request('/family-members'),
+          request('/package-favorites'),
+          request('/package-browses'),
+          request('/support-tickets'),
+        ])
+        Object.assign(protectedData, { waitlist, familyMembers, favorites, browseHistories, supportTickets })
       }
       if (userRole === 'doctor' || userRole === 'admin') protectedData.users = await request('/users')
       else protectedData.users = currentUser ? [currentUser] : []
       if (userRole === 'admin') {
-        protectedData.mailLogs = await request('/mail-logs')
-        protectedData.checkupItems = await request('/checkup-items')
-        protectedData.packageItems = await request('/package-items')
-        setAdminDashboard(await request('/admin/dashboard'))
+        const [mailLogs, checkupItems, packageItems, dashboard] = await Promise.all([
+          request('/mail-logs'),
+          request('/checkup-items'),
+          request('/package-items'),
+          request('/admin/dashboard'),
+        ])
+        Object.assign(protectedData, { mailLogs, checkupItems, packageItems })
+        setAdminDashboard(dashboard)
       }
       updateData(protectedData)
       setForms((current) => ({
@@ -244,9 +255,8 @@ export function HealthProvider({ children }) {
       const result = await request('/auth/login', { method: 'POST', body: JSON.stringify(form) })
       setAuthToken(result.accessToken)
       saveUser(result.user)
-      await loadMyPermissions()
-      await loadAll()
       notify('success', '登录成功')
+      Promise.allSettled([loadMyPermissions(), loadAll()]).catch(() => null)
       return result.user
     } finally {
       setLoadingKey('login', false)
@@ -481,6 +491,7 @@ export function HealthProvider({ children }) {
     appointmentTypes,
     can,
     notify,
+    dismissToast,
     updateForm,
     resetForm,
     ensureBootstrapped,
@@ -495,7 +506,7 @@ export function HealthProvider({ children }) {
     ...derived,
     ...actions,
     ...paginationActions,
-  }), [actions, adminDashboard, authCodeCooldown, can, currentUser, data, derived, ensureBootstrapped, forms, loadAll, loading, login, logout, notify, paginationActions, paginations, registerDoctor, registerUser, resetForm, sendAuthEmailCode, setLoginShortcut, supportInfo, toast, updateForm])
+  }), [actions, adminDashboard, authCodeCooldown, can, currentUser, data, derived, dismissToast, ensureBootstrapped, forms, loadAll, loading, login, logout, notify, paginationActions, paginations, registerDoctor, registerUser, resetForm, sendAuthEmailCode, setLoginShortcut, supportInfo, toast, updateForm])
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>
 }

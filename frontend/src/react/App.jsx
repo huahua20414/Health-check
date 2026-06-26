@@ -33,7 +33,7 @@ function Bootstrap({ children }) {
   return (
     <>
       {children}
-      {health.toast && <div className={`toast toast-${health.toast.type}`}>{health.toast.message}</div>}
+      {health.toast && <div className={`toast toast-${health.toast.type}`}><span>{health.toast.message}</span><button type="button" onClick={health.dismissToast} aria-label="关闭通知">×</button></div>}
       {location.pathname !== '/login' && location.pathname !== '/register/user' && location.pathname !== '/register/doctor' && health.loading.load && <div className="page-loader">数据加载中</div>}
     </>
   )
