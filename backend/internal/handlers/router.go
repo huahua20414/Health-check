@@ -1548,6 +1548,12 @@ func (h *Handler) scheduleSlotsQuery(c *gin.Context) *gorm.DB {
 	if date := c.Query("date"); date != "" {
 		query = query.Where("schedule_slots.date = ?", date)
 	}
+	if fromDate := c.Query("fromDate"); fromDate != "" {
+		query = query.Where("schedule_slots.date >= ?", fromDate)
+	}
+	if toDate := c.Query("toDate"); toDate != "" {
+		query = query.Where("schedule_slots.date <= ?", toDate)
+	}
 	if period := c.Query("period"); period != "" {
 		query = query.Where("schedule_slots.period = ?", period)
 	}
@@ -1555,6 +1561,9 @@ func (h *Handler) scheduleSlotsQuery(c *gin.Context) *gorm.DB {
 		query = query.Where("schedule_slots.status = ?", status)
 	} else {
 		query = query.Where("schedule_slots.status <> ?", "deleted")
+	}
+	if c.Query("availableOnly") == "true" {
+		query = query.Where("schedule_slots.capacity > schedule_slots.booked_count")
 	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		pattern := "%" + keyword + "%"

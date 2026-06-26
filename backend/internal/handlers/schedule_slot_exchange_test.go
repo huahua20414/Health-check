@@ -50,6 +50,21 @@ func TestScheduleSlotsSupportKeywordAndPagination(t *testing.T) {
 	}
 }
 
+func TestScheduleSlotsCanFilterFutureAvailableCapacity(t *testing.T) {
+	handler, _, fixture := newScheduleSlotExchangeFixture(t)
+	router := newScheduleSlotExchangeRouter(handler, fixture.admin)
+
+	response := performScheduleSlotExchangeRequest(t, router, http.MethodGet, "/schedule/slots?fromDate=2026-07-02&availableOnly=true&page=1&pageSize=10", nil, "")
+	page := decodeScheduleSlotPage(t, response)
+
+	if page.Total != 1 {
+		t.Fatalf("expected one future available slot, got %#v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != 21 {
+		t.Fatalf("unexpected future available slot rows: %#v", page.Items)
+	}
+}
+
 func TestImportScheduleSlotsCreatesAndUpdatesByDoctorInstitutionDateStartTime(t *testing.T) {
 	handler, db, fixture := newScheduleSlotExchangeFixture(t)
 	router := newScheduleSlotExchangeRouter(handler, fixture.admin)

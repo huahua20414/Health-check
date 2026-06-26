@@ -333,7 +333,7 @@ export function HealthProvider({ children }) {
     loadAnnouncementsPage: (params = {}) => loadPage('/announcements', 'announcements', 'announcements', params),
     loadCheckupItemsPage: (params = {}) => loadPage('/checkup-items', 'checkupItems', 'checkupItemRows', params),
     loadPackageItemsPage: (params = {}) => loadPage('/package-items', 'packageItems', 'packageItems', params),
-    loadSlotsPage: (params = {}) => loadPage('/schedule/slots', 'slots', 'scheduleSlotRows', params),
+    loadSlotsPage: (params = {}, key = 'slots', stateKey = 'scheduleSlotRows') => loadPage('/schedule/slots', key, stateKey, params),
   }), [loadPage])
 
   const paginationActions = useMemo(() => ({

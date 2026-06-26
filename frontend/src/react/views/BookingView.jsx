@@ -11,7 +11,7 @@ export function BookingView() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   useEffect(() => {
-    h.loadSlotsPage({ page: 1, pageSize: 200, status: 'available' }).catch((e) => h.notify('error', e.message))
+    h.loadSlotsPage({ page: 1, pageSize: 2000, status: 'available', availableOnly: 'true', fromDate: localDateValue(new Date()) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
     h.loadFamilyMembersPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
   }, [])
   const form = h.forms.appointment
@@ -24,12 +24,13 @@ export function BookingView() {
   const selectedMember = h.familyMembers.find((member) => member.id === Number(form.familyMemberId))
   const selectedCoupon = h.activeCoupons.find((coupon) => coupon.id === Number(form.couponId))
   const days = useMemo(() => nextDays(14), [])
-  const visibleDate = form.date || days[0]?.value || ''
   const filteredSlots = h.slots.filter((slot) => {
     if (form.institutionId && slot.institutionId !== Number(form.institutionId)) return false
     if (selectedPackage?.category && slot.category !== selectedPackage.category) return false
     return days.some((day) => day.value === slot.date)
   })
+  const firstAvailableDate = filteredSlots[0]?.date || ''
+  const visibleDate = form.date || firstAvailableDate || days[0]?.value || ''
   const slotsByTime = groupSlotsByDateTime(filteredSlots)
   const selectedDaySlots = slotsByTime[visibleDate] || []
   const canNext = [Boolean(form.packageId), Boolean(form.institutionId), Boolean(form.slotId || form.period), true][step]
