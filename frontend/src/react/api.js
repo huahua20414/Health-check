@@ -18,13 +18,14 @@ export async function request(path, options = {}) {
   if (!(options.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json'
   }
-  if (authToken) headers.Authorization = `Bearer ${authToken}`
+  const tokenForRequest = authToken
+  if (tokenForRequest) headers.Authorization = `Bearer ${tokenForRequest}`
 
   const response = await fetch(`${apiBase}${path}`, { headers, ...options })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }))
     const message = error.message || error.error || response.statusText
-    if (response.status === 401 && path !== '/auth/login') clearStaleSession()
+    if (response.status === 401 && path !== '/auth/login') clearStaleSession(tokenForRequest)
     throw new Error(localizeApiError(message))
   }
   const result = await response.json()
@@ -37,19 +38,20 @@ export async function request(path, options = {}) {
 
 export async function requestBlob(path, options = {}) {
   const headers = { ...(options.headers || {}) }
-  if (authToken) headers.Authorization = `Bearer ${authToken}`
+  const tokenForRequest = authToken
+  if (tokenForRequest) headers.Authorization = `Bearer ${tokenForRequest}`
   const response = await fetch(`${apiBase}${path}`, { headers, ...options })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }))
     const message = error.message || error.error || response.statusText
-    if (response.status === 401) clearStaleSession()
+    if (response.status === 401) clearStaleSession(tokenForRequest)
     throw new Error(localizeApiError(message))
   }
   return response.blob()
 }
 
-function clearStaleSession() {
-  if (!authToken) return
+function clearStaleSession(tokenForRequest) {
+  if (!tokenForRequest || tokenForRequest !== authToken) return
   setAuthToken('')
   localStorage.removeItem('currentUser')
   window.dispatchEvent(new CustomEvent('auth-expired'))
