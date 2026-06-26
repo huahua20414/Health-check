@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Metric, Modal, PageHeader, PaginatedTable, RemoteTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { doctorDepartments, moneyText } from '../utils'
+import { doctorDepartments, moneyText, normalizeIDCard } from '../utils'
 
 export function AdminDashboardView() {
   const h = useHealth()
@@ -94,7 +94,7 @@ export function AdminUsersView() {
           <Field label="姓名"><TextInput value={f.name} onChange={(e) => h.updateForm('adminUser', { name: e.target.value })} /></Field>
           <Field label="邮箱"><TextInput value={f.email} onChange={(e) => h.updateForm('adminUser', { email: e.target.value })} /></Field>
           <Field label="性别"><Select value={f.gender} onChange={(e) => h.updateForm('adminUser', { gender: e.target.value })}><option value="">未填写</option><option value="男">男</option><option value="女">女</option></Select></Field>
-          <Field label="身份证"><TextInput value={f.idCard} onChange={(e) => h.updateForm('adminUser', { idCard: e.target.value })} /></Field>
+          <Field label="身份证"><TextInput value={f.idCard} maxLength={18} placeholder="例如 11010519491231002X" onChange={(e) => h.updateForm('adminUser', { idCard: normalizeIDCard(e.target.value) })} /></Field>
           <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('adminUser', { status: e.target.value })}><option value="active">启用</option><option value="pending">待审核</option><option value="disabled">停用</option></Select></Field>
           <Field label="邮箱通知"><Select value={String(f.emailNotify)} onChange={(e) => h.updateForm('adminUser', { emailNotify: e.target.value === 'true' })}><option value="true">开启</option><option value="false">关闭</option></Select></Field>
         </div>

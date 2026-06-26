@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, Select, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { calculateAgeFromIDCard } from '../utils'
+import { calculateAgeFromIDCard, normalizeIDCard } from '../utils'
 
 export function ProfileView() {
   const h = useHealth()
@@ -33,7 +33,7 @@ export function ProfileView() {
         <div className="form-grid">
           <Field label="姓名"><TextInput value={f.name} onChange={(e) => h.updateForm('profile', { name: e.target.value })} /></Field>
           <Field label="性别"><Select value={f.gender} onChange={(e) => h.updateForm('profile', { gender: e.target.value })}><option value="">请选择</option><option value="男">男</option><option value="女">女</option></Select></Field>
-          <Field label="身份证号"><TextInput value={f.idCard} onChange={(e) => h.updateForm('profile', { idCard: e.target.value })} /></Field>
+          <Field label="身份证号"><TextInput value={f.idCard} maxLength={18} placeholder="例如 11010519491231002X" onChange={(e) => h.updateForm('profile', { idCard: normalizeIDCard(e.target.value) })} /></Field>
           <Field label="年龄"><TextInput value={age === null ? '身份证校验通过后自动计算' : `${age} 岁`} readOnly /></Field>
         </div>
         <Field label="个人说明"><Textarea value={f.bio} onChange={(e) => h.updateForm('profile', { bio: e.target.value })} /></Field>

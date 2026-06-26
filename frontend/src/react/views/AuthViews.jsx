@@ -2,7 +2,7 @@ import React, { useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, Field, Select, TextInput } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { calculateAgeFromIDCard, devAuthEnabled, devAuthShortcutEmail, doctorDepartments, homePath } from '../utils.js'
+import { calculateAgeFromIDCard, devAuthEnabled, devAuthShortcutEmail, doctorDepartments, homePath, normalizeIDCard } from '../utils.js'
 
 export function AuthView() {
   const h = useHealth()
@@ -86,7 +86,7 @@ export function RegisterView() {
           {!isDoctor ? (
             <>
               <Field label="性别"><Select value={form.gender} onChange={(e) => h.updateForm(formKey, { gender: e.target.value })}><option value="">请选择</option><option value="男">男</option><option value="女">女</option></Select></Field>
-              <Field label="身份证号"><TextInput value={form.idCard} maxLength={18} onChange={(e) => h.updateForm(formKey, { idCard: e.target.value })} /></Field>
+              <Field label="身份证号"><TextInput value={form.idCard} maxLength={18} placeholder="例如 11010519491231002X" onChange={(e) => h.updateForm(formKey, { idCard: normalizeIDCard(e.target.value) })} /></Field>
               <Field label="年龄"><TextInput value={age === null ? '身份证校验通过后自动计算' : `${age} 岁`} readOnly /></Field>
             </>
           ) : (

@@ -75,9 +75,23 @@ export function formatDate(value) {
   return new Date(value).toLocaleDateString('zh-CN')
 }
 
+export function normalizeIDCard(value) {
+  return String(value || '').trim().toUpperCase()
+}
+
+export function isValidIDCard(value) {
+  const id = normalizeIDCard(value)
+  if (!/^\d{17}[\dX]$/.test(id)) return false
+  const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+  const checks = '10X98765432'
+  const sum = weights.reduce((total, weight, index) => total + Number(id[index]) * weight, 0)
+  return id[17] === checks[sum % 11]
+}
+
 export function calculateAgeFromIDCard(value, now = new Date()) {
-  const id = String(value || '').trim()
+  const id = normalizeIDCard(value)
   if (!/^\d{17}[\dXx]$/.test(id)) return null
+  if (!isValidIDCard(id)) return null
   const birth = id.slice(6, 14)
   const year = Number(birth.slice(0, 4))
   const month = Number(birth.slice(4, 6))
@@ -104,8 +118,9 @@ export function assertRequired(value, message) {
 }
 
 export function assertIDCard(value, required = false) {
-  if (!value && !required) return
-  if (calculateAgeFromIDCard(value) === null) throw new Error('身份证号无效')
+  const id = normalizeIDCard(value)
+  if (!id && !required) return
+  if (calculateAgeFromIDCard(id) === null) throw new Error('请输入有效的 18 位身份证号，最后一位可为 X')
 }
 
 export function toQuery(params = {}) {

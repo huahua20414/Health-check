@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, TextInput } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { calculateAgeFromIDCard } from '../utils'
+import { calculateAgeFromIDCard, normalizeIDCard } from '../utils'
 
 export function FamilyView() {
   const h = useHealth()
@@ -22,7 +22,7 @@ export function FamilyView() {
           <Field label="姓名"><TextInput value={f.name} onChange={(e) => h.updateForm('familyMember', { name: e.target.value })} /></Field>
           <Field label="关系"><TextInput value={f.relation} onChange={(e) => h.updateForm('familyMember', { relation: e.target.value })} /></Field>
           <Field label="性别"><Select value={f.gender} onChange={(e) => h.updateForm('familyMember', { gender: e.target.value })}><option value="">请选择</option><option value="男">男</option><option value="女">女</option></Select></Field>
-          <Field label="身份证号"><TextInput value={f.idCard} onChange={(e) => h.updateForm('familyMember', { idCard: e.target.value })} /></Field>
+          <Field label="身份证号"><TextInput value={f.idCard} maxLength={18} placeholder="例如 11010519491231002X" onChange={(e) => h.updateForm('familyMember', { idCard: normalizeIDCard(e.target.value) })} /></Field>
           <Field label="电话"><TextInput value={f.phone} onChange={(e) => h.updateForm('familyMember', { phone: e.target.value })} /></Field>
         </div>
       </Modal>

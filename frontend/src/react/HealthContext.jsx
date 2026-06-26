@@ -15,6 +15,7 @@ import {
   homePath,
   moneyText,
   nextDateString,
+  normalizeIDCard,
   paymentStatusText,
   statusText,
   toQuery,
@@ -382,10 +383,11 @@ export function HealthProvider({ children }) {
     markNotificationRead: (n) => action('notification', '', async () => { await request(`/notifications/${n.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'read' }) }); await loaders.loadNotificationsPage() }),
     createSupportTicket: () => action('notification', '咨询已提交', async () => { await request('/support-tickets', { method: 'POST', body: JSON.stringify(forms.supportTicket) }); resetForm('supportTicket'); await loaders.loadSupportTicketsPage() }),
     saveFamilyMember: () => action('familyMember', '家庭成员已保存', async () => {
-      const body = JSON.stringify({ name: forms.familyMember.name, relation: forms.familyMember.relation, gender: forms.familyMember.gender, idCard: forms.familyMember.idCard, phone: forms.familyMember.phone })
+      const idCard = normalizeIDCard(forms.familyMember.idCard)
+      const body = JSON.stringify({ name: forms.familyMember.name, relation: forms.familyMember.relation, gender: forms.familyMember.gender, idCard, phone: forms.familyMember.phone })
       assertRequired(forms.familyMember.name, '请输入成员姓名')
       assertRequired(forms.familyMember.relation, '请输入成员关系')
-      assertIDCard(forms.familyMember.idCard)
+      assertIDCard(idCard)
       if (forms.familyMember.id) await request(`/family-members/${forms.familyMember.id}`, { method: 'PATCH', body })
       else await request('/family-members', { method: 'POST', body })
       resetForm('familyMember')
@@ -396,8 +398,9 @@ export function HealthProvider({ children }) {
     recordPackageBrowse: async (pkg) => { if (getAuthToken() && role === 'user' && pkg?.id) await request(`/packages/${pkg.id}/browse`, { method: 'POST' }).catch(() => null) },
     saveProfile: () => action('profile', '个人资料已保存', async () => {
       assertRequired(forms.profile.name, '请输入姓名')
-      assertIDCard(forms.profile.idCard)
-      const user = await request('/profile', { method: 'PATCH', body: JSON.stringify(forms.profile) })
+      const idCard = normalizeIDCard(forms.profile.idCard)
+      assertIDCard(idCard)
+      const user = await request('/profile', { method: 'PATCH', body: JSON.stringify({ ...forms.profile, idCard }) })
       saveUser(user)
       await loadAll()
     }),
@@ -409,8 +412,9 @@ export function HealthProvider({ children }) {
     saveAdminUser: () => action('adminUser', '用户资料已保存', async () => {
       assertRequired(forms.adminUser.name, '请输入姓名')
       assertEmail(forms.adminUser.email)
-      assertIDCard(forms.adminUser.idCard)
-      const user = await request(`/users/${forms.adminUser.id}`, { method: 'PATCH', body: JSON.stringify(forms.adminUser) })
+      const idCard = normalizeIDCard(forms.adminUser.idCard)
+      assertIDCard(idCard)
+      const user = await request(`/users/${forms.adminUser.id}`, { method: 'PATCH', body: JSON.stringify({ ...forms.adminUser, idCard }) })
       resetForm('adminUser')
       return user
     }),

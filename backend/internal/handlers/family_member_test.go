@@ -99,6 +99,48 @@ func TestCreateFamilyMemberAssignsCurrentUser(t *testing.T) {
 	assertFamilyOperationLog(t, db, fixture.user.ID, created.ID, "create", "母亲")
 }
 
+func TestCreateFamilyMemberNormalizesIDCard(t *testing.T) {
+	handler, _, fixture := newFamilyMemberFixture(t)
+	router := newFamilyMemberTestRouter(handler, fixture.user)
+
+	response := performFamilyRequest(t, router, http.MethodPost, "/family-members", familyMemberRequest{
+		Name:     "外公",
+		Relation: "外公",
+		Gender:   "male",
+		IDCard:   " 11010519491231002x ",
+		Phone:    "13900000003",
+	})
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
+	}
+	var created models.FamilyMember
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created member: %v", err)
+	}
+	if created.IDCard != "11010519491231002X" || created.Age <= 0 {
+		t.Fatalf("id card should be normalized and age calculated, got %#v", created)
+	}
+}
+
+func TestCreateFamilyMemberRejectsInvalidIDCardChecksum(t *testing.T) {
+	handler, _, fixture := newFamilyMemberFixture(t)
+	router := newFamilyMemberTestRouter(handler, fixture.user)
+
+	response := performFamilyRequest(t, router, http.MethodPost, "/family-members", familyMemberRequest{
+		Name:     "外婆",
+		Relation: "外婆",
+		Gender:   "female",
+		IDCard:   "110105194912310020",
+		Phone:    "13900000004",
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "invalid id card")
+}
+
 func TestUpdateFamilyMemberRejectsOtherUsersMember(t *testing.T) {
 	handler, db, fixture := newFamilyMemberFixture(t)
 	router := newFamilyMemberTestRouter(handler, fixture.user)
