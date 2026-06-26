@@ -7,8 +7,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func Open(addr string) *redis.Client {
-	return redis.NewClient(&redis.Options{Addr: addr})
+func Open(addr, password string) *redis.Client {
+	return redis.NewClient(&redis.Options{Addr: addr, Password: password})
 }
 
 func Ping(ctx context.Context, client *redis.Client) error {

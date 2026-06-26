@@ -32,7 +32,7 @@ func main() {
 	switch command {
 	case "serve":
 		ctx := context.Background()
-		redisClient := cache.Open(cfg.RedisAddr)
+		redisClient := cache.Open(cfg.RedisAddr, cfg.RedisPassword)
 		if err := cache.Ping(ctx, redisClient); err != nil {
 			log.Fatalf("connect redis: %v", err)
 		}

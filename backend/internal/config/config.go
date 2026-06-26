@@ -6,6 +6,7 @@ type Config struct {
 	Addr           string
 	DBDSN          string
 	RedisAddr      string
+	RedisPassword  string
 	JWTSecret      string
 	TokenHours     int
 	SMTPHost       string
@@ -20,6 +21,7 @@ func Load() Config {
 		Addr:           getEnv("APP_ADDR", ":8080"),
 		DBDSN:          getEnv("DB_DSN", "health:health123@tcp(127.0.0.1:3306)/health_checkup?charset=utf8mb4&parseTime=True&loc=Local"),
 		RedisAddr:      getEnv("REDIS_ADDR", "127.0.0.1:6379"),
+		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
 		JWTSecret:      getEnv("JWT_SECRET", "dev-health-checkup-secret"),
 		TokenHours:     12,
 		SMTPHost:       getEnv("SMTP_HOST", "smtp.qq.com"),
