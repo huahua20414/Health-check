@@ -57,7 +57,20 @@ a { color: inherit; text-decoration: none; }
 .brand strong { font-size: 18px; line-height: 1.25; }
 .brand span, .side-foot small { color: #9aa7ba; font-size: 12px; }
 
-.side-nav { min-height: 0; overflow: auto; padding-right: 3px; }
+.side-nav {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(154, 167, 186, .42) transparent;
+}
+.side-nav::-webkit-scrollbar { width: 6px; }
+.side-nav::-webkit-scrollbar-track { background: transparent; }
+.side-nav::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(154, 167, 186, .34);
+}
+.side-nav::-webkit-scrollbar-thumb:hover { background: rgba(154, 167, 186, .58); }
 .side-group { margin: 12px 0; }
 .side-group-title {
   width: 100%;
