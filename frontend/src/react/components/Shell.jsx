@@ -38,7 +38,7 @@ export const menuItems = [
   ] },
   { label: '运营支持', icon: 'Megaphone', roles: ['admin'], children: [
     { path: '/admin/engagement', label: '营销与公告', icon: 'Megaphone', roles: ['admin'] },
-    { path: '/admin/communication', label: '通知与客服', icon: 'Bell', roles: ['admin'] },
+    { path: '/admin/communication', label: '公告与客服', icon: 'Bell', roles: ['admin'] },
   ] },
   { label: '系统治理', icon: 'Settings', roles: ['admin'], children: [
     { path: '/admin/system', label: '日志与设置', icon: 'Settings', roles: ['admin'] },

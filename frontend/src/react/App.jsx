@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { HealthProvider, useHealth } from './HealthContext.jsx'
 import { AppShell } from './components/Shell.jsx'
+import { Button, Modal } from './components/UI.jsx'
 import { AuthView, RegisterView } from './views/AuthViews.jsx'
 import { DashboardView } from './views/DashboardView.jsx'
 import { PackagesView } from './views/PackagesView.jsx'
@@ -14,7 +15,7 @@ import { NotificationsView } from './views/NotificationsView.jsx'
 import { DoctorAppointmentsView, DoctorReportsView, PeopleView } from './views/DoctorViews.jsx'
 import { AdminDashboardView, AdminUsersView, DoctorReviewView, PackageManageView, ResourceManageView } from './views/AdminViews.jsx'
 import { AdminCommunicationView, AdminEngagementView, AdminSystemView } from './views/AdminExtraViews.jsx'
-import { homePath } from './utils.js'
+import { formatDate, homePath } from './utils.js'
 
 function Guarded({ roles, children }) {
   const health = useHealth()
@@ -26,7 +27,25 @@ function Guarded({ roles, children }) {
 function Bootstrap({ children }) {
   const health = useHealth()
   const location = useLocation()
+  const [announcement, setAnnouncement] = useState(null)
   useEffect(() => { health.ensureBootstrapped().catch((error) => health.notify('error', error.message)) }, [])
+  useEffect(() => {
+    if (!['user', 'doctor'].includes(health.role)) {
+      setAnnouncement(null)
+      return
+    }
+    const dismissed = JSON.parse(localStorage.getItem('dismissedAnnouncementIds') || '[]').map(String)
+    const next = (health.activeAnnouncements || []).find((item) => !dismissed.includes(String(item.id)))
+    setAnnouncement(next || null)
+  }, [health.role, health.activeAnnouncements])
+  const closeAnnouncement = () => {
+    if (announcement?.id) {
+      const dismissed = new Set(JSON.parse(localStorage.getItem('dismissedAnnouncementIds') || '[]').map(String))
+      dismissed.add(String(announcement.id))
+      localStorage.setItem('dismissedAnnouncementIds', JSON.stringify(Array.from(dismissed)))
+    }
+    setAnnouncement(null)
+  }
   if (health.toast) {
     // rendering below; this branch intentionally keeps effect dependency lean
   }
@@ -34,8 +53,22 @@ function Bootstrap({ children }) {
     <>
       {children}
       {health.toast && <div className={`toast toast-${health.toast.type}`}><span>{health.toast.message}</span><button type="button" onClick={health.dismissToast} aria-label="关闭通知">×</button></div>}
+      <AnnouncementPopup announcement={announcement} onClose={closeAnnouncement} />
       {location.pathname !== '/login' && location.pathname !== '/register/user' && location.pathname !== '/register/doctor' && health.loading.load && <div className="page-loader">数据加载中</div>}
     </>
+  )
+}
+
+function AnnouncementPopup({ announcement, onClose }) {
+  if (!announcement) return null
+  return (
+    <Modal open title="系统公告" onClose={onClose} actions={<Button onClick={onClose}>知道了</Button>}>
+      <div className="announcement-popup">
+        <span>{formatDate(announcement.publishedAt || announcement.createdAt)}</span>
+        <h2>{announcement.title}</h2>
+        <p>{announcement.content}</p>
+      </div>
+    </Modal>
   )
 }
 

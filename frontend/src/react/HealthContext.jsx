@@ -31,6 +31,7 @@ const defaultForms = {
   appointment: { appointmentType: '个人体检', institutionId: '', packageId: '', familyMemberId: '', slotId: '', couponId: '', date: '', period: '', note: '', paymentStatus: 'unpaid', invoiceTitle: '', invoiceTaxNo: '', selectedPackageItemIds: [] },
   waitlist: { appointmentType: '个人体检', institutionId: '', packageId: '', date: '', period: '', note: '' },
   profile: { name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true },
+  adminUser: { id: null, name: '', gender: '', idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true, status: 'active' },
   email: { email: '', code: '' },
   familyMember: { id: null, name: '', relation: '', gender: '', age: null, idCard: '', phone: '' },
   reschedule: { appointmentId: null, institutionId: '', slotId: '', date: '', period: '', note: '' },
@@ -161,12 +162,15 @@ export function HealthProvider({ children }) {
     if (loading.load) return
     setLoadingKey('load', true)
     try {
+      const storedUser = JSON.parse(localStorage.getItem('currentUser') || 'null')
+      const userRole = storedUser?.role || currentUser?.role
+      const announcementPath = userRole === 'user' || userRole === 'doctor' ? `/announcements/active?audience=${userRole}` : '/announcements/active'
       const [packages, popularPackages, recommendedPackages, activeCoupons, activeAnnouncements, institutions, support] = await Promise.all([
         request('/packages'),
         request('/packages/popular'),
         request('/packages/recommended'),
         request('/coupons/active'),
-        request('/announcements/active'),
+        request(announcementPath),
         request('/institutions'),
         request('/support'),
       ])
@@ -176,7 +180,6 @@ export function HealthProvider({ children }) {
         updateData(base)
         return
       }
-      const userRole = JSON.parse(localStorage.getItem('currentUser') || 'null')?.role || currentUser?.role
       const protectedData = { ...base, users: currentUser ? [currentUser] : [] }
       if (userRole === 'user') {
         const [favorites, browseHistories] = await Promise.all([
@@ -403,6 +406,14 @@ export function HealthProvider({ children }) {
     markDone: (row) => action('status', '已标记完成体检，可继续生成报告', async () => { await request(`/appointments/${row.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'checked' }) }); updateForm('report', { appointmentId: row.id }); await loaders.loadAppointmentsPage({ page: 1, pageSize: 20 }) }),
     createReport: () => action('report', '报告已生成', async () => { await request('/reports', { method: 'POST', body: JSON.stringify(forms.report) }); await loaders.loadReportsPage({ page: 1, pageSize: 20 }); await loaders.loadAppointmentsPage({ page: 1, pageSize: 20 }) }),
     updateUserStatus: (user, status) => action('status', '状态已更新', async () => { await request(`/users/${user.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }); await loadAll() }),
+    saveAdminUser: () => action('adminUser', '用户资料已保存', async () => {
+      assertRequired(forms.adminUser.name, '请输入姓名')
+      assertEmail(forms.adminUser.email)
+      assertIDCard(forms.adminUser.idCard)
+      const user = await request(`/users/${forms.adminUser.id}`, { method: 'PATCH', body: JSON.stringify(forms.adminUser) })
+      resetForm('adminUser')
+      return user
+    }),
     updateDoctorProfile: (user, payload) => action('doctorProfile', '医生资料已更新', async () => { await request(`/users/${user.id}/doctor-profile`, { method: 'PATCH', body: JSON.stringify({ ...payload, specialties: Array.isArray(payload.specialties) ? payload.specialties.join(',') : payload.specialties }) }); await loadAll() }),
     savePackage: () => action('package', '套餐已保存', async () => {
       const body = JSON.stringify({ ...forms.package, price: Number(forms.package.price || 0) })

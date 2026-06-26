@@ -148,6 +148,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.DELETE("/package-items/:id", handler.requireRoleAndPermission("admin:resource:manage", "admin"), handler.deletePackageItem)
 	protected.GET("/users", handler.requireRole("doctor", "admin"), handler.users)
 	protected.GET("/users/export", handler.requireRoleAndPermission("admin:data:exchange", "admin"), handler.exportUsers)
+	protected.PATCH("/users/:id", handler.requireRoleAndPermission("admin:user:manage", "admin"), handler.updateUser)
 	protected.PATCH("/users/:id/status", handler.requireRoleAndPermission("admin:user:manage", "admin"), handler.updateUserStatus)
 	protected.PATCH("/users/:id/doctor-profile", handler.requireRoleAndPermission("admin:doctor:review", "admin"), handler.updateDoctorProfile)
 	protected.GET("/mail-logs", handler.requireRoleAndPermission("admin:system:manage", "admin"), handler.mailLogs)
@@ -3796,6 +3797,86 @@ func (h *Handler) exportUsers(c *gin.Context) {
 	h.recordOperation(c, "export", "user", "", "success", fmt.Sprintf("%d users", len(users)))
 }
 
+func (h *Handler) updateUser(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	var req adminUserRequest
+	if !bind(c, &req) {
+		return
+	}
+	var user models.User
+	if err := h.db.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	status := normalizeStatus(strings.TrimSpace(req.Status), user.Status)
+	if name == "" || email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name and email are required"})
+		return
+	}
+	if status != "active" && status != "pending" && status != "disabled" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user status"})
+		return
+	}
+	var existing models.User
+	if err := h.db.Where("email = ? AND id <> ?", email, id).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
+		return
+	}
+	current := currentUser(c)
+	if status == "disabled" && user.Role == "admin" {
+		if user.ID == current.ID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "admin cannot disable own account"})
+			return
+		}
+		var activeAdminCount int64
+		h.db.Model(&models.User{}).Where("role = ? AND status = ?", "admin", "active").Count(&activeAdminCount)
+		if activeAdminCount <= 1 && user.Status == "active" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at least one active admin is required"})
+			return
+		}
+	}
+	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	age := 0
+	if idCard != "" {
+		var ok bool
+		age, ok = ageFromIDCard(idCard, time.Now())
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "身份证号无效"})
+			return
+		}
+	}
+	updates := map[string]any{
+		"name":       name,
+		"email":      email,
+		"gender":     strings.TrimSpace(req.Gender),
+		"id_card":    idCard,
+		"age":        age,
+		"avatar_url": strings.TrimSpace(req.AvatarURL),
+		"bio":        strings.TrimSpace(req.Bio),
+		"status":     status,
+	}
+	if req.EmailNotify != nil {
+		updates["email_notify"] = *req.EmailNotify
+	}
+	if err := h.db.Model(&models.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var updated models.User
+	if err := h.db.First(&updated, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	h.recordOperation(c, "update", "user", strconv.Itoa(id), "success", updated.Name)
+	c.JSON(http.StatusOK, updated)
+}
+
 func (h *Handler) updateUserStatus(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -4680,6 +4761,17 @@ type reminderRequest struct {
 
 type notificationStatusRequest struct {
 	Status string `json:"status" binding:"required"`
+}
+
+type adminUserRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Email       string `json:"email" binding:"required,email"`
+	Gender      string `json:"gender"`
+	IDCard      string `json:"idCard"`
+	AvatarURL   string `json:"avatarUrl"`
+	Bio         string `json:"bio"`
+	EmailNotify *bool  `json:"emailNotify"`
+	Status      string `json:"status"`
 }
 
 type doctorProfileRequest struct {

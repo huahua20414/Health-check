@@ -70,6 +70,72 @@ func TestAdminCanReactivateDisabledUser(t *testing.T) {
 	assertUserStatus(t, db, fixture.disabledUser.ID, "active")
 }
 
+func TestAdminCanUpdateUserProfile(t *testing.T) {
+	handler, db, fixture := newUserStatusFixture(t)
+	router := newUserStatusRouter(handler, fixture.admin)
+	emailNotify := false
+
+	response := performUserPatch(t, router, fixture.disabledUser.ID, adminUserRequest{
+		Name:        "更新用户",
+		Email:       "updated@example.com",
+		Gender:      "男",
+		IDCard:      "11010519491231002X",
+		Bio:         "重点客户",
+		EmailNotify: &emailNotify,
+		Status:      "active",
+	})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var user models.User
+	if err := db.First(&user, fixture.disabledUser.ID).Error; err != nil {
+		t.Fatalf("load updated user: %v", err)
+	}
+	if user.Name != "更新用户" || user.Email != "updated@example.com" || user.Age <= 0 || user.EmailNotify {
+		t.Fatalf("unexpected updated user: %#v", user)
+	}
+	assertUserOperationLogCount(t, db, fixture.admin.ID, "update", "user", 1)
+}
+
+func TestAdminUpdateUserRejectsDuplicateEmail(t *testing.T) {
+	handler, db, fixture := newUserStatusFixture(t)
+	router := newUserStatusRouter(handler, fixture.admin)
+
+	response := performUserPatch(t, router, fixture.disabledUser.ID, adminUserRequest{
+		Name:   "停用用户",
+		Email:  fixture.otherAdmin.Email,
+		Status: "active",
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	var user models.User
+	if err := db.First(&user, fixture.disabledUser.ID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if user.Email == fixture.otherAdmin.Email {
+		t.Fatalf("duplicate email was saved: %#v", user)
+	}
+}
+
+func TestAdminUpdateUserCannotDisableSelf(t *testing.T) {
+	handler, db, fixture := newUserStatusFixture(t)
+	router := newUserStatusRouter(handler, fixture.admin)
+
+	response := performUserPatch(t, router, fixture.admin.ID, adminUserRequest{
+		Name:   fixture.admin.Name,
+		Email:  fixture.admin.Email,
+		Status: "disabled",
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertUserStatus(t, db, fixture.admin.ID, "active")
+}
+
 func TestAdminExportUsersUsesFiltersAndAudits(t *testing.T) {
 	handler, db, fixture := newUserStatusFixture(t)
 	router := newUserStatusRouter(handler, fixture.admin)
@@ -122,6 +188,7 @@ func newUserStatusRouter(handler *Handler, current models.User) *gin.Engine {
 		c.Next()
 	})
 	router.GET("/users/export", handler.exportUsers)
+	router.PATCH("/users/:id", handler.updateUser)
 	router.PATCH("/users/:id/status", handler.updateUserStatus)
 	return router
 }
@@ -141,6 +208,19 @@ func performUserStatusPatch(t *testing.T, router *gin.Engine, id uint, body stat
 		t.Fatalf("marshal body: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPatch, "/users/"+strconv.Itoa(int(id))+"/status", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func performUserPatch(t *testing.T, router *gin.Engine, id uint, body adminUserRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/users/"+strconv.Itoa(int(id)), bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)

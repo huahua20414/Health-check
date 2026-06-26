@@ -71,7 +71,7 @@ function CouponPanel() {
   )
 }
 
-function AnnouncementPanel() {
+function AnnouncementPanel({ title = '公告' }) {
   const h = useHealth()
   const [params, setParams] = usePagedParams()
   const [draft, setDraft] = useState({ keyword: '', status: '' })
@@ -84,7 +84,7 @@ function AnnouncementPanel() {
   const openEdit = (row) => { h.updateForm('announcement', row); setOpen(true) }
   const save = () => h.saveAnnouncement().then(() => { setOpen(false); h.loadAnnouncementsPage(params) }).catch((e) => h.notify('error', e.message))
   return (
-    <Card title="公告" actions={<><Button size="sm" onClick={openCreate}>新增</Button><Button size="sm" variant="ghost" onClick={() => h.exportBlob('/announcements/export', 'announcements.csv', 'exportAnnouncements')}>导出</Button></>}>
+    <Card title={title} actions={<><Button size="sm" onClick={openCreate}>新增</Button><Button size="sm" variant="ghost" onClick={() => h.exportBlob('/announcements/export', 'announcements.csv', 'exportAnnouncements')}>导出</Button></>}>
       <FilterBar draft={draft} setDraft={setDraft} onApply={apply} onReset={reset}>
         <Select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value }))}><option value="">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="hidden">已隐藏</option></Select>
       </FilterBar>
@@ -110,9 +110,10 @@ function AnnouncementPanel() {
 export function AdminCommunicationView() {
   return (
     <>
-      <PageHeader title="通知与客服" subtitle="管理员通知、体检提醒、客服工单和服务评价。" />
+      <PageHeader title="公告与客服" subtitle="公告发布、体检提醒、客服工单和服务评价。" />
       <div className="management-grid">
-        <NotificationPanel />
+        <AnnouncementPanel title="管理公告" />
+        <ReminderPanel />
         <SupportPanel />
         <ReviewPanel />
       </div>
@@ -120,40 +121,18 @@ export function AdminCommunicationView() {
   )
 }
 
-function NotificationPanel() {
+function ReminderPanel() {
   const h = useHealth()
-  const [params, setParams] = usePagedParams()
-  const [draft, setDraft] = useState({ keyword: '', status: '' })
-  const [open, setOpen] = useState(false)
-  useEffect(() => { h.loadAdminNotificationsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize, params.keyword, params.status])
-  const apply = () => setParams((current) => ({ ...current, page: 1, ...draft }))
-  const reset = () => { setDraft({ keyword: '', status: '' }); setParams((current) => ({ ...current, page: 1, keyword: '', status: '' })) }
-  const send = () => h.sendAdminNotification().then(() => { setOpen(false); h.loadAdminNotificationsPage(params) }).catch((e) => h.notify('error', e.message))
   const sendTomorrowReminders = () => {
     const date = nextDateString()
     h.updateForm('reminder', { date })
-    h.sendCheckupReminders({ date }).then(() => h.loadAdminNotificationsPage(params)).catch((e) => h.notify('error', e.message))
+    h.sendCheckupReminders({ date }).catch((e) => h.notify('error', e.message))
   }
   return (
-    <Card title="通知中心" actions={<><Button size="sm" onClick={() => { h.resetForm('notification'); setOpen(true) }}>发送通知</Button><Button size="sm" variant="ghost" loading={h.loading.reminder} onClick={sendTomorrowReminders}>生成明日提醒</Button></>}>
-      <FilterBar draft={draft} setDraft={setDraft} onApply={apply} onReset={reset}>
-        <Select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value }))}><option value="">全部状态</option><option value="unread">未读</option><option value="read">已读</option></Select>
-      </FilterBar>
-      <RemoteTable
-        columns={[{ title: '标题', render: (r) => r.title }, { title: '用户', render: (r) => r.user?.name || r.userId }, { title: '渠道', render: (r) => r.channel }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <Button size="sm" variant="danger" onClick={() => h.updateAdminNotificationStatus(r, 'archived').then(() => h.loadAdminNotificationsPage(params)).catch((e) => h.notify('error', e.message))}>归档</Button> }]}
-        rows={h.adminNotifications}
-        pagination={h.paginations.adminNotifications}
-        onPageChange={(page) => setParams((current) => ({ ...current, page }))}
-        onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))}
-      />
-      <Modal open={open} title="发送通知" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.adminNotification} onClick={send}>发送</Button></>}>
-        <div className="form-grid">
-          <Field label="目标角色"><Select value={h.forms.notification.role} onChange={(e) => h.updateForm('notification', { role: e.target.value, userId: '' })}><option value="user">用户</option><option value="doctor">医生</option><option value="admin">管理员</option><option value="all">全部</option></Select></Field>
-          <Field label="渠道"><Select value={h.forms.notification.channel} onChange={(e) => h.updateForm('notification', { channel: e.target.value })}><option value="in_app">站内信</option><option value="sms_mock">短信模拟</option></Select></Field>
-        </div>
-        <Field label="标题"><TextInput value={h.forms.notification.title} onChange={(e) => h.updateForm('notification', { title: e.target.value })} /></Field>
-        <Field label="内容"><Textarea value={h.forms.notification.content} onChange={(e) => h.updateForm('notification', { content: e.target.value })} /></Field>
-      </Modal>
+    <Card title="体检提醒" subtitle="按预约记录生成用户体检前提醒，提醒记录进入用户消息。">
+      <div className="action-grid">
+        <Button loading={h.loading.reminder} onClick={sendTomorrowReminders}>生成明日提醒</Button>
+      </div>
     </Card>
   )
 }
