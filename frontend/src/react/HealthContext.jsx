@@ -125,6 +125,15 @@ export function HealthProvider({ children }) {
     return () => window.clearInterval(timer)
   }, [authCodeCooldown])
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      saveUser(null)
+      setData(initialData())
+    }
+    window.addEventListener('auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('auth-expired', handleAuthExpired)
+  }, [saveUser])
+
   const requestPage = useCallback(async (path, key, params = {}) => {
     const query = toQuery(params)
     const result = await request(`${path}${query ? `?${query}` : ''}`)

@@ -23,7 +23,9 @@ export async function request(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, { headers, ...options })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(localizeApiError(error.message || error.error || response.statusText))
+    const message = error.message || error.error || response.statusText
+    if (response.status === 401 && path !== '/auth/login') clearStaleSession()
+    throw new Error(localizeApiError(message))
   }
   const result = await response.json()
   if (result && typeof result === 'object' && 'code' in result && 'data' in result) {
@@ -39,9 +41,18 @@ export async function requestBlob(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, { headers, ...options })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(localizeApiError(error.message || error.error || response.statusText))
+    const message = error.message || error.error || response.statusText
+    if (response.status === 401) clearStaleSession()
+    throw new Error(localizeApiError(message))
   }
   return response.blob()
+}
+
+function clearStaleSession() {
+  if (!authToken) return
+  setAuthToken('')
+  localStorage.removeItem('currentUser')
+  window.dispatchEvent(new CustomEvent('auth-expired'))
 }
 
 function localizeApiError(message) {
@@ -62,6 +73,10 @@ function localizeApiError(message) {
     'issue token failed': '登录凭证生成失败，请稍后再试',
     'name is required': '请输入姓名',
     'invalid id card': '身份证号无效',
+    'missing bearer token': '登录已过期，请重新登录',
+    'invalid token': '登录已过期，请重新登录',
+    'session expired': '登录状态已失效，请重新登录',
+    'invalid user': '登录状态已失效，请重新登录',
     Unauthorized: '登录已过期，请重新登录',
     Forbidden: '没有权限执行该操作',
     'Not Found': '请求的资源不存在',
