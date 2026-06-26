@@ -58,7 +58,7 @@ export function AppShell() {
   const health = useHealth()
   const navigate = useNavigate()
   const [closedGroups, setClosedGroups] = useState({})
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light')
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const visible = menuItems.filter((item) => item.roles.includes(health.role)).map((item) => item.children ? { ...item, children: item.children.filter((child) => child.roles.includes(health.role)) } : item)
   useEffect(() => {
     document.body.dataset.theme = theme
