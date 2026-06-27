@@ -46,7 +46,7 @@
 
     <el-dialog v-model="reportVisible" title="体检报告详情" width="920px" class="document-dialog">
       <div class="dialog-actions">
-        <el-button type="primary" @click="downloadReport">下载 HTML</el-button>
+        <el-button type="primary" @click="downloadReport">下载图片</el-button>
       </div>
       <div class="document-preview" v-html="reportHTML" />
     </el-dialog>
@@ -57,7 +57,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import ReportList from '../components/ReportList.vue'
 import { useDebouncedFn } from '../composables/useDebouncedFn'
-import { downloadHTML, reportDocumentHTML, useHealthData } from '../composables/useHealthData'
+import { downloadReportImage, reportDocumentHTML, useHealthData } from '../composables/useHealthData'
 
 const { appointments, reports, reportForm, loading, can, createReport, paginations, loadReportsPage } = useHealthData()
 const reportableAppointments = computed(() => appointments.value.filter((item) => item.status === 'checked' || item.status === 'reported'))
@@ -73,7 +73,7 @@ function openReport(report) {
 
 function downloadReport() {
   if (!selectedReport.value) return
-  downloadHTML(`${selectedReport.value.reportNo || 'checkup-report'}.html`, reportHTML.value)
+  downloadReportImage(selectedReport.value.reportNo || 'checkup-report', selectedReport.value)
 }
 
 watch(() => [paginations.reports.page, paginations.reports.pageSize], () => loadReportsPage())

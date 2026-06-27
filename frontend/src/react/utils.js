@@ -182,6 +182,11 @@ export function downloadBlob(filename, blob) {
   URL.revokeObjectURL(url)
 }
 
+function pngFilename(filename) {
+  const base = String(filename || 'checkup-report').replace(/\.[^.]+$/, '')
+  return `${base}.png`
+}
+
 export function documentHTML(title, rows, footer) {
   const escape = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
   const cells = rows.map(([label, value]) => `<div class=\"label\">${escape(label)}</div><div class=\"value\">${escape(value)}</div>`).join('')
@@ -261,7 +266,7 @@ export function downloadReportImage(filename, rows, footer) {
   ctx.font = `22px ${font}`
   ctx.fillText(footer, margin, y + 52)
   canvas.toBlob((blob) => {
-    if (blob) downloadBlob(filename, blob)
+    if (blob) downloadBlob(pngFilename(filename), blob)
   }, 'image/png')
 }
 

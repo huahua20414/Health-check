@@ -274,8 +274,118 @@ export function reportDocumentHTML(report) {
   ], '本报告仅供健康管理参考，如有不适请及时就医。')
 }
 
+export function downloadReportImage(filename, report) {
+  const rows = [
+    ['报告编号', report.reportNo],
+    ['订单号', report.appointment?.orderNo],
+    ['客户', report.user?.name],
+    ['体检机构', report.appointment?.institution?.name],
+    ['体检分类', report.appointment?.category],
+    ['套餐', report.appointment?.package?.name],
+    ['医生', `${report.doctor?.name || ''} ${report.doctor?.title || ''}`],
+    ['检查摘要', report.summary],
+    ['体检结论', report.conclusion],
+    ['健康建议', report.recommendation],
+    ['报告时间', formatDate(report.createdAt)],
+  ]
+  const width = 1200
+  const margin = 64
+  const labelWidth = 220
+  const contentWidth = width - margin * 2 - labelWidth
+  const font = '"Microsoft YaHei", "PingFang SC", Arial, sans-serif'
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  ctx.font = `30px ${font}`
+  const normalizedRows = rows.map(([label, value]) => {
+    const lines = wrapCanvasText(ctx, String(value || '-'), contentWidth - 56)
+    return { label, lines, height: Math.max(74, lines.length * 38 + 34) }
+  })
+  const gridHeight = normalizedRows.reduce((sum, row) => sum + row.height, 0)
+  const height = margin + 112 + 40 + gridHeight + 96
+  const scale = window.devicePixelRatio || 1
+  canvas.width = width * scale
+  canvas.height = height * scale
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+  ctx.scale(scale, scale)
+
+  ctx.fillStyle = '#f3f6fa'
+  ctx.fillRect(0, 0, width, height)
+  ctx.fillStyle = '#ffffff'
+  ctx.strokeStyle = '#d8e2ec'
+  ctx.lineWidth = 2
+  ctx.fillRect(32, 32, width - 64, height - 64)
+  ctx.strokeRect(32, 32, width - 64, height - 64)
+  ctx.fillStyle = '#111827'
+  ctx.font = `700 42px ${font}`
+  ctx.fillText('体检报告详情', margin, 98)
+  ctx.fillStyle = '#667085'
+  ctx.font = `24px ${font}`
+  ctx.fillText('东软熙心健康体检管理系统', margin, 136)
+  ctx.strokeStyle = '#19c2d9'
+  ctx.lineWidth = 5
+  ctx.beginPath()
+  ctx.moveTo(margin, 164)
+  ctx.lineTo(width - margin, 164)
+  ctx.stroke()
+
+  let y = 204
+  for (const row of normalizedRows) {
+    ctx.fillStyle = '#f8fafc'
+    ctx.fillRect(margin, y, labelWidth, row.height)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(margin + labelWidth, y, contentWidth, row.height)
+    ctx.strokeStyle = '#e3ebf2'
+    ctx.lineWidth = 1
+    ctx.strokeRect(margin, y, labelWidth, row.height)
+    ctx.strokeRect(margin + labelWidth, y, contentWidth, row.height)
+    ctx.fillStyle = '#111827'
+    ctx.font = `700 25px ${font}`
+    ctx.fillText(String(row.label), margin + 28, y + 45)
+    ctx.font = `25px ${font}`
+    row.lines.forEach((line, index) => ctx.fillText(line, margin + labelWidth + 28, y + 45 + index * 38))
+    y += row.height
+  }
+
+  ctx.fillStyle = '#667085'
+  ctx.font = `22px ${font}`
+  ctx.fillText('本报告仅供健康管理参考，如有不适请及时就医。', margin, y + 52)
+  canvas.toBlob((blob) => {
+    if (!blob) return
+    const base = String(filename || report.reportNo || 'checkup-report').replace(/\.[^.]+$/, '')
+    downloadBlob(`${base}.png`, blob)
+  }, 'image/png')
+}
+
+function wrapCanvasText(ctx, text, maxWidth) {
+  const lines = []
+  for (const paragraph of String(text || '-').split('\n')) {
+    let line = ''
+    for (const char of paragraph) {
+      const next = line + char
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines.push(line)
+        line = char
+      } else {
+        line = next
+      }
+    }
+    lines.push(line || ' ')
+  }
+  return lines
+}
+
 export function downloadHTML(filename, html) {
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
