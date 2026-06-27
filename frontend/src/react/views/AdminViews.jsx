@@ -20,21 +20,26 @@ export function DoctorReviewView() {
   const [filters, setFilters] = useState({ page: 1, pageSize: 10, role: 'doctor' })
   const [doctorOpen, setDoctorOpen] = useState(false)
   const [editingDoctor, setEditingDoctor] = useState(null)
+  const [doctorForm, setDoctorForm] = useState({ department: '', title: '', specialties: '' })
   useEffect(() => { h.loadUsersPage(filters, 'doctors', 'doctorUsers').catch((e) => h.notify('error', e.message)) }, [filters.page, filters.pageSize])
   const refresh = () => h.loadUsersPage(filters, 'doctors', 'doctorUsers').catch((e) => h.notify('error', e.message))
   const updateStatus = (row, status) => h.updateUserStatus(row, status).then(refresh).catch((e) => h.notify('error', e.message))
   const openDoctorEdit = (row) => {
     setEditingDoctor(row)
-    h.updateForm('doctorRegister', { department: row.department || row.doctorProfile?.department || '', title: row.title || row.doctorProfile?.title || '', employeeNo: row.employeeNo || '', name: row.name || '', email: row.email || '', code: '' })
+    setDoctorForm({
+      department: row.department || row.doctorProfile?.department || '',
+      title: row.title || row.doctorProfile?.title || '',
+      specialties: row.specialties || row.doctorProfile?.specialties || row.department || row.doctorProfile?.department || '',
+    })
     setDoctorOpen(true)
   }
-  const saveDoctor = () => h.updateDoctorProfile(editingDoctor, { department: h.forms.doctorRegister.department, title: h.forms.doctorRegister.title, specialties: editingDoctor?.specialties || h.forms.doctorRegister.department }).then(() => { setDoctorOpen(false); refresh() }).catch((e) => h.notify('error', e.message))
+  const saveDoctor = () => h.updateDoctorProfile(editingDoctor, doctorForm).then(() => { setDoctorOpen(false); refresh() }).catch((e) => h.notify('error', e.message))
   return (
     <>
-      <PageHeader title="医生审核" subtitle="审核医生账号，并维护科室、职称与专长。" />
+      <PageHeader title="医生审核与资料" subtitle="审核医生账号，并维护科室、职称与专长；姓名、邮箱和工号保持注册记录。" />
       <Card title="医生列表">
         <RemoteTable
-          columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><DoctorReviewActions row={r} h={h} onStatus={updateStatus} /><Button size="sm" variant="ghost" onClick={() => openDoctorEdit(r)}>编辑资料</Button></div> }]}
+          columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '工号', render: (r) => r.employeeNo || '-' }, { title: '科室', render: (r) => r.doctorProfile?.department || r.department || '-' }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><DoctorReviewActions row={r} h={h} onStatus={updateStatus} /><Button size="sm" variant="ghost" onClick={() => openDoctorEdit(r)}>编辑资料</Button></div> }]}
           rows={h.doctorUsers}
           pagination={h.paginations.doctors}
           onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
@@ -42,10 +47,16 @@ export function DoctorReviewView() {
         />
       </Card>
       <Modal open={doctorOpen} title="编辑医生资料" onClose={() => setDoctorOpen(false)} actions={<><Button variant="ghost" onClick={() => setDoctorOpen(false)}>取消</Button><Button loading={h.loading.doctorProfile} onClick={saveDoctor}>保存</Button></>}>
+        <div className="readonly-summary">
+          <div><span>姓名</span><strong>{editingDoctor?.name || '-'}</strong></div>
+          <div><span>邮箱</span><strong>{editingDoctor?.email || '-'}</strong></div>
+          <div><span>工号</span><strong>{editingDoctor?.employeeNo || '-'}</strong></div>
+          <div><span>状态</span><strong><StatusTag status={editingDoctor?.status} /></strong></div>
+        </div>
         <div className="form-grid">
-          <Field label="科室"><Select value={h.forms.doctorRegister.department} onChange={(e) => h.updateForm('doctorRegister', { department: e.target.value })}><option value="">请选择科室</option>{doctorDepartments.map((item) => <option key={item} value={item}>{item}</option>)}</Select></Field>
-          <Field label="职称"><TextInput value={h.forms.doctorRegister.title} onChange={(e) => h.updateForm('doctorRegister', { title: e.target.value })} /></Field>
-          <Field label="专长"><TextInput value={editingDoctor?.specialties || h.forms.doctorRegister.department} onChange={(e) => setEditingDoctor((current) => ({ ...current, specialties: e.target.value }))} /></Field>
+          <Field label="科室"><Select value={doctorForm.department} onChange={(e) => setDoctorForm((current) => ({ ...current, department: e.target.value }))}><option value="">请选择科室</option>{doctorDepartments.map((item) => <option key={item} value={item}>{item}</option>)}</Select></Field>
+          <Field label="职称"><TextInput value={doctorForm.title} onChange={(e) => setDoctorForm((current) => ({ ...current, title: e.target.value }))} /></Field>
+          <Field label="专长"><TextInput value={doctorForm.specialties} onChange={(e) => setDoctorForm((current) => ({ ...current, specialties: e.target.value }))} /></Field>
         </div>
       </Modal>
     </>
@@ -54,14 +65,14 @@ export function DoctorReviewView() {
 
 export function AdminUsersView() {
   const h = useHealth()
-  const [filters, setFilters] = useState({ page: 1, pageSize: 10, keyword: '', role: '', status: '' })
-  const [draft, setDraft] = useState({ keyword: '', role: '', status: '' })
+  const [filters, setFilters] = useState({ page: 1, pageSize: 10, keyword: '', role: 'user', status: '' })
+  const [draft, setDraft] = useState({ keyword: '', status: '' })
   const [open, setOpen] = useState(false)
   useEffect(() => { h.loadUsersPage(filters).catch((e) => h.notify('error', e.message)) }, [filters.page, filters.pageSize, filters.keyword, filters.role, filters.status])
-  const apply = () => setFilters((current) => ({ ...current, page: 1, ...draft }))
+  const apply = () => setFilters((current) => ({ ...current, page: 1, role: 'user', ...draft }))
   const reset = () => {
-    setDraft({ keyword: '', role: '', status: '' })
-    setFilters((current) => ({ ...current, page: 1, keyword: '', role: '', status: '' }))
+    setDraft({ keyword: '', status: '' })
+    setFilters((current) => ({ ...current, page: 1, keyword: '', role: 'user', status: '' }))
   }
   const refresh = () => h.loadUsersPage(filters).catch((e) => h.notify('error', e.message))
   const updateStatus = (row, status) => h.updateUserStatus(row, status).then(refresh).catch((e) => h.notify('error', e.message))
@@ -73,16 +84,15 @@ export function AdminUsersView() {
   const f = h.forms.adminUser
   return (
     <>
-      <PageHeader title="用户管理" subtitle="管理员查看账号、按角色和状态筛选，并维护启停状态。" />
-      <Card title="账号列表">
+      <PageHeader title="普通用户管理" subtitle="仅管理用户端账号资料与启停状态；医生账号请到医生审核与资料中处理。" />
+      <Card title="用户列表">
         <div className="filter-bar">
           <TextInput placeholder="姓名、邮箱、工号" value={draft.keyword} onChange={(e) => setDraft((current) => ({ ...current, keyword: e.target.value }))} />
-          <Select value={draft.role} onChange={(e) => setDraft((current) => ({ ...current, role: e.target.value }))}><option value="">全部角色</option><option value="user">用户</option><option value="doctor">医生</option><option value="admin">管理员</option></Select>
           <Select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value }))}><option value="">全部状态</option><option value="active">启用</option><option value="pending">待审核</option><option value="disabled">停用</option></Select>
-          <div className="row-actions"><Button onClick={apply}>查询</Button><Button variant="ghost" onClick={reset}>重置</Button><Button variant="ghost" onClick={() => h.exportBlob('/users/export', 'users.csv', 'exportUsers')}>导出</Button></div>
+          <div className="row-actions"><Button onClick={apply}>查询</Button><Button variant="ghost" onClick={reset}>重置</Button><Button variant="ghost" onClick={() => h.exportBlob('/users/export?role=user', 'users.csv', 'exportUsers')}>导出</Button></div>
         </div>
         <RemoteTable
-          columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '角色', render: (r) => r.role }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><DoctorReviewActions row={r} h={h} onStatus={updateStatus} /></div> }]}
+          columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><UserAccountActions row={r} h={h} onStatus={updateStatus} /></div> }]}
           rows={h.users}
           pagination={h.paginations.users}
           onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
@@ -102,6 +112,13 @@ export function AdminUsersView() {
       </Modal>
     </>
   )
+}
+
+function UserAccountActions({ row, h, onStatus }) {
+  if (row.status === 'disabled') {
+    return <Button size="sm" variant="ghost" loading={h.loading.status} onClick={() => onStatus(row, 'active')}>重新启用</Button>
+  }
+  return <Button size="sm" variant="danger" loading={h.loading.status} onClick={() => onStatus(row, 'disabled')}>停用</Button>
 }
 
 function DoctorReviewActions({ row, h, compact = false, onStatus }) {

@@ -61,12 +61,16 @@ function Bootstrap({ children }) {
 
 function AnnouncementPopup({ announcement, onClose }) {
   if (!announcement) return null
+  const publishedAt = formatDate(announcement.publishedAt || announcement.createdAt)
   return (
-    <Modal open title="系统公告" onClose={onClose} actions={<Button onClick={onClose}>知道了</Button>}>
+    <Modal open title="系统公告" onClose={onClose} className="announcement-modal" backdropClassName="announcement-backdrop" actions={<Button size="lg" onClick={onClose}>知道了</Button>}>
       <div className="announcement-popup">
-        <span>{formatDate(announcement.publishedAt || announcement.createdAt)}</span>
+        <div className="announcement-kicker">
+          <span>Health Checkup Notice</span>
+          <time>{publishedAt}</time>
+        </div>
         <h2>{announcement.title}</h2>
-        <p>{announcement.content}</p>
+        <div className="announcement-content">{announcement.content}</div>
       </div>
     </Modal>
   )

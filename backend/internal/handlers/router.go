@@ -3885,6 +3885,10 @@ func (h *Handler) updateUser(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
+	if user.Role != "user" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only regular user accounts can be edited here"})
+		return
+	}
 	name := strings.TrimSpace(req.Name)
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	status := normalizeStatus(strings.TrimSpace(req.Status), user.Status)

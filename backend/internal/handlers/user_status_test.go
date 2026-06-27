@@ -98,6 +98,32 @@ func TestAdminCanUpdateUserProfile(t *testing.T) {
 	assertUserOperationLogCount(t, db, fixture.admin.ID, "update", "user", 1)
 }
 
+func TestAdminUpdateUserRejectsDoctorAccount(t *testing.T) {
+	handler, db, fixture := newUserStatusFixture(t)
+	doctor := models.User{ID: 4, Name: "医生", Email: "doctor@example.com", Phone: "13800000004", Role: "doctor", Status: "active", PasswordHash: "hash"}
+	if err := db.Create(&doctor).Error; err != nil {
+		t.Fatalf("create doctor: %v", err)
+	}
+	router := newUserStatusRouter(handler, fixture.admin)
+
+	response := performUserPatch(t, router, doctor.ID, adminUserRequest{
+		Name:   "改名医生",
+		Email:  "changed-doctor@example.com",
+		Status: "active",
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	var updated models.User
+	if err := db.First(&updated, doctor.ID).Error; err != nil {
+		t.Fatalf("load doctor: %v", err)
+	}
+	if updated.Name != doctor.Name || updated.Email != doctor.Email {
+		t.Fatalf("doctor account was edited through user endpoint: %#v", updated)
+	}
+}
+
 func TestAdminUpdateUserRejectsDuplicateEmail(t *testing.T) {
 	handler, db, fixture := newUserStatusFixture(t)
 	router := newUserStatusRouter(handler, fixture.admin)
