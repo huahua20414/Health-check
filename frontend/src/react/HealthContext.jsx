@@ -328,6 +328,13 @@ export function HealthProvider({ children }) {
     return rows
   }, [requestPage, updateData])
 
+  const loadCollection = useCallback(async (path, stateKey, params = {}) => {
+    const query = toQuery(params)
+    const rows = await request(`${path}${query ? `?${query}` : ''}`)
+    updateData({ [stateKey]: rows })
+    return rows
+  }, [updateData])
+
   const loaders = useMemo(() => ({
     loadAppointmentsPage: (params = {}) => loadPage('/appointments', 'appointments', 'appointments', params),
     loadReportsPage: (params = {}) => loadPage('/reports', 'reports', 'reports', params),
@@ -350,8 +357,9 @@ export function HealthProvider({ children }) {
     loadAnnouncementsPage: (params = {}) => loadPage('/announcements', 'announcements', 'announcements', params),
     loadCheckupItemsPage: (params = {}) => loadPage('/checkup-items', 'checkupItems', 'checkupItemRows', params),
     loadPackageItemsPage: (params = {}) => loadPage('/package-items', 'packageItems', 'packageItems', params),
+    loadPackageItemsCollection: (params = {}) => loadCollection('/package-items', 'packageItems', params),
     loadSlotsPage: (params = {}, key = 'slots', stateKey = 'scheduleSlotRows') => loadPage('/schedule/slots', key, stateKey, params),
-  }), [loadPage])
+  }), [loadPage, loadCollection])
 
   const paginationActions = useMemo(() => ({
     setPaginationPage: (key, page) => setPaginations((current) => ({ ...current, [key]: { ...current[key], page } })),
@@ -456,9 +464,22 @@ export function HealthProvider({ children }) {
       if (forms.packageItem.id) await request(`/package-items/${forms.packageItem.id}`, { method: 'PATCH', body })
       else await request('/package-items', { method: 'POST', body })
       resetForm('packageItem')
-      await loaders.loadPackageItemsPage()
+      await loaders.loadPackageItemsCollection({ packageId: items[0]?.packageId || '' })
     }),
     deletePackageItem: (row) => action('packageItem', '套餐项目已移除', async () => { await request(`/package-items/${row.id}`, { method: 'DELETE' }); await loaders.loadPackageItemsPage() }),
+    reorderPackageItems: (items) => action('packageItem', '套餐项目排序已保存', async () => {
+      await Promise.all(items.map((item, index) => request(`/package-items/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: item.id,
+          packageId: Number(item.packageId || 0),
+          itemId: Number(item.itemId || 0),
+          sortOrder: index + 1,
+          required: item.required !== false,
+        }),
+      })))
+      await loaders.loadPackageItemsPage()
+    }),
     saveScheduleSlot: () => action('schedule', '排班号源已保存', async () => {
       const body = JSON.stringify({
         ...forms.schedule,

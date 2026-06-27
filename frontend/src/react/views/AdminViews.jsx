@@ -211,28 +211,76 @@ function CheckupItemPanel({ h }) {
 function PackageItemPanel({ h }) {
   const f = h.forms.packageItem
   const [open, setOpen] = useState(false)
-  const [params, setParams] = useState({ page: 1, pageSize: 10 })
-  useEffect(() => { h.loadPackageItemsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
-  const openCreate = () => { h.resetForm('packageItem'); setOpen(true) }
+  const [selectedPackageId, setSelectedPackageId] = useState('')
+  const [draggingId, setDraggingId] = useState(null)
+  useEffect(() => {
+    if (!selectedPackageId && h.packages[0]?.id) setSelectedPackageId(String(h.packages[0].id))
+  }, [h.packages, selectedPackageId])
+  useEffect(() => {
+    if (selectedPackageId) h.loadPackageItemsCollection({ packageId: selectedPackageId }).catch((e) => h.notify('error', e.message))
+  }, [selectedPackageId])
+  const openCreate = () => {
+    h.resetForm('packageItem')
+    h.updateForm('packageItem', { packageId: selectedPackageId, sortOrder: selectedItems.length + 1 })
+    setOpen(true)
+  }
   const openEdit = (row) => {
     h.updateForm('packageItem', { id: row.id, packageId: row.packageId, itemId: row.itemId, sortOrder: row.sortOrder, required: row.required })
     setOpen(true)
   }
   const itemOptions = h.checkupItemRows.length ? h.checkupItemRows : h.checkupItems
-  const reload = () => h.loadPackageItemsPage(params).catch((e) => h.notify('error', e.message))
+  const selectedItems = h.packageItems
+    .filter((item) => String(item.packageId) === String(selectedPackageId))
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || Number(a.id || 0) - Number(b.id || 0))
+  const reload = () => h.loadPackageItemsCollection({ packageId: f.packageId || selectedPackageId }).catch((e) => h.notify('error', e.message))
   const save = () => h.savePackageItem().then(() => { setOpen(false); reload() }).catch((e) => h.notify('error', e.message))
+  const moveItem = (sourceId, targetId) => {
+    if (h.loading.packageItem) return
+    if (!sourceId || sourceId === targetId) return
+    const from = selectedItems.findIndex((item) => item.id === sourceId)
+    const to = selectedItems.findIndex((item) => item.id === targetId)
+    if (from < 0 || to < 0) return
+    const next = [...selectedItems]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    h.reorderPackageItems(next).catch((e) => h.notify('error', e.message))
+  }
   return <Card title="套餐项目组合" actions={<Button size="sm" onClick={openCreate}>新增</Button>}>
-    <RemoteTable
-      columns={[{ title: '套餐', render: (r) => r.package?.name || r.packageId }, { title: '项目', render: (r) => r.item?.name || r.itemId }, { title: '排序', render: (r) => r.sortOrder }, { title: '类型', render: (r) => r.required ? '必选' : '可选' }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.deletePackageItem(r).then(reload).catch((e) => h.notify('error', e.message))}>移除</Button></div> }]}
-      rows={h.packageItems}
-      pagination={h.paginations.packageItems}
-      onPageChange={(page) => setParams((current) => ({ ...current, page }))}
-      onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))}
-    />
+    <div className="package-composer">
+      <div className="package-composer-toolbar">
+        <Field label="选择套餐"><Select value={selectedPackageId} onChange={(e) => setSelectedPackageId(e.target.value)}><option value="">请选择套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+        <span>{selectedItems.length ? `${selectedItems.length} 个项目，拖动左侧手柄调整顺序` : '选择套餐后管理项目顺序'}</span>
+      </div>
+      <div className="sortable-package-list">
+        {selectedItems.map((row, index) => (
+          <div
+            key={row.id}
+            className={`sortable-package-row ${draggingId === row.id ? 'is-dragging' : ''}`}
+            draggable={!h.loading.packageItem}
+            onDragStart={(e) => { setDraggingId(row.id); e.dataTransfer.effectAllowed = 'move' }}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+            onDrop={(e) => { e.preventDefault(); moveItem(draggingId, row.id); setDraggingId(null) }}
+            onDragEnd={() => setDraggingId(null)}
+          >
+            <button type="button" className="drag-handle" aria-label="拖动排序">⋮⋮</button>
+            <span className="sort-index">{index + 1}</span>
+            <div className="sortable-package-main">
+              <strong>{row.item?.name || row.itemId}</strong>
+              <small>{row.item?.category || '体检项目'} · {row.item?.department || '未分科室'}</small>
+            </div>
+            <span className={`package-required-pill ${row.required ? 'is-required' : ''}`}>{row.required ? '必选' : '可选'}</span>
+            <div className="row-actions">
+              <Button size="sm" variant="ghost" onClick={() => openEdit(row)}>编辑</Button>
+              <Button size="sm" variant="danger" onClick={() => h.deletePackageItem(row).then(reload).catch((e) => h.notify('error', e.message))}>移除</Button>
+            </div>
+          </div>
+        ))}
+        {!selectedItems.length && <p className="muted">暂无组合项目，点击右上角新增。</p>}
+      </div>
+    </div>
     <Modal open={open} title="套餐项目组合" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.packageItem} onClick={save}>保存</Button></>}>
       <Field label="套餐"><Select value={f.packageId} onChange={(e) => h.updateForm('packageItem', { packageId: e.target.value })}><option value="">请选择套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
       <Field label="项目"><Select value={f.itemId} onChange={(e) => h.updateForm('packageItem', { itemId: e.target.value })}><option value="">请选择项目</option>{itemOptions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
-      <Field label="排序"><TextInput type="number" value={f.sortOrder} onChange={(e) => h.updateForm('packageItem', { sortOrder: e.target.value })} /></Field>
       <Field label="是否必选"><Select value={String(f.required)} onChange={(e) => h.updateForm('packageItem', { required: e.target.value === 'true' })}><option value="true">必选</option><option value="false">可选</option></Select></Field>
     </Modal>
   </Card>
