@@ -87,10 +87,11 @@ export function BookingView() {
                 </button>
               ))}
             </div>
-            {!h.packages.length && <p className="muted">暂无可预约套餐。</p>}
+            {!h.packages.length && <p className="muted">{h.loading.load ? '套餐加载中...' : '暂无可预约套餐。'}</p>}
           </>
         )}
         {step === 1 && (
+          <>
           <div className="choice-grid">
             {h.institutions.map((institution) => (
               <button key={institution.id} className={`choice-card ${Number(form.institutionId) === institution.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { institutionId: institution.id, slotId: '', date: '', period: '' })}>
@@ -101,6 +102,8 @@ export function BookingView() {
               </button>
             ))}
           </div>
+          {!h.institutions.length && <p className="muted">{h.loading.load ? '机构加载中...' : '暂无可预约机构。'}</p>}
+          </>
         )}
         {step === 2 && (
           <>
@@ -120,6 +123,7 @@ export function BookingView() {
                   <div key={`${group.date}-${group.startTime}`} className="slot-card is-full">
                     <strong>{group.startTime}-{group.endTime}</strong>
                     <span>总 {group.totalCapacity} · 余 0 · 候补 {group.waitlistCount}</span>
+                    <small>{doctorSummary(group)}</small>
                     <StatusTag status="full" />
                     <Button size="sm" variant="secondary" loading={h.loading.appointment} onClick={() => h.joinWaitlist(chosen).then(() => navigate('/my-appointments')).catch((e) => h.notify('error', e.message))}>加入候补</Button>
                   </div>
@@ -129,12 +133,13 @@ export function BookingView() {
                 <button key={`${group.date}-${group.startTime}`} className={`slot-card ${Number(form.slotId) === chosen.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { slotId: chosen.id, date: group.date, period: group.period || group.startTime })}>
                   <strong>{group.startTime}-{group.endTime}</strong>
                   <span>总 {group.totalCapacity} · 余 {group.remaining} · 候补 {group.waitlistCount}</span>
+                  <small>{doctorSummary(group)}</small>
                   <StatusTag status="available" />
                 </button>
               )
             })}
           </div>
-          {!selectedDaySlots.length && <p className="muted">当前筛选下暂无号源，请切换机构或套餐。</p>}
+          {!selectedDaySlots.length && <p className="muted">{h.loading.bookingSlots ? '号源加载中...' : '当前筛选下暂无号源，请切换机构或套餐。'}</p>}
           </>
         )}
         {step === 3 && (
@@ -194,6 +199,13 @@ function ConfirmRow({ label, value }) {
   return <div className="confirm-row"><span>{label}</span><strong>{value}</strong></div>
 }
 
+function doctorSummary(group) {
+  const names = group.doctors.map((doctor) => [doctor.name, doctor.title].filter(Boolean).join(' · ')).filter(Boolean)
+  if (!names.length) return '医生信息待同步'
+  if (names.length <= 2) return `医生：${names.join('、')}`
+  return `医生：${names.slice(0, 2).join('、')} 等 ${names.length} 人`
+}
+
 function nextDays(count) {
   const formatter = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' })
   const today = new Date()
@@ -226,10 +238,12 @@ function groupSlotsByDateTime(slots) {
         totalCapacity: 0,
         waitlistCount: 0,
         availableSlot: null,
+        doctors: [],
       }
     }
     grouped[key].slots.push(slot)
     grouped[key].doctorIds.add(slot.doctorId)
+    if (slot.doctor?.name && !grouped[key].doctors.some((doctor) => doctor.id === slot.doctor.id)) grouped[key].doctors.push(slot.doctor)
     grouped[key].remaining += remaining
     grouped[key].totalCapacity += Number(slot.capacity || 0)
     grouped[key].waitlistCount = Math.max(grouped[key].waitlistCount, Number(slot.waitlistCount || 0))

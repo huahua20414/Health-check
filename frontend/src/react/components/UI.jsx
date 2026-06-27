@@ -58,13 +58,14 @@ export function Textarea(props) {
   return <textarea className="input textarea" {...props} />
 }
 
-export function DataTable({ columns, rows, empty = '暂无数据' }) {
+export function DataTable({ columns, rows, empty = '暂无数据', loading = false, loadingText = '数据加载中...' }) {
   return (
     <div className="table-wrap">
       <table className="data-table">
         <thead><tr>{columns.map((col) => <th key={col.key || col.title}>{col.title}</th>)}</tr></thead>
         <tbody>
-          {!rows?.length && <tr><td colSpan={columns.length}><Empty text={empty} /></td></tr>}
+          {loading && !rows?.length && <tr><td colSpan={columns.length}><Empty text={loadingText} /></td></tr>}
+          {!loading && !rows?.length && <tr><td colSpan={columns.length}><Empty text={empty} /></td></tr>}
           {rows?.map((row, index) => <tr key={row.__rowKey || `${row.id || 'row'}-${index}`}>{columns.map((col) => <td key={col.key || col.title}>{col.render ? col.render(row, index) : row[col.key]}</td>)}</tr>)}
         </tbody>
       </table>
@@ -91,7 +92,7 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
   )
 }
 
-export function PaginatedTable({ columns, rows, empty = '暂无数据', initialPageSize = 10 }) {
+export function PaginatedTable({ columns, rows, empty = '暂无数据', initialPageSize = 10, loading = false }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(initialPageSize)
   const total = rows?.length || 0
@@ -101,19 +102,20 @@ export function PaginatedTable({ columns, rows, empty = '暂无数据', initialP
   const pageRows = (rows || []).slice((safePage - 1) * pageSize, safePage * pageSize)
   return (
     <>
-      <DataTable columns={columns} rows={pageRows} empty={empty} />
+      <DataTable columns={columns} rows={pageRows} empty={empty} loading={loading} />
       <Pagination page={safePage} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />
     </>
   )
 }
 
-export function RemoteTable({ columns, rows, pagination, empty = '暂无数据', onPageChange, onPageSizeChange }) {
+export function RemoteTable({ columns, rows, pagination, empty = '暂无数据', loading = false, onPageChange, onPageSizeChange }) {
   const page = pagination?.page || 1
   const pageSize = pagination?.pageSize || 10
   const total = pagination?.total ?? rows?.length ?? 0
+  const isLoading = loading || Boolean(pagination?.loading)
   return (
     <>
-      <DataTable columns={columns} rows={rows || []} empty={empty} />
+      <DataTable columns={columns} rows={rows || []} empty={empty} loading={isLoading} />
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} />
     </>
   )

@@ -614,17 +614,35 @@ func (h *Handler) archiveInstitution(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var count int64
-	if err := h.db.Model(&models.ScheduleSlot{}).Where("institution_id = ? AND status <> ?", id, "deleted").Count(&count).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var bookedSlots int64
+		if err := tx.Model(&models.ScheduleSlot{}).Where("institution_id = ? AND status <> ? AND booked_count > 0", id, "deleted").Count(&bookedSlots).Error; err != nil {
+			return err
+		}
+		if bookedSlots > 0 {
+			return fmt.Errorf("institution has booked schedule slots")
+		}
+		result := tx.Model(&models.CheckupInstitution{}).Where("id = ? AND status <> ?", id, "deleted").Update("status", "deleted")
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Model(&models.ScheduleSlot{}).Where("institution_id = ? AND status <> ?", id, "deleted").Update("status", "deleted").Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "institution not found"})
+			return
+		}
+		if err.Error() == "institution has booked schedule slots" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "institution has active schedule slots"})
-		return
-	}
-	if err := h.archiveByID(&models.CheckupInstitution{}, id, "institution"); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 	h.recordOperation(c, "archive", "institution", strconv.Itoa(id), "success", "")

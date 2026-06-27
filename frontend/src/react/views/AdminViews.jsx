@@ -192,7 +192,7 @@ function InstitutionPanel({ h }) {
   const openEdit = (row) => { h.updateForm('institution', row); setOpen(true) }
   const save = () => h.saveInstitution().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
   return <Card title="机构管理" actions={<><Button size="sm" onClick={openCreate}>新增</Button><Button size="sm" variant="ghost" onClick={() => h.exportBlob('/institutions/export', 'institutions.csv', 'exportInstitutions')}>导出</Button></>}>
-    <PaginatedTable columns={[{ title: '名称', render: (r) => r.name }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button> }]} rows={h.institutionRows.length ? h.institutionRows : h.institutions} />
+    <PaginatedTable loading={h.loading.institutions} columns={[{ title: '名称', render: (r) => r.name }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" loading={h.loading.institution} onClick={() => h.archiveInstitution(r).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]} rows={h.institutionRows.length ? h.institutionRows : h.institutions} />
     <Modal open={open} title={f.id ? '编辑机构' : '新增机构'} onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.institution} onClick={save}>保存</Button></>}>
       <Field label="机构名称"><TextInput value={f.name} onChange={(e) => h.updateForm('institution', { name: e.target.value })} /></Field>
       <Field label="地址"><TextInput value={f.address} onChange={(e) => h.updateForm('institution', { address: e.target.value })} /></Field>
@@ -210,7 +210,7 @@ function CheckupItemPanel({ h }) {
   const openEdit = (row) => { h.updateForm('checkupItem', row); setOpen(true) }
   const save = () => h.saveCheckupItem().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
   return <Card title="体检项目" actions={<Button size="sm" onClick={openCreate}>新增</Button>}>
-    <PaginatedTable columns={[{ title: '名称', render: (r) => r.name }, { title: '科室', render: (r) => r.department }, { title: '价格', render: (r) => moneyText(r.price) }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveCheckupItem(r)}>归档</Button></div> }]} rows={h.checkupItemRows.length ? h.checkupItemRows : h.checkupItems} />
+    <PaginatedTable loading={h.loading.checkupItems} columns={[{ title: '名称', render: (r) => r.name }, { title: '科室', render: (r) => r.department }, { title: '价格', render: (r) => moneyText(r.price) }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveCheckupItem(r)}>归档</Button></div> }]} rows={h.checkupItemRows.length ? h.checkupItemRows : h.checkupItems} />
     <Modal open={open} title={f.id ? '编辑体检项目' : '新增体检项目'} onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.checkupItem} onClick={save}>保存</Button></>}>
       <div className="form-grid">
         <Field label="项目名称"><TextInput value={f.name} onChange={(e) => h.updateForm('checkupItem', { name: e.target.value })} /></Field>
@@ -230,6 +230,8 @@ function PackageItemPanel({ h }) {
   const [open, setOpen] = useState(false)
   const [selectedPackageId, setSelectedPackageId] = useState('')
   const [draggingId, setDraggingId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
+  const [localOrder, setLocalOrder] = useState([])
   useEffect(() => {
     if (!selectedPackageId && h.packages[0]?.id) setSelectedPackageId(String(h.packages[0].id))
   }, [h.packages, selectedPackageId])
@@ -249,18 +251,21 @@ function PackageItemPanel({ h }) {
   const selectedItems = h.packageItems
     .filter((item) => String(item.packageId) === String(selectedPackageId))
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || Number(a.id || 0) - Number(b.id || 0))
+  const visibleItems = localOrder.length ? localOrder : selectedItems
   const reload = () => h.loadPackageItemsCollection({ packageId: f.packageId || selectedPackageId }).catch((e) => h.notify('error', e.message))
   const save = () => h.savePackageItem().then(() => { setOpen(false); reload() }).catch((e) => h.notify('error', e.message))
   const moveItem = (sourceId, targetId) => {
     if (h.loading.packageItem) return
     if (!sourceId || sourceId === targetId) return
-    const from = selectedItems.findIndex((item) => item.id === sourceId)
-    const to = selectedItems.findIndex((item) => item.id === targetId)
+    const currentItems = localOrder.length ? localOrder : selectedItems
+    const from = currentItems.findIndex((item) => item.id === sourceId)
+    const to = currentItems.findIndex((item) => item.id === targetId)
     if (from < 0 || to < 0) return
-    const next = [...selectedItems]
+    const next = [...currentItems]
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved)
-    h.reorderPackageItems(next).catch((e) => h.notify('error', e.message))
+    setLocalOrder(next)
+    h.reorderPackageItems(next).then(() => setLocalOrder([])).catch((e) => { setLocalOrder([]); h.notify('error', e.message) })
   }
   return <Card title="套餐项目组合" actions={<Button size="sm" onClick={openCreate}>新增</Button>}>
     <div className="package-composer">
@@ -269,15 +274,16 @@ function PackageItemPanel({ h }) {
         <span>{selectedItems.length ? `${selectedItems.length} 个项目，拖动左侧手柄调整顺序` : '选择套餐后管理项目顺序'}</span>
       </div>
       <div className="sortable-package-list">
-        {selectedItems.map((row, index) => (
+        {visibleItems.map((row, index) => (
           <div
             key={row.id}
-            className={`sortable-package-row ${draggingId === row.id ? 'is-dragging' : ''}`}
+            className={`sortable-package-row ${draggingId === row.id ? 'is-dragging' : ''} ${dragOverId === row.id && draggingId !== row.id ? 'is-drop-target' : ''}`}
             draggable={!h.loading.packageItem}
             onDragStart={(e) => { setDraggingId(row.id); e.dataTransfer.effectAllowed = 'move' }}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-            onDrop={(e) => { e.preventDefault(); moveItem(draggingId, row.id); setDraggingId(null) }}
-            onDragEnd={() => setDraggingId(null)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverId(row.id); e.dataTransfer.dropEffect = 'move' }}
+            onDragLeave={() => setDragOverId((current) => current === row.id ? null : current)}
+            onDrop={(e) => { e.preventDefault(); moveItem(draggingId, row.id); setDraggingId(null); setDragOverId(null) }}
+            onDragEnd={() => { setDraggingId(null); setDragOverId(null) }}
           >
             <button type="button" className="drag-handle" aria-label="拖动排序">⋮⋮</button>
             <span className="sort-index">{index + 1}</span>
@@ -292,7 +298,7 @@ function PackageItemPanel({ h }) {
             </div>
           </div>
         ))}
-        {!selectedItems.length && <p className="muted">暂无组合项目，点击右上角新增。</p>}
+        {!visibleItems.length && <p className="muted">{h.loading.packageItems ? '套餐项目加载中...' : '暂无组合项目，点击右上角新增。'}</p>}
       </div>
     </div>
     <Modal open={open} title="套餐项目组合" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.packageItem} onClick={save}>保存</Button></>}>
@@ -314,22 +320,24 @@ function SchedulePanel({ h }) {
   const openCreate = () => { h.resetForm('schedule'); setOpen(true) }
   const openEdit = (slot) => {
     h.updateForm('schedule', {
-    id: slot.id,
-    doctorId: slot.doctorId,
-    institutionId: slot.institutionId,
-    date: slot.date,
-    period: slot.period || '上午',
-    category: slot.category || '',
-    startTime: slot.startTime || '08:30',
-    endTime: slot.endTime || '',
-    capacity: slot.capacity || 1,
-    status: slot.status || 'available',
+      id: slot.id,
+      doctorId: slot.doctorId,
+      institutionId: slot.institutionId,
+      date: slot.date,
+      dates: slot.date,
+      period: slot.period || '上午',
+      category: slot.category || '',
+      startTime: slot.startTime || '08:30',
+      startTimes: slot.startTime || '08:30',
+      endTime: slot.endTime || '',
+      capacity: slot.capacity || 1,
+      status: slot.status || 'available',
     })
     setOpen(true)
   }
   const reload = () => h.loadSlotsPage(params).catch((e) => h.notify('error', e.message))
   const save = () => h.saveScheduleSlot().then(() => { setOpen(false); reload() }).catch((e) => h.notify('error', e.message))
-  return <Card title="医生号源" actions={<Button size="sm" onClick={openCreate}>新增</Button>}><RemoteTable columns={[
+  return <Card title="医生号源" actions={<Button size="sm" onClick={openCreate}>新增</Button>}><RemoteTable loading={h.loading.slots} columns={[
     { title: '医生', render: (r) => r.doctor?.name || r.doctorId },
     { title: '机构', render: (r) => r.institution?.name || r.institutionId },
     { title: '日期', render: (r) => formatDate(r.date) },
@@ -344,9 +352,9 @@ function SchedulePanel({ h }) {
         <Field label="医生"><Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
         <Field label="机构"><Select value={f.institutionId} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
         <Field label="分类"><Select value={f.category} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">请选择分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</Select></Field>
-        <Field label="日期"><TextInput type="date" value={f.date} onChange={(e) => h.updateForm('schedule', { date: e.target.value })} /></Field>
-        <Field label="开始时间"><TextInput placeholder="08:30" value={f.startTime} onChange={(e) => h.updateForm('schedule', { startTime: e.target.value })} /></Field>
-        <Field label="结束时间"><TextInput placeholder="09:00" value={f.endTime} onChange={(e) => h.updateForm('schedule', { endTime: e.target.value })} /></Field>
+        {f.id ? <Field label="日期"><TextInput type="date" value={f.date} onChange={(e) => h.updateForm('schedule', { date: e.target.value, dates: e.target.value })} /></Field> : <Field label="日期"><Textarea placeholder="可输入多个日期，用空格、逗号或换行分隔" value={f.dates} onChange={(e) => h.updateForm('schedule', { dates: e.target.value, date: e.target.value.split(/[\n,，\s]+/)[0] || '' })} /></Field>}
+        {f.id ? <Field label="开始时间"><TextInput placeholder="08:30" value={f.startTime} onChange={(e) => h.updateForm('schedule', { startTime: e.target.value, startTimes: e.target.value })} /></Field> : <Field label="开始时间"><Textarea placeholder="如 08:30 09:00 09:30，可多选多个班" value={f.startTimes} onChange={(e) => h.updateForm('schedule', { startTimes: e.target.value, startTime: e.target.value.split(/[\n,，\s]+/)[0] || '' })} /></Field>}
+        {f.id && <Field label="结束时间"><TextInput placeholder="09:00" value={f.endTime} onChange={(e) => h.updateForm('schedule', { endTime: e.target.value })} /></Field>}
         <Field label="上午/下午"><Select value={f.period} onChange={(e) => h.updateForm('schedule', { period: e.target.value })}><option value="上午">上午</option><option value="下午">下午</option></Select></Field>
         <Field label="容量"><TextInput type="number" min="1" value={f.capacity} onChange={(e) => h.updateForm('schedule', { capacity: e.target.value })} /></Field>
         <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('schedule', { status: e.target.value })}><option value="available">可预约</option><option value="disabled">停用</option></Select></Field>

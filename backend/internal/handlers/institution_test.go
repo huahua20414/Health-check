@@ -94,7 +94,7 @@ func TestAdminCreatesAndUpdatesInstitutionWithAudit(t *testing.T) {
 	assertInstitutionOperationLogCount(t, db, 99, "update", 1)
 }
 
-func TestArchiveInstitutionRejectsActiveScheduleSlots(t *testing.T) {
+func TestArchiveInstitutionArchivesUnusedScheduleSlots(t *testing.T) {
 	handler, db := newInstitutionTestFixture(t)
 	router := newInstitutionAdminRouter(handler, models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"})
 	institution := models.CheckupInstitution{Name: "占用院区", Address: "占用路", Status: "active"}
@@ -122,10 +122,52 @@ func TestArchiveInstitutionRejectsActiveScheduleSlots(t *testing.T) {
 
 	response := performInstitutionRequest(t, router, http.MethodDelete, "/institutions/"+strconv.Itoa(int(institution.ID)), nil)
 
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var archivedSlot models.ScheduleSlot
+	if err := db.First(&archivedSlot, slot.ID).Error; err != nil {
+		t.Fatalf("load archived slot: %v", err)
+	}
+	if archivedSlot.Status != "deleted" {
+		t.Fatalf("expected related slot deleted, got %q", archivedSlot.Status)
+	}
+	assertInstitutionOperationLogCount(t, db, 99, "archive", 1)
+}
+
+func TestArchiveInstitutionRejectsBookedScheduleSlots(t *testing.T) {
+	handler, db := newInstitutionTestFixture(t)
+	router := newInstitutionAdminRouter(handler, models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"})
+	institution := models.CheckupInstitution{Name: "已预约院区", Address: "预约路", Status: "active"}
+	doctor := models.User{Name: "医生", Role: "doctor", Status: "active"}
+	if err := db.Create(&institution).Error; err != nil {
+		t.Fatalf("create institution: %v", err)
+	}
+	if err := db.Create(&doctor).Error; err != nil {
+		t.Fatalf("create doctor: %v", err)
+	}
+	slot := models.ScheduleSlot{
+		DoctorID:      doctor.ID,
+		InstitutionID: institution.ID,
+		Date:          "2026-07-03",
+		Period:        "上午",
+		Category:      "年度综合",
+		StartTime:     "09:00",
+		EndTime:       "09:30",
+		Capacity:      1,
+		BookedCount:   1,
+		Status:        "available",
+	}
+	if err := db.Create(&slot).Error; err != nil {
+		t.Fatalf("create schedule slot: %v", err)
+	}
+
+	response := performInstitutionRequest(t, router, http.MethodDelete, "/institutions/"+strconv.Itoa(int(institution.ID)), nil)
+
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
 	}
-	assertErrorMessage(t, response.Body.Bytes(), "institution has active schedule slots")
+	assertErrorMessage(t, response.Body.Bytes(), "institution has booked schedule slots")
 }
 
 func TestArchiveInstitutionAllowsUnusedInstitution(t *testing.T) {

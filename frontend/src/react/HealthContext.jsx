@@ -51,7 +51,7 @@ const defaultForms = {
   systemSetting: { id: null, key: '', label: '', value: '', valueType: 'string', group: '', status: 'active', description: '' },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
   packageItem: { id: null, packageId: '', itemId: '', sortOrder: 0, required: true },
-  schedule: { id: null, doctorId: '', institutionId: '', date: '', period: '上午', category: '', startTime: '08:30', endTime: '09:00', capacity: 1, status: 'available' },
+  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', period: '上午', category: '', startTime: '08:30', startTimes: '08:30', endTime: '09:00', capacity: 1, status: 'available' },
   report: { appointmentId: '', summary: '', conclusion: '', recommendation: '' },
 }
 
@@ -88,6 +88,13 @@ function appointmentPayload(form) {
     slotId: Number(form.slotId || 0),
     selectedPackageItemIds: (form.selectedPackageItemIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0),
   }
+}
+
+function splitBatchValues(value) {
+  return String(value || '')
+    .split(/[\n,，\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 export function HealthProvider({ children }) {
@@ -154,15 +161,21 @@ export function HealthProvider({ children }) {
   }, [saveUser])
 
   const requestPage = useCallback(async (path, key, params = {}) => {
-    const query = toQuery(params)
-    const result = await request(`${path}${query ? `?${query}` : ''}`)
-    const pagination = result.pagination || (Array.isArray(result.items) ? {
-      page: result.page,
-      pageSize: result.pageSize,
-      total: result.total,
-    } : {})
-    setPaginations((current) => ({ ...current, [key]: { ...current[key], ...pagination } }))
-    return result.items || result
+    setPaginations((current) => ({ ...current, [key]: { ...current[key], loading: true } }))
+    try {
+      const query = toQuery(params)
+      const result = await request(`${path}${query ? `?${query}` : ''}`)
+      const pagination = result.pagination || (Array.isArray(result.items) ? {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+      } : {})
+      setPaginations((current) => ({ ...current, [key]: { ...current[key], ...pagination, loading: false } }))
+      return result.items || result
+    } catch (error) {
+      setPaginations((current) => ({ ...current, [key]: { ...current[key], loading: false } }))
+      throw error
+    }
   }, [])
 
   const loadMyPermissions = useCallback(async () => {
@@ -322,17 +335,27 @@ export function HealthProvider({ children }) {
   }, [saveUser, setLoadingKey])
 
   const loadPage = useCallback(async (path, key, stateKey = key, params = {}) => {
-    const rows = await requestPage(path, key, params)
-    updateData({ [stateKey]: rows })
-    return rows
-  }, [requestPage, updateData])
+    setLoadingKey(key, true)
+    try {
+      const rows = await requestPage(path, key, params)
+      updateData({ [stateKey]: rows })
+      return rows
+    } finally {
+      setLoadingKey(key, false)
+    }
+  }, [requestPage, setLoadingKey, updateData])
 
   const loadCollection = useCallback(async (path, stateKey, params = {}) => {
-    const query = toQuery(params)
-    const rows = await request(`${path}${query ? `?${query}` : ''}`)
-    updateData({ [stateKey]: rows })
-    return rows
-  }, [updateData])
+    setLoadingKey(stateKey, true)
+    try {
+      const query = toQuery(params)
+      const rows = await request(`${path}${query ? `?${query}` : ''}`)
+      updateData({ [stateKey]: rows })
+      return rows
+    } finally {
+      setLoadingKey(stateKey, false)
+    }
+  }, [setLoadingKey, updateData])
 
   const loaders = useMemo(() => ({
     loadAppointmentsPage: (params = {}) => loadPage('/appointments', 'appointments', 'appointments', params),
@@ -462,10 +485,11 @@ export function HealthProvider({ children }) {
       })
       if (forms.packageItem.id) await request(`/package-items/${forms.packageItem.id}`, { method: 'PATCH', body })
       else await request('/package-items', { method: 'POST', body })
+      const packageId = forms.packageItem.packageId
       resetForm('packageItem')
-      await loaders.loadPackageItemsCollection({ packageId: items[0]?.packageId || '' })
+      await loaders.loadPackageItemsCollection({ packageId })
     }),
-    deletePackageItem: (row) => action('packageItem', '套餐项目已移除', async () => { await request(`/package-items/${row.id}`, { method: 'DELETE' }); await loaders.loadPackageItemsPage() }),
+    deletePackageItem: (row) => action('packageItem', '套餐项目已移除', async () => { await request(`/package-items/${row.id}`, { method: 'DELETE' }); await loaders.loadPackageItemsCollection({ packageId: row.packageId || '' }) }),
     reorderPackageItems: (items) => action('packageItem', '套餐项目排序已保存', async () => {
       await Promise.all(items.map((item, index) => request(`/package-items/${item.id}`, {
         method: 'PATCH',
@@ -477,17 +501,29 @@ export function HealthProvider({ children }) {
           required: item.required !== false,
         }),
       })))
-      await loaders.loadPackageItemsPage()
+      await loaders.loadPackageItemsCollection({ packageId: items[0]?.packageId || '' })
     }),
     saveScheduleSlot: () => action('schedule', '排班号源已保存', async () => {
-      const body = JSON.stringify({
+      const base = {
         ...forms.schedule,
         doctorId: Number(forms.schedule.doctorId || 0),
         institutionId: Number(forms.schedule.institutionId || 0),
         capacity: Number(forms.schedule.capacity || 1),
-      })
-      if (forms.schedule.id) await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body })
-      else await request('/schedule/slots', { method: 'POST', body })
+      }
+      if (forms.schedule.id) {
+        await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body: JSON.stringify(base) })
+      } else {
+        const dates = splitBatchValues(forms.schedule.dates || forms.schedule.date)
+        const startTimes = splitBatchValues(forms.schedule.startTimes || forms.schedule.startTime)
+        if (!dates.length || !startTimes.length) throw new Error('请至少填写一个日期和一个开始时间')
+        const requests = []
+        for (const date of dates) {
+          for (const startTime of startTimes) {
+            requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, endTime: '' }) }))
+          }
+        }
+        await Promise.all(requests)
+      }
       resetForm('schedule')
       await loaders.loadSlotsPage()
     }),
