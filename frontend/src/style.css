@@ -590,17 +590,24 @@ a { color: inherit; text-decoration: none; }
   padding: 10px;
 }
 .schedule-time-grid { grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); }
-.schedule-option {
+.package-item-picker .schedule-option {
   min-height: 44px;
+  display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 8px;
   padding: 8px 9px;
 }
-.schedule-option strong {
+.package-item-picker .schedule-option strong {
+  min-width: 0;
   font-size: 13px;
   white-space: nowrap;
+  line-height: 1.2;
 }
-.schedule-option small { font-size: 11px; }
+.package-item-picker .schedule-option small {
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 .schedule-option.is-disabled {
   opacity: .62;
   cursor: not-allowed;
