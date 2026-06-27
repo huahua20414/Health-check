@@ -31,6 +31,9 @@ func EnsureFutureScheduleSlots(db *gorm.DB, now time.Time, days int) (int, error
 		return 0, nil
 	}
 	slots := futureScheduleSlots(now, days, doctors, institutions, packages)
+	if err := appendDailyAvailableCoverageSlots(db, now, days, doctors, institutions, packageCategories(packages), &slots); err != nil {
+		return 0, err
+	}
 	created := 0
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, slot := range slots {
@@ -133,6 +136,9 @@ func Run(db *gorm.DB) error {
 	}
 
 	if err := seedDemoBusinessData(db, now, institutions, packages, coupons); err != nil {
+		return err
+	}
+	if _, err := EnsureFutureScheduleSlots(db, now, 14); err != nil {
 		return err
 	}
 
@@ -456,8 +462,10 @@ func packageCategories(packages []models.CheckupPackage) []string {
 func appendFutureCoverageSlots(slots []models.ScheduleSlot, doctors []models.User, institutions []models.CheckupInstitution, categories []string, startDate time.Time, days int, usedDoctorTimes map[string]bool) []models.ScheduleSlot {
 	allTimes := []string{"08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"}
 	exists := make(map[string]bool, len(slots))
+	coverageCounts := make(map[string]int, len(slots))
 	for _, slot := range slots {
 		exists[fmt.Sprintf("%s|%s", slot.Date, slot.StartTime)] = true
+		coverageCounts[fmt.Sprintf("%s|%d|%s", slot.Date, slot.InstitutionID, slot.Category)]++
 	}
 	cursor := 0
 	for offset := 0; offset < days; offset++ {
@@ -479,33 +487,107 @@ func appendFutureCoverageSlots(slots []models.ScheduleSlot, doctors []models.Use
 				BookedCount:   0,
 				Status:        "available",
 			})
+			coverageCounts[fmt.Sprintf("%s|%d|%s", date, institutions[(offset+timeIndex)%len(institutions)].ID, categories[(offset+timeIndex)%len(categories)])]++
 		}
 	}
 	coverageTimes := []string{"10:00", "11:00", "13:30", "15:00", "16:00", "16:30"}
-	for institutionIndex, institution := range institutions {
-		for categoryIndex, category := range categories {
-			start := coverageTimes[(institutionIndex+categoryIndex)%len(coverageTimes)]
-			offset := 5 + institutionIndex + categoryIndex/len(coverageTimes)
-			if offset >= days {
-				offset = days - 1
+	const minCoverageSlots = 2
+	for offset := 0; offset < days; offset++ {
+		date := startDate.AddDate(0, 0, offset).Format("2006-01-02")
+		for institutionIndex, institution := range institutions {
+			for categoryIndex, category := range categories {
+				coverageKey := fmt.Sprintf("%s|%d|%s", date, institution.ID, category)
+				for coverageCounts[coverageKey] < minCoverageSlots {
+					start := coverageTimes[(offset+institutionIndex+categoryIndex+coverageCounts[coverageKey])%len(coverageTimes)]
+					doctor := nextAvailableDoctor(doctors, &cursor, usedDoctorTimes, date, start)
+					slots = append(slots, models.ScheduleSlot{
+						DoctorID:      doctor.ID,
+						InstitutionID: institution.ID,
+						Date:          date,
+						Period:        periodForStart(start),
+						Category:      category,
+						StartTime:     start,
+						EndTime:       addHalfHour(start),
+						Capacity:      1,
+						BookedCount:   0,
+						Status:        "available",
+					})
+					coverageCounts[coverageKey]++
+				}
 			}
-			date := startDate.AddDate(0, 0, offset).Format("2006-01-02")
-			doctor := nextAvailableDoctor(doctors, &cursor, usedDoctorTimes, date, start)
-			slots = append(slots, models.ScheduleSlot{
-				DoctorID:      doctor.ID,
-				InstitutionID: institution.ID,
-				Date:          date,
-				Period:        periodForStart(start),
-				Category:      category,
-				StartTime:     start,
-				EndTime:       addHalfHour(start),
-				Capacity:      1,
-				BookedCount:   0,
-				Status:        "available",
-			})
 		}
 	}
 	return slots
+}
+
+func appendDailyAvailableCoverageSlots(db *gorm.DB, now time.Time, days int, doctors []models.User, institutions []models.CheckupInstitution, categories []string, slots *[]models.ScheduleSlot) error {
+	const minAvailableCoverageSlots = 2
+	startDate := dayStart(now)
+	counts := make(map[string]int)
+	type coverageRow struct {
+		Date          string
+		InstitutionID uint
+		Category      string
+		Count         int
+	}
+	var rows []coverageRow
+	if err := db.Model(&models.ScheduleSlot{}).
+		Select("date, institution_id, category, COUNT(*) AS count").
+		Where("date >= ? AND date <= ? AND status = ? AND capacity > booked_count", startDate.Format("2006-01-02"), startDate.AddDate(0, 0, days-1).Format("2006-01-02"), "available").
+		Group("date, institution_id, category").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		counts[fmt.Sprintf("%s|%d|%s", row.Date, row.InstitutionID, row.Category)] += row.Count
+	}
+	coverageTimes := []string{"08:00", "10:00", "11:00", "13:30", "15:00", "16:30"}
+	usedDoctorTimes := make(map[string]bool)
+	type usedTimeRow struct {
+		DoctorID  uint
+		Date      string
+		StartTime string
+	}
+	var usedRows []usedTimeRow
+	if err := db.Model(&models.ScheduleSlot{}).
+		Select("doctor_id, date, start_time").
+		Where("date >= ? AND date <= ? AND status <> ?", startDate.Format("2006-01-02"), startDate.AddDate(0, 0, days-1).Format("2006-01-02"), "deleted").
+		Scan(&usedRows).Error; err != nil {
+		return err
+	}
+	for _, row := range usedRows {
+		usedDoctorTimes[fmt.Sprintf("%d|%s|%s", row.DoctorID, row.Date, row.StartTime)] = true
+	}
+	for _, slot := range *slots {
+		usedDoctorTimes[fmt.Sprintf("%d|%s|%s", slot.DoctorID, slot.Date, slot.StartTime)] = true
+	}
+	cursor := 0
+	for offset := 0; offset < days; offset++ {
+		date := startDate.AddDate(0, 0, offset).Format("2006-01-02")
+		for institutionIndex, institution := range institutions {
+			for categoryIndex, category := range categories {
+				key := fmt.Sprintf("%s|%d|%s", date, institution.ID, category)
+				for counts[key] < minAvailableCoverageSlots {
+					start := coverageTimes[(offset+institutionIndex+categoryIndex+counts[key])%len(coverageTimes)]
+					doctor := nextAvailableDoctor(doctors, &cursor, usedDoctorTimes, date, start)
+					*slots = append(*slots, models.ScheduleSlot{
+						DoctorID:      doctor.ID,
+						InstitutionID: institution.ID,
+						Date:          date,
+						Period:        periodForStart(start),
+						Category:      category,
+						StartTime:     start,
+						EndTime:       addHalfHour(start),
+						Capacity:      1,
+						BookedCount:   0,
+						Status:        "available",
+					})
+					counts[key]++
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func dayStart(t time.Time) time.Time {

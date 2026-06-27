@@ -30,7 +30,7 @@ func TestRunSeedsRichDemoBusinessData(t *testing.T) {
 	assertEveryPackageHasItems(t, db)
 	assertEveryDemoTimeHasSlots(t, db)
 	assertNextTwoWeeksHaveCompleteSlotTimes(t, db)
-	assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t, db)
+	assertEveryInstitutionPackageCategoryHasDailyFutureAvailableSlot(t, db)
 	assertSomeTimesHaveMultipleDoctors(t, db)
 	assertSomeSlotsAreFull(t, db)
 	assertNoSlotIsOverbooked(t, db)
@@ -235,7 +235,7 @@ func assertEveryDemoTimeHasSlots(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t *testing.T, db *gorm.DB) {
+func assertEveryInstitutionPackageCategoryHasDailyFutureAvailableSlot(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	var institutions []models.CheckupInstitution
 	if err := db.Where("status = ?", "active").Find(&institutions).Error; err != nil {
@@ -248,17 +248,22 @@ func assertEveryInstitutionPackageCategoryHasFutureAvailableSlot(t *testing.T, d
 		Pluck("category", &categories).Error; err != nil {
 		t.Fatalf("query package categories: %v", err)
 	}
-	for _, institution := range institutions {
-		for _, category := range categories {
-			var count int64
-			err := db.Model(&models.ScheduleSlot{}).
-				Where("institution_id = ? AND category = ? AND date >= DATE('now') AND status = ? AND booked_count < capacity", institution.ID, category, "available").
-				Count(&count).Error
-			if err != nil {
-				t.Fatalf("count future slots for %s/%s: %v", institution.Name, category, err)
-			}
-			if count == 0 {
-				t.Fatalf("expected future available slot for institution %q and category %q", institution.Name, category)
+	today := time.Now()
+	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	for offset := 0; offset < 14; offset++ {
+		date := today.AddDate(0, 0, offset).Format("2006-01-02")
+		for _, institution := range institutions {
+			for _, category := range categories {
+				var count int64
+				err := db.Model(&models.ScheduleSlot{}).
+					Where("institution_id = ? AND category = ? AND date = ? AND status = ? AND booked_count < capacity", institution.ID, category, date, "available").
+					Count(&count).Error
+				if err != nil {
+					t.Fatalf("count future slots for %s/%s/%s: %v", date, institution.Name, category, err)
+				}
+				if count == 0 {
+					t.Fatalf("expected daily future available slot for date %q, institution %q and category %q", date, institution.Name, category)
+				}
 			}
 		}
 	}
