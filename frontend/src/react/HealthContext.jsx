@@ -51,7 +51,7 @@ const defaultForms = {
   systemSetting: { id: null, key: '', label: '', value: '', valueType: 'string', group: '', status: 'active', description: '' },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
   packageItem: { id: null, packageId: '', itemId: '', sortOrder: 0, required: true },
-  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', weekdays: [], repeatWeeks: 2, period: '上午', category: '', startTime: '08:30', startTimes: [], endTime: '09:00', capacity: 1, bookedCount: 0, status: 'available' },
+  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', weekdays: [], repeatWeeks: 2, period: '上午', category: '', startTime: '', startTimes: [], endTime: '', capacity: 1, bookedCount: 0, status: 'available' },
   report: { appointmentId: '', summary: '', conclusion: '', recommendation: '' },
 }
 
@@ -570,7 +570,8 @@ export function HealthProvider({ children }) {
         })
       } else {
         const dates = scheduleDatesFromWeekdays(forms.schedule.weekdays, forms.schedule.repeatWeeks)
-        const startTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes : splitBatchValues(forms.schedule.startTimes || forms.schedule.startTime)
+        const selectedStartTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes.filter(Boolean) : splitBatchValues(forms.schedule.startTimes)
+        const startTimes = selectedStartTimes.length ? selectedStartTimes : splitBatchValues(forms.schedule.startTime)
         if (!dates.length || !startTimes.length) throw new Error('请至少勾选一个星期和一个开始时间')
         const requests = []
         for (const date of dates) {

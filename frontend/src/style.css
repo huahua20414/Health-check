@@ -45,6 +45,8 @@
   --sidebar-active-text: #057f91;
   --sidebar-scrollbar: rgba(102, 112, 133, .34);
   --sidebar-scrollbar-hover: rgba(102, 112, 133, .56);
+  --scrollbar-thumb: rgba(102, 112, 133, .28);
+  --scrollbar-thumb-hover: rgba(102, 112, 133, .5);
   --shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
   color: var(--ink);
   background: var(--bg);
@@ -100,10 +102,32 @@ body[data-theme="dark"] {
   --sidebar-active-text: #ffffff;
   --sidebar-scrollbar: rgba(154, 167, 186, .34);
   --sidebar-scrollbar-hover: rgba(154, 167, 186, .58);
+  --scrollbar-thumb: rgba(154, 167, 186, .32);
+  --scrollbar-thumb-hover: rgba(154, 167, 186, .56);
   --shadow: 0 18px 42px rgba(0, 0, 0, .28);
 }
 
 * { box-sizing: border-box; }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
 body { margin: 0; min-width: 320px; background: var(--bg); color: var(--ink); }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
@@ -141,8 +165,8 @@ a { color: inherit; text-decoration: none; }
   scrollbar-width: thin;
   scrollbar-color: var(--sidebar-scrollbar) transparent;
 }
-.side-nav::-webkit-scrollbar { width: 6px; }
-.side-nav::-webkit-scrollbar-track { background: transparent; }
+.side-nav::-webkit-scrollbar { width: 6px; background: transparent; }
+.side-nav::-webkit-scrollbar-track, .side-nav::-webkit-scrollbar-corner { background: transparent; }
 .side-nav::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--sidebar-scrollbar);
