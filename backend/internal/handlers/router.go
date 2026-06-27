@@ -4658,6 +4658,14 @@ func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, boo
 		c.JSON(http.StatusBadRequest, gin.H{"error": "active institution not found"})
 		return models.ScheduleSlot{}, false
 	}
+	category := strings.TrimSpace(req.Category)
+	if ok, err := institutionSupportsCategory(h.db, req.InstitutionID, category); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return models.ScheduleSlot{}, false
+	} else if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "institution does not support selected category"})
+		return models.ScheduleSlot{}, false
+	}
 	capacity := req.Capacity
 	if capacity <= 0 {
 		capacity = 1
@@ -4691,7 +4699,7 @@ func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, boo
 		InstitutionID: req.InstitutionID,
 		Date:          req.Date,
 		Period:        period,
-		Category:      strings.TrimSpace(req.Category),
+		Category:      category,
 		StartTime:     req.StartTime,
 		EndTime:       endTime,
 		Capacity:      capacity,
@@ -4736,6 +4744,20 @@ func ensureScheduleSlotDoesNotOverlapDB(db *gorm.DB, slot models.ScheduleSlot, e
 		return fmt.Errorf("schedule slot overlaps with existing slot")
 	}
 	return nil
+}
+
+func institutionSupportsCategory(db *gorm.DB, institutionID uint, category string) (bool, error) {
+	if strings.TrimSpace(category) == "" {
+		return false, nil
+	}
+	var count int64
+	if err := db.Model(&models.InstitutionPackage{}).
+		Joins("JOIN checkup_packages ON checkup_packages.id = institution_packages.package_id").
+		Where("institution_packages.institution_id = ? AND checkup_packages.category = ? AND checkup_packages.status = ?", institutionID, category, "active").
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (h *Handler) authRequired() gin.HandlerFunc {
@@ -5357,6 +5379,11 @@ func (h *Handler) scheduleSlotFromCSVRecord(db *gorm.DB, record []string, index 
 	category := csvValue(record, index, "category")
 	if category == "" {
 		return models.ScheduleSlot{}, fmt.Errorf("schedule slot category is required for %s %s", date, startTime)
+	}
+	if ok, err := institutionSupportsCategory(db, institution.ID, category); err != nil {
+		return models.ScheduleSlot{}, err
+	} else if !ok {
+		return models.ScheduleSlot{}, fmt.Errorf("institution does not support selected category for %s %s", date, startTime)
 	}
 	return models.ScheduleSlot{
 		DoctorID:      doctor.ID,

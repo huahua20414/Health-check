@@ -55,6 +55,19 @@ func TestCreateScheduleSlotAllowsDifferentDoctorAtSameTime(t *testing.T) {
 	assertScheduleSlotCount(t, db, fixture.otherDoctor.ID, "2026-07-01", 1)
 }
 
+func TestCreateScheduleSlotRejectsUnsupportedInstitutionCategory(t *testing.T) {
+	handler, _, fixture := newScheduleSlotOverlapFixture(t)
+	router := newScheduleSlotOverlapRouter(handler, fixture.admin)
+
+	req := scheduleSlotRequest{DoctorID: fixture.doctor.ID, InstitutionID: fixture.institution.ID, Date: "2026-07-01", Category: "影像专项", StartTime: "11:00", EndTime: "11:30", Capacity: 1}
+	response := performCreateScheduleSlotRequest(t, router, req)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "institution does not support selected category")
+}
+
 func TestUpdateScheduleSlotAllowsUpdatingItself(t *testing.T) {
 	handler, db, fixture := newScheduleSlotOverlapFixture(t)
 	router := newScheduleSlotOverlapRouter(handler, fixture.admin)
@@ -154,9 +167,11 @@ func newScheduleSlotOverlapFixture(t *testing.T) (*Handler, *gorm.DB, scheduleSl
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.InstitutionPackage{}, &models.ScheduleSlot{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
+	annualPackage := models.CheckupPackage{ID: 30, Name: "年度套餐", Category: "年度综合", Price: 399, Status: "active"}
+	entryPackage := models.CheckupPackage{ID: 31, Name: "入职套餐", Category: "入职体检", Price: 199, Status: "active"}
 	fixture := scheduleSlotOverlapFixture{
 		admin:        models.User{ID: 1, Name: "管理员", Email: "admin-overlap@example.com", Phone: "13800001001", Role: "admin", Status: "active", PasswordHash: "hash"},
 		doctor:       models.User{ID: 2, Name: "医生甲", Email: "doctor-overlap@example.com", Phone: "13800001002", Role: "doctor", Status: "active", PasswordHash: "hash"},
@@ -165,7 +180,9 @@ func newScheduleSlotOverlapFixture(t *testing.T) (*Handler, *gorm.DB, scheduleSl
 		existingSlot: models.ScheduleSlot{ID: 20, DoctorID: 2, InstitutionID: 10, Date: "2026-07-01", Period: "上午", Category: "年度综合", StartTime: "09:00", EndTime: "09:30", Capacity: 1, BookedCount: 0, Status: "available"},
 		laterSlot:    models.ScheduleSlot{ID: 21, DoctorID: 2, InstitutionID: 10, Date: "2026-07-01", Period: "上午", Category: "年度综合", StartTime: "10:00", EndTime: "10:30", Capacity: 1, BookedCount: 0, Status: "available"},
 	}
-	for _, row := range []any{&fixture.admin, &fixture.doctor, &fixture.otherDoctor, &fixture.institution, &fixture.existingSlot, &fixture.laterSlot} {
+	annualLink := models.InstitutionPackage{InstitutionID: fixture.institution.ID, PackageID: annualPackage.ID}
+	entryLink := models.InstitutionPackage{InstitutionID: fixture.institution.ID, PackageID: entryPackage.ID}
+	for _, row := range []any{&fixture.admin, &fixture.doctor, &fixture.otherDoctor, &fixture.institution, &annualPackage, &entryPackage, &annualLink, &entryLink, &fixture.existingSlot, &fixture.laterSlot} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}

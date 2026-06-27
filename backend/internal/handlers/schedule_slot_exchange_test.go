@@ -142,7 +142,7 @@ func newScheduleSlotExchangeFixture(t *testing.T) (*Handler, *gorm.DB, scheduleS
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.WaitlistEntry{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.InstitutionPackage{}, &models.ScheduleSlot{}, &models.WaitlistEntry{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := scheduleSlotExchangeFixture{
@@ -150,10 +150,16 @@ func newScheduleSlotExchangeFixture(t *testing.T) (*Handler, *gorm.DB, scheduleS
 		doctor:      models.User{ID: 2, Name: "医生", Email: "doctor-slot@example.com", Phone: "13800005002", Role: "doctor", Status: "active", PasswordHash: "hash"},
 		institution: models.CheckupInstitution{ID: 10, Name: "主院区", Address: "健康路 1 号", Status: "active"},
 	}
+	annualPackage := models.CheckupPackage{ID: 30, Name: "年度套餐", Category: "年度综合", Price: 399, Status: "active"}
+	entryPackage := models.CheckupPackage{ID: 31, Name: "入职套餐", Category: "入职体检", Price: 199, Status: "active"}
 	rows := []any{
 		&fixture.admin,
 		&fixture.doctor,
 		&fixture.institution,
+		&annualPackage,
+		&entryPackage,
+		&models.InstitutionPackage{InstitutionID: fixture.institution.ID, PackageID: annualPackage.ID},
+		&models.InstitutionPackage{InstitutionID: fixture.institution.ID, PackageID: entryPackage.ID},
 		&models.ScheduleSlot{ID: 20, DoctorID: fixture.doctor.ID, InstitutionID: fixture.institution.ID, Date: "2026-07-01", Period: "上午", Category: "年度综合", StartTime: "09:00", EndTime: "09:30", Capacity: 2, BookedCount: 1, Status: "available"},
 		&models.ScheduleSlot{ID: 21, DoctorID: fixture.doctor.ID, InstitutionID: fixture.institution.ID, Date: "2026-07-02", Period: "上午", Category: "入职体检", StartTime: "10:00", EndTime: "10:30", Capacity: 1, BookedCount: 0, Status: "available"},
 	}

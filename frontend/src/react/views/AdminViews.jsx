@@ -349,7 +349,13 @@ function SchedulePanel({ h }) {
   useEffect(() => { h.loadSlotsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
   const rows = h.scheduleSlotRows.length ? h.scheduleSlotRows : h.slots
   const doctors = h.activeDoctors.length ? h.activeDoctors : h.users.filter((u) => u.role === 'doctor' && u.status === 'active')
-  const categories = [...new Set(h.packages.map((p) => p.category).filter(Boolean))]
+  const selectedInstitution = h.institutions.find((item) => Number(item.id) === Number(f.institutionId))
+  const categories = institutionPackageCategories(selectedInstitution, h.packages)
+  useEffect(() => {
+    if (f.category && f.institutionId && !categories.includes(f.category)) {
+      h.updateForm('schedule', { category: '' })
+    }
+  }, [f.institutionId, f.category, categories.join('|')])
   const openCreate = () => { h.resetForm('schedule'); setOpen(true) }
   const openEdit = (slot) => {
     h.updateForm('schedule', {
@@ -383,8 +389,8 @@ function SchedulePanel({ h }) {
     <Modal open={open} title={f.id ? '编辑医生号源' : '新增医生号源'} onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.schedule} onClick={save}>{f.id ? '保存编辑' : '新增号源'}</Button></>}>
       <div className="form-grid">
         <Field label="医生"><Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
-        <Field label="机构"><Select value={f.institutionId} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
-        <Field label="分类"><Select value={f.category} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">请选择分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</Select></Field>
+        <Field label="机构"><Select value={f.institutionId} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value, category: '' })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
+        <Field label="分类"><Select value={f.category} disabled={!f.institutionId || !categories.length} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">{f.institutionId ? '请选择机构已绑定套餐分类' : '请先选择机构'}</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</Select></Field>
         {f.id ? <Field label="日期"><TextInput type="date" value={f.date} onChange={(e) => h.updateForm('schedule', { date: e.target.value, dates: e.target.value })} /></Field> : <Field label="日期"><Textarea placeholder="可输入多个日期，用空格、逗号或换行分隔" value={f.dates} onChange={(e) => h.updateForm('schedule', { dates: e.target.value, date: e.target.value.split(/[\n,，\s]+/)[0] || '' })} /></Field>}
         {f.id ? <Field label="开始时间"><TextInput placeholder="08:30" value={f.startTime} onChange={(e) => h.updateForm('schedule', { startTime: e.target.value, startTimes: e.target.value })} /></Field> : <Field label="开始时间"><Textarea placeholder="如 08:30 09:00 09:30，可多选多个班" value={f.startTimes} onChange={(e) => h.updateForm('schedule', { startTimes: e.target.value, startTime: e.target.value.split(/[\n,，\s]+/)[0] || '' })} /></Field>}
         {f.id && <Field label="结束时间"><TextInput placeholder="09:00" value={f.endTime} onChange={(e) => h.updateForm('schedule', { endTime: e.target.value })} /></Field>}
@@ -394,4 +400,10 @@ function SchedulePanel({ h }) {
       </div>
     </Modal>
   </Card>
+}
+
+function institutionPackageCategories(institution, packages) {
+  if (!institution) return []
+  const ids = new Set(institutionPackageIds(institution))
+  return [...new Set(packages.filter((pkg) => ids.has(Number(pkg.id)) && pkg.status === 'active').map((pkg) => pkg.category).filter(Boolean))]
 }
