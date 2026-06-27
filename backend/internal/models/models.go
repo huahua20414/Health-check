@@ -25,14 +25,16 @@ type User struct {
 }
 
 type CheckupInstitution struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name" gorm:"size:128;not null;uniqueIndex"`
-	Address   string    `json:"address" gorm:"size:255;not null"`
-	Phone     string    `json:"phone" gorm:"size:32"`
-	OpenHours string    `json:"openHours" gorm:"size:128"`
-	Status    string    `json:"status" gorm:"size:16;not null;default:'active'"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID         uint             `json:"id" gorm:"primaryKey"`
+	Name       string           `json:"name" gorm:"size:128;not null;uniqueIndex"`
+	Address    string           `json:"address" gorm:"size:255;not null"`
+	Phone      string           `json:"phone" gorm:"size:32"`
+	OpenHours  string           `json:"openHours" gorm:"size:128"`
+	Status     string           `json:"status" gorm:"size:16;not null;default:'active'"`
+	PackageIDs []uint           `json:"packageIds,omitempty" gorm:"-"`
+	Packages   []CheckupPackage `json:"packages,omitempty" gorm:"-"`
+	CreatedAt  time.Time        `json:"createdAt"`
+	UpdatedAt  time.Time        `json:"updatedAt"`
 }
 
 type CheckupPackage struct {
@@ -46,6 +48,16 @@ type CheckupPackage struct {
 	PackageItems []PackageItem `json:"packageItems,omitempty" gorm:"foreignKey:PackageID"`
 	CreatedAt    time.Time     `json:"createdAt"`
 	UpdatedAt    time.Time     `json:"updatedAt"`
+}
+
+type InstitutionPackage struct {
+	ID            uint               `json:"id" gorm:"primaryKey"`
+	InstitutionID uint               `json:"institutionId" gorm:"not null;uniqueIndex:idx_institution_package"`
+	PackageID     uint               `json:"packageId" gorm:"not null;uniqueIndex:idx_institution_package"`
+	Institution   CheckupInstitution `json:"institution"`
+	Package       CheckupPackage     `json:"package"`
+	CreatedAt     time.Time          `json:"createdAt"`
+	UpdatedAt     time.Time          `json:"updatedAt"`
 }
 
 type CheckupItem struct {

@@ -535,7 +535,11 @@ func (h *Handler) packageQueryWithItems() *gorm.DB {
 
 func (h *Handler) institutions(c *gin.Context) {
 	var institutions []models.CheckupInstitution
-	query := h.db.Model(&models.CheckupInstitution{}).Order("id asc")
+	query := h.db.Model(&models.CheckupInstitution{}).Order("checkup_institutions.id asc")
+	if packageID, err := strconv.Atoi(c.Query("packageId")); err == nil && packageID > 0 {
+		query = query.Joins("JOIN institution_packages ON institution_packages.institution_id = checkup_institutions.id").
+			Where("institution_packages.package_id = ?", packageID)
+	}
 	if status := c.Query("status"); status != "" && c.GetHeader("Authorization") != "" {
 		query = query.Where("status = ?", status)
 	} else if c.GetHeader("Authorization") == "" {
@@ -548,10 +552,14 @@ func (h *Handler) institutions(c *gin.Context) {
 		query = query.Where("name LIKE ? OR address LIKE ? OR phone LIKE ?", pattern, pattern, pattern)
 	}
 	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &institutions)
+		h.respondPaginatedInstitutions(c, query, page, pageSize, &institutions)
 		return
 	}
 	if err := query.Find(&institutions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.attachInstitutionPackages(h.db, institutions); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -570,10 +578,18 @@ func (h *Handler) createInstitution(c *gin.Context) {
 		OpenHours: strings.TrimSpace(req.OpenHours),
 		Status:    normalizeStatus(req.Status, "active"),
 	}
-	if err := h.db.Create(&institution).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&institution).Error; err != nil {
+			return err
+		}
+		return h.syncInstitutionPackages(tx, institution.ID, req.PackageIDs)
+	}); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	created := []models.CheckupInstitution{institution}
+	_ = h.attachInstitutionPackages(h.db, created)
+	institution = created[0]
 	h.recordOperation(c, "create", "institution", strconv.Itoa(int(institution.ID)), "success", institution.Name)
 	c.JSON(http.StatusCreated, institution)
 }
@@ -594,17 +610,28 @@ func (h *Handler) updateInstitution(c *gin.Context) {
 		"open_hours": strings.TrimSpace(req.OpenHours),
 		"status":     normalizeStatus(req.Status, "active"),
 	}
-	result := h.db.Model(&models.CheckupInstitution{}).Where("id = ?", id).Updates(updates)
-	if result.Error != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "institution not found"})
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.CheckupInstitution{}).Where("id = ?", id).Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return h.syncInstitutionPackages(tx, uint(id), req.PackageIDs)
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "institution not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	var institution models.CheckupInstitution
 	h.db.First(&institution, id)
+	updated := []models.CheckupInstitution{institution}
+	_ = h.attachInstitutionPackages(h.db, updated)
+	institution = updated[0]
 	h.recordOperation(c, "update", "institution", strconv.Itoa(id), "success", institution.Name)
 	c.JSON(http.StatusOK, institution)
 }
@@ -632,6 +659,9 @@ func (h *Handler) archiveInstitution(c *gin.Context) {
 		if err := tx.Model(&models.ScheduleSlot{}).Where("institution_id = ? AND status <> ?", id, "deleted").Update("status", "deleted").Error; err != nil {
 			return err
 		}
+		if err := tx.Where("institution_id = ?", id).Delete(&models.InstitutionPackage{}).Error; err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -647,6 +677,91 @@ func (h *Handler) archiveInstitution(c *gin.Context) {
 	}
 	h.recordOperation(c, "archive", "institution", strconv.Itoa(id), "success", "")
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
+func (h *Handler) respondPaginatedInstitutions(c *gin.Context, query *gorm.DB, page, pageSize int, dest *[]models.CheckupInstitution) {
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(dest).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.attachInstitutionPackages(h.db, *dest); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":    *dest,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+func (h *Handler) attachInstitutionPackages(db *gorm.DB, institutions []models.CheckupInstitution) error {
+	if len(institutions) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(institutions))
+	indexByID := make(map[uint]int, len(institutions))
+	for index := range institutions {
+		ids = append(ids, institutions[index].ID)
+		indexByID[institutions[index].ID] = index
+	}
+	var links []models.InstitutionPackage
+	if err := db.Preload("Package").Where("institution_id IN ?", ids).Order("package_id asc").Find(&links).Error; err != nil {
+		return err
+	}
+	for _, link := range links {
+		index, ok := indexByID[link.InstitutionID]
+		if !ok {
+			continue
+		}
+		institutions[index].PackageIDs = append(institutions[index].PackageIDs, link.PackageID)
+		if link.Package.ID != 0 {
+			institutions[index].Packages = append(institutions[index].Packages, link.Package)
+		}
+	}
+	return nil
+}
+
+func (h *Handler) syncInstitutionPackages(tx *gorm.DB, institutionID uint, packageIDs []uint) error {
+	if err := tx.Where("institution_id = ?", institutionID).Delete(&models.InstitutionPackage{}).Error; err != nil {
+		return err
+	}
+	seen := map[uint]bool{}
+	links := make([]models.InstitutionPackage, 0, len(packageIDs))
+	for _, packageID := range packageIDs {
+		if packageID == 0 || seen[packageID] {
+			continue
+		}
+		seen[packageID] = true
+		var count int64
+		if err := tx.Model(&models.CheckupPackage{}).Where("id = ? AND status = ?", packageID, "active").Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return fmt.Errorf("package %d is unavailable", packageID)
+		}
+		links = append(links, models.InstitutionPackage{InstitutionID: institutionID, PackageID: packageID})
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	return tx.Create(&links).Error
+}
+
+func (h *Handler) institutionSupportsPackage(db *gorm.DB, institutionID, packageID uint) (bool, error) {
+	var count int64
+	if err := db.Model(&models.InstitutionPackage{}).
+		Where("institution_id = ? AND package_id = ?", institutionID, packageID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (h *Handler) exportInstitutions(c *gin.Context) {
@@ -865,6 +980,13 @@ func (h *Handler) createAppointment(c *gin.Context) {
 	var institution models.CheckupInstitution
 	if err := h.db.First(&institution, req.InstitutionID).Error; err != nil || institution.Status != "active" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "institution is unavailable"})
+		return
+	}
+	if ok, err := h.institutionSupportsPackage(h.db, req.InstitutionID, req.PackageID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "institution does not support selected package"})
 		return
 	}
 	if req.FamilyMemberID != 0 && !h.familyMemberBelongsTo(current.ID, req.FamilyMemberID) {
@@ -4827,11 +4949,12 @@ type packageRequest struct {
 }
 
 type institutionRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Address   string `json:"address" binding:"required"`
-	Phone     string `json:"phone"`
-	OpenHours string `json:"openHours"`
-	Status    string `json:"status"`
+	Name       string `json:"name" binding:"required"`
+	Address    string `json:"address" binding:"required"`
+	Phone      string `json:"phone"`
+	OpenHours  string `json:"openHours"`
+	Status     string `json:"status"`
+	PackageIDs []uint `json:"packageIds"`
 }
 
 type checkupItemRequest struct {

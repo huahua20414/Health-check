@@ -67,11 +67,26 @@ func TestAdminInstitutionsSupportKeywordAndPagination(t *testing.T) {
 	}
 }
 
+func TestInstitutionsCanFilterBySupportedPackage(t *testing.T) {
+	handler, _ := newInstitutionTestFixture(t)
+	router := newInstitutionListRouter(handler, false)
+
+	response := performInstitutionRequest(t, router, http.MethodGet, "/institutions?packageId=20", nil)
+	rows := decodeInstitutionRows(t, response)
+
+	if len(rows) != 1 || rows[0].Name != "主院区" {
+		t.Fatalf("expected only package supported institution, got %#v", rows)
+	}
+	if len(rows[0].PackageIDs) != 1 || rows[0].PackageIDs[0] != 20 {
+		t.Fatalf("expected package ids to be attached, got %#v", rows[0])
+	}
+}
+
 func TestAdminCreatesAndUpdatesInstitutionWithAudit(t *testing.T) {
 	handler, db := newInstitutionTestFixture(t)
 	router := newInstitutionAdminRouter(handler, models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"})
 
-	createBody := `{"name":"新体检中心","address":"健康大道 99 号","phone":"400-800-1000","openHours":"08:00-17:00","status":"active"}`
+	createBody := `{"name":"新体检中心","address":"健康大道 99 号","phone":"400-800-1000","openHours":"08:00-17:00","status":"active","packageIds":[20,21]}`
 	createResponse := performInstitutionRequest(t, router, http.MethodPost, "/institutions", strings.NewReader(createBody))
 	if createResponse.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", createResponse.Code, createResponse.Body.String())
@@ -80,8 +95,11 @@ func TestAdminCreatesAndUpdatesInstitutionWithAudit(t *testing.T) {
 	if created.Name != "新体检中心" || created.Address != "健康大道 99 号" {
 		t.Fatalf("created wrong institution: %#v", created)
 	}
+	if len(created.PackageIDs) != 2 {
+		t.Fatalf("expected created package bindings, got %#v", created.PackageIDs)
+	}
 
-	updateBody := `{"name":"新体检中心东区","address":"健康大道 100 号","phone":"400-800-2000","openHours":"08:30-17:30","status":"disabled"}`
+	updateBody := `{"name":"新体检中心东区","address":"健康大道 100 号","phone":"400-800-2000","openHours":"08:30-17:30","status":"disabled","packageIds":[21]}`
 	updateResponse := performInstitutionRequest(t, router, http.MethodPatch, "/institutions/"+strconv.Itoa(int(created.ID)), strings.NewReader(updateBody))
 	if updateResponse.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", updateResponse.Code, updateResponse.Body.String())
@@ -89,6 +107,9 @@ func TestAdminCreatesAndUpdatesInstitutionWithAudit(t *testing.T) {
 	updated := decodeInstitutionRow(t, updateResponse)
 	if updated.Name != "新体检中心东区" || updated.Status != "disabled" || updated.OpenHours != "08:30-17:30" {
 		t.Fatalf("updated wrong institution: %#v", updated)
+	}
+	if len(updated.PackageIDs) != 1 || updated.PackageIDs[0] != 21 {
+		t.Fatalf("expected updated package bindings, got %#v", updated.PackageIDs)
 	}
 	assertInstitutionOperationLogCount(t, db, 99, "create", 1)
 	assertInstitutionOperationLogCount(t, db, 99, "update", 1)
@@ -200,8 +221,15 @@ func newInstitutionTestFixture(t *testing.T) (*Handler, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.InstitutionPackage{}, &models.ScheduleSlot{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
+	}
+	packages := []models.CheckupPackage{
+		{ID: 20, Name: "年度体检", Category: "年度综合", Price: 399, Items: "血常规", Status: "active"},
+		{ID: 21, Name: "入职体检", Category: "入职体检", Price: 199, Items: "胸片", Status: "active"},
+	}
+	if err := db.Create(&packages).Error; err != nil {
+		t.Fatalf("create packages: %v", err)
 	}
 	rows := []models.CheckupInstitution{
 		{Name: "主院区", Address: "健康路 1 号", Phone: "400-100-1000", OpenHours: "08:00-17:00", Status: "active"},
@@ -210,6 +238,9 @@ func newInstitutionTestFixture(t *testing.T) (*Handler, *gorm.DB) {
 	}
 	if err := db.Create(&rows).Error; err != nil {
 		t.Fatalf("create institutions: %v", err)
+	}
+	if err := db.Create(&models.InstitutionPackage{InstitutionID: rows[0].ID, PackageID: packages[0].ID}).Error; err != nil {
+		t.Fatalf("create institution package: %v", err)
 	}
 	return &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}, db
 }

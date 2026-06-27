@@ -129,6 +129,25 @@ func TestCreateAppointmentWaitlistCreatesNotifications(t *testing.T) {
 	assertCreateNotificationChannelCount(t, db, fixture.user.ID, "waitlist_joined", "sms_mock", 1)
 }
 
+func TestCreateAppointmentRejectsUnsupportedInstitutionPackage(t *testing.T) {
+	handler, _, fixture := newAppointmentCreateFixture(t)
+	router := newAppointmentCreateRouter(handler, fixture.user)
+
+	response := performCreateAppointmentRequest(t, router, appointmentRequest{
+		PackageID:       fixture.otherPackage.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          fixture.slot.ID,
+		AppointmentType: "个人体检",
+		Date:            fixture.slot.Date,
+		Period:          fixture.slot.Period,
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "institution does not support selected package")
+}
+
 type appointmentCreateFixture struct {
 	user               models.User
 	doctor             models.User
@@ -156,7 +175,7 @@ func newAppointmentCreateFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 		t.Fatalf("get sqlite db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Coupon{}, &models.Notification{}, &models.MailLog{}, &models.SystemSetting{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.InstitutionPackage{}, &models.ScheduleSlot{}, &models.Appointment{}, &models.WaitlistEntry{}, &models.Coupon{}, &models.Notification{}, &models.MailLog{}, &models.SystemSetting{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := appointmentCreateFixture{
@@ -179,6 +198,9 @@ func newAppointmentCreateFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
+	}
+	if err := db.Create(&models.InstitutionPackage{InstitutionID: fixture.institution.ID, PackageID: fixture.pkg.ID}).Error; err != nil {
+		t.Fatalf("create institution package: %v", err)
 	}
 	return &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}, db, fixture
 }

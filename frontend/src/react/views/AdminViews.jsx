@@ -189,18 +189,51 @@ function InstitutionPanel({ h }) {
   const f = h.forms.institution
   const [open, setOpen] = useState(false)
   const openCreate = () => { h.resetForm('institution'); setOpen(true) }
-  const openEdit = (row) => { h.updateForm('institution', row); setOpen(true) }
+  const openEdit = (row) => { h.updateForm('institution', { ...row, packageIds: institutionPackageIds(row) }); setOpen(true) }
   const save = () => h.saveInstitution().then(() => setOpen(false)).catch((e) => h.notify('error', e.message))
+  const selectedPackageIds = new Set((f.packageIds || []).map(Number))
+  const togglePackage = (packageId) => {
+    const next = new Set((f.packageIds || []).map(Number))
+    if (next.has(packageId)) next.delete(packageId)
+    else next.add(packageId)
+    h.updateForm('institution', { packageIds: Array.from(next) })
+  }
   return <Card title="机构管理" actions={<><Button size="sm" onClick={openCreate}>新增</Button><Button size="sm" variant="ghost" onClick={() => h.exportBlob('/institutions/export', 'institutions.csv', 'exportInstitutions')}>导出</Button></>}>
-    <PaginatedTable loading={h.loading.institutions} columns={[{ title: '名称', render: (r) => r.name }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" loading={h.loading.institution} onClick={() => h.archiveInstitution(r).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]} rows={h.institutionRows.length ? h.institutionRows : h.institutions} />
+    <PaginatedTable loading={h.loading.institutions} columns={[{ title: '名称', render: (r) => r.name }, { title: '可服务套餐', render: (r) => institutionPackageNames(r, h.packages) }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" loading={h.loading.institution} onClick={() => h.archiveInstitution(r).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]} rows={h.institutionRows.length ? h.institutionRows : h.institutions} />
     <Modal open={open} title={f.id ? '编辑机构' : '新增机构'} onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.institution} onClick={save}>保存</Button></>}>
       <Field label="机构名称"><TextInput value={f.name} onChange={(e) => h.updateForm('institution', { name: e.target.value })} /></Field>
       <Field label="地址"><TextInput value={f.address} onChange={(e) => h.updateForm('institution', { address: e.target.value })} /></Field>
       <Field label="电话"><TextInput value={f.phone} onChange={(e) => h.updateForm('institution', { phone: e.target.value })} /></Field>
       <Field label="营业时间"><TextInput value={f.openHours} onChange={(e) => h.updateForm('institution', { openHours: e.target.value })} /></Field>
       <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('institution', { status: e.target.value })}><option value="active">启用</option><option value="disabled">停用</option></Select></Field>
+      <Field label="可服务套餐">
+        <div className="package-item-picker institution-package-picker">
+          {h.packages.map((pkg) => (
+            <label key={pkg.id} className={`package-item-option ${selectedPackageIds.has(pkg.id) ? 'is-checked' : ''}`}>
+              <input type="checkbox" checked={selectedPackageIds.has(pkg.id)} onChange={() => togglePackage(pkg.id)} />
+              <span>{pkg.category || '套餐'}</span>
+              <strong>{pkg.name}</strong>
+              <small>{moneyText(pkg.price)}</small>
+            </label>
+          ))}
+          {!h.packages.length && <p className="muted">暂无可绑定套餐。</p>}
+        </div>
+      </Field>
     </Modal>
   </Card>
+}
+
+function institutionPackageIds(institution) {
+  const ids = new Set((institution.packageIds || []).map(Number).filter(Boolean))
+  for (const pkg of institution.packages || []) ids.add(Number(pkg.id))
+  return Array.from(ids)
+}
+
+function institutionPackageNames(institution, packages) {
+  const ids = institutionPackageIds(institution)
+  if (!ids.length) return <span className="muted">未绑定</span>
+  const names = ids.map((id) => packages.find((pkg) => Number(pkg.id) === id)?.name || `套餐 #${id}`)
+  return names.join('、')
 }
 
 function CheckupItemPanel({ h }) {
