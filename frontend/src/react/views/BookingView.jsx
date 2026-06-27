@@ -22,7 +22,8 @@ export function BookingView() {
   const selectedPackageItems = [...(selectedPackage?.packageItems || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || Number(a.id || 0) - Number(b.id || 0))
   const selectedPackageItemIds = new Set((form.selectedPackageItemIds || []).map(Number))
   const optionalAmount = selectedPackageItems.filter((item) => !item.required && selectedPackageItemIds.has(item.id)).reduce((sum, item) => sum + Number(item.item?.price || 0), 0)
-  const selectedInstitution = h.institutions.find((item) => item.id === Number(form.institutionId))
+  const supportedInstitutions = h.institutions.filter((institution) => institutionSupportsPackage(institution, selectedPackage?.id))
+  const selectedInstitution = supportedInstitutions.find((item) => item.id === Number(form.institutionId))
   const selectedSlot = h.slots.find((slot) => slot.id === Number(form.slotId))
   const selectedMember = h.familyMembers.find((member) => member.id === Number(form.familyMemberId))
   const originalAmount = Number(selectedPackage?.price || 0) + optionalAmount
@@ -41,7 +42,12 @@ export function BookingView() {
   const visibleDate = form.date || firstAvailableDate || days[0]?.value || ''
   const slotsByTime = groupSlotsByDateTime(filteredSlots)
   const selectedDaySlots = slotsByTime[visibleDate] || []
-  const canNext = [Boolean(form.packageId), Boolean(form.institutionId), Boolean(form.slotId || form.period), true][step]
+  const canNext = [Boolean(form.packageId), Boolean(selectedInstitution), Boolean(form.slotId || form.period), true][step]
+  useEffect(() => {
+    if (form.institutionId && selectedPackage?.id && !selectedInstitution) {
+      h.updateForm('appointment', { institutionId: '', slotId: '', date: '', period: '' })
+    }
+  }, [form.institutionId, selectedPackage?.id, selectedInstitution?.id])
   const next = () => {
     if (!canNext) {
       h.notify('warn', ['请选择套餐', '请选择体检机构', '请选择日期和号源', ''][step])
@@ -51,7 +57,7 @@ export function BookingView() {
   }
   const selectPackage = (pkg) => {
     const requiredIds = (pkg.packageItems || []).filter((item) => item.required).map((item) => item.id)
-    h.updateForm('appointment', { packageId: pkg.id, selectedPackageItemIds: requiredIds, slotId: '', date: '', period: '' })
+    h.updateForm('appointment', { packageId: pkg.id, institutionId: '', selectedPackageItemIds: requiredIds, slotId: '', date: '', period: '' })
   }
   const toggleOptionalItem = (item) => {
     if (item.required) return
@@ -93,7 +99,7 @@ export function BookingView() {
         {step === 1 && (
           <>
           <div className="choice-grid">
-            {h.institutions.map((institution) => (
+            {supportedInstitutions.map((institution) => (
               <button key={institution.id} className={`choice-card ${Number(form.institutionId) === institution.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { institutionId: institution.id, slotId: '', date: '', period: '' })}>
                 <span>{institution.openHours || '营业中'}</span>
                 <strong>{institution.name}</strong>
@@ -102,7 +108,7 @@ export function BookingView() {
               </button>
             ))}
           </div>
-          {!h.institutions.length && <p className="muted">{h.loading.load ? '机构加载中...' : '暂无可预约机构。'}</p>}
+          {!supportedInstitutions.length && <p className="muted">{h.loading.load ? '机构加载中...' : '该套餐暂无可预约机构，请联系管理员先绑定机构。'}</p>}
           </>
         )}
         {step === 2 && (
@@ -219,6 +225,13 @@ function nextDays(count) {
       week: index === 0 ? '今天' : formatter.format(date),
     }
   })
+}
+
+function institutionSupportsPackage(institution, packageId) {
+  if (!packageId) return false
+  const id = Number(packageId)
+  if ((institution.packageIds || []).map(Number).includes(id)) return true
+  return (institution.packages || []).some((pkg) => Number(pkg.id) === id)
 }
 
 function groupSlotsByDateTime(slots) {

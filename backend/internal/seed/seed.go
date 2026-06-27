@@ -333,6 +333,9 @@ func Run(db *gorm.DB) error {
 	if err := seedPackageItems(db, packages, items); err != nil {
 		return err
 	}
+	if err := seedInstitutionPackages(db, institutions, packages); err != nil {
+		return err
+	}
 
 	coupons := []models.Coupon{
 		{Name: "新客体检立减", Code: "NEW50", Type: "amount", Value: 50, MinAmount: 199, Status: "active", Description: "新用户预约体检可用，结算页展示活动价。"},
@@ -594,6 +597,31 @@ func seedPackageItems(db *gorm.DB, packages []models.CheckupPackage, items []mod
 		}
 	}
 	return db.Create(&links).Error
+}
+
+func seedInstitutionPackages(db *gorm.DB, institutions []models.CheckupInstitution, packages []models.CheckupPackage) error {
+	if len(institutions) == 0 || len(packages) == 0 {
+		return nil
+	}
+	links := make([]models.InstitutionPackage, 0, len(institutions)*len(packages))
+	for _, institution := range institutions {
+		if institution.ID == 0 || institution.Status != "active" {
+			continue
+		}
+		for _, pkg := range packages {
+			if pkg.ID == 0 || pkg.Status != "active" {
+				continue
+			}
+			links = append(links, models.InstitutionPackage{InstitutionID: institution.ID, PackageID: pkg.ID})
+		}
+	}
+	for _, link := range links {
+		if err := db.Where(models.InstitutionPackage{InstitutionID: link.InstitutionID, PackageID: link.PackageID}).
+			FirstOrCreate(&link).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func demoScheduleSlots(now time.Time, doctors []models.User, institutions []models.CheckupInstitution, packages []models.CheckupPackage) []models.ScheduleSlot {

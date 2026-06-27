@@ -39,7 +39,7 @@ const defaultForms = {
   reschedule: { appointmentId: null, institutionId: '', slotId: '', date: '', period: '', note: '' },
   invoice: { appointmentId: null, invoiceTitle: '', invoiceTaxNo: '' },
   package: { id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' },
-  institution: { id: null, name: '', address: '', phone: '', openHours: '', status: 'active' },
+  institution: { id: null, name: '', address: '', phone: '', openHours: '', status: 'active', packageIds: [] },
   coupon: { id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: '', applyMode: 'auto', audience: 'all', firstOrderOnly: false, status: 'active', startDate: '', endDate: '', description: '' },
   review: { appointmentId: '', rating: 5, content: '' },
   reviewReply: { id: null, reply: '', status: 'published' },
@@ -471,7 +471,17 @@ export function HealthProvider({ children }) {
       await loadAll()
     }),
     archivePackage: (pkg) => action('package', '套餐已归档', async () => { await request(`/packages/${pkg.id}`, { method: 'DELETE' }); await loaders.loadPackagesPage() }),
-    saveInstitution: () => action('institution', '体检机构已保存', async () => { const body = JSON.stringify(forms.institution); if (forms.institution.id) await request(`/institutions/${forms.institution.id}`, { method: 'PATCH', body }); else await request('/institutions', { method: 'POST', body }); resetForm('institution'); await loaders.loadInstitutionsPage() }),
+    saveInstitution: () => action('institution', '体检机构已保存', async () => {
+      const body = JSON.stringify({
+        ...forms.institution,
+        packageIds: (forms.institution.packageIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0),
+      })
+      if (forms.institution.id) await request(`/institutions/${forms.institution.id}`, { method: 'PATCH', body })
+      else await request('/institutions', { method: 'POST', body })
+      resetForm('institution')
+      await loaders.loadInstitutionsPage()
+      await loaders.loadInstitutions()
+    }),
     archiveInstitution: (row) => action('institution', '体检机构已归档', async () => { await request(`/institutions/${row.id}`, { method: 'DELETE' }); await loaders.loadInstitutionsPage() }),
     saveCheckupItem: () => action('checkupItem', '体检项目已保存', async () => { const body = JSON.stringify({ ...forms.checkupItem, price: Number(forms.checkupItem.price || 0), durationMin: Number(forms.checkupItem.durationMin || 10) }); if (forms.checkupItem.id) await request(`/checkup-items/${forms.checkupItem.id}`, { method: 'PATCH', body }); else await request('/checkup-items', { method: 'POST', body }); resetForm('checkupItem'); await loaders.loadCheckupItemsPage() }),
     archiveCheckupItem: (row) => action('checkupItem', '体检项目已归档', async () => { await request(`/checkup-items/${row.id}`, { method: 'DELETE' }); await loaders.loadCheckupItemsPage() }),
