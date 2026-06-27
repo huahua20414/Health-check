@@ -75,6 +75,7 @@ function localizeApiError(message) {
     'issue token failed': '登录凭证生成失败，请稍后再试',
     'name is required': '请输入姓名',
     'invalid id card': '身份证号无效',
+    'appointment already exists for this time slot': '这个时间段已经有预约了，不能重复预约',
     'schedule slot overlaps with existing slot': '该医生在这个时间段已有号源，请调整时间后再试',
     'capacity cannot be lower than booked count': '容量不能小于已预约人数',
     'missing bearer token': '登录已过期，请重新登录',

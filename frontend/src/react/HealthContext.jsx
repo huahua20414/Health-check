@@ -445,7 +445,7 @@ export function HealthProvider({ children }) {
       return result
     }),
     joinWaitlist: (slot) => action('appointment', '已提交候补请求', async () => {
-      const body = appointmentPayload({ ...forms.waitlist, appointmentType: forms.appointment.appointmentType, institutionId: forms.appointment.institutionId, packageId: forms.appointment.packageId, familyMemberId: forms.appointment.familyMemberId, date: forms.appointment.date, period: slot?.period || forms.appointment.period, note: forms.appointment.note, slotId: slot?.id || 0, selectedPackageItemIds: forms.appointment.selectedPackageItemIds })
+      const body = appointmentPayload({ ...forms.waitlist, appointmentType: forms.appointment.appointmentType, institutionId: forms.appointment.institutionId, packageId: forms.appointment.packageId, familyMemberId: forms.appointment.familyMemberId, date: slot?.date || forms.appointment.date, period: slot?.period || forms.appointment.period, note: forms.appointment.note, slotId: slot?.id || 0, selectedPackageItemIds: forms.appointment.selectedPackageItemIds })
       await request('/appointments', { method: 'POST', body: JSON.stringify(body) })
       await loadAll()
     }),

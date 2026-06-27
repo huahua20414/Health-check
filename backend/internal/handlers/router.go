@@ -1034,6 +1034,9 @@ func (h *Handler) createAppointment(c *gin.Context) {
 				Note:            req.Note,
 				Status:          "waiting",
 			}
+			if hasDuplicateAppointmentAtTime(tx, current.ID, req.FamilyMemberID, waitDate, waitStartTime, waitPeriod) {
+				return fmt.Errorf("appointment already exists for this time slot")
+			}
 			var existingWait models.WaitlistEntry
 			duplicateQuery := tx.Preload("Institution").Preload("Package").
 				Where("user_id = ? AND package_id = ? AND institution_id = ? AND category = ? AND date = ? AND period = ? AND status = ?", current.ID, req.PackageID, waitInstitutionID, pkg.Category, waitDate, waitPeriod, "waiting")
@@ -1054,6 +1057,9 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		selectedItems, extraAmount, itemErr := h.selectedAppointmentItems(tx, req.PackageID, req.SelectedPackageItemIDs)
 		if itemErr != nil {
 			return itemErr
+		}
+		if hasDuplicateAppointmentAtTime(tx, current.ID, req.FamilyMemberID, slot.Date, slot.StartTime, slot.Period) {
+			return fmt.Errorf("appointment already exists for this time slot")
 		}
 		pricing, pricingErr := h.appointmentPricing(tx, current.ID, pkg, extraAmount)
 		if pricingErr != nil {
@@ -1121,7 +1127,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		result = gin.H{"type": "appointment", "appointment": appointment}
 		return nil
 	}); err != nil {
-		if strings.HasPrefix(err.Error(), "coupon ") || strings.Contains(err.Error(), "selected package item") {
+		if strings.HasPrefix(err.Error(), "coupon ") || strings.Contains(err.Error(), "selected package item") || err.Error() == "appointment already exists for this time slot" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -5704,6 +5710,21 @@ func ageFromIDCard(idCard string, now time.Time) (int, bool) {
 		return 0, false
 	}
 	return age, true
+}
+
+func hasDuplicateAppointmentAtTime(tx *gorm.DB, userID, familyMemberID uint, date, startTime, period string) bool {
+	query := tx.Model(&models.Appointment{}).
+		Where("user_id = ? AND family_member_id = ? AND date = ? AND status <> ?", userID, familyMemberID, date, "canceled")
+	if strings.TrimSpace(startTime) != "" {
+		query = query.Where("start_time = ?", startTime)
+	} else {
+		query = query.Where("period = ?", period)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
 }
 
 func normalizeIDCard(value string) string {

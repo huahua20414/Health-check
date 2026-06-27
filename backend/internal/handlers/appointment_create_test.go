@@ -148,6 +148,84 @@ func TestCreateAppointmentRejectsUnsupportedInstitutionPackage(t *testing.T) {
 	assertErrorMessage(t, response.Body.Bytes(), "institution does not support selected package")
 }
 
+func TestCreateAppointmentRejectsDuplicateTimeSlotAcrossDoctors(t *testing.T) {
+	handler, db, fixture := newAppointmentCreateFixture(t)
+	otherDoctor := models.User{ID: 201, Name: "医生乙", Phone: "13800000201", Email: "doctor2@example.com", Role: "doctor", Status: "active", PasswordHash: "hash"}
+	otherSlot := models.ScheduleSlot{ID: 31, DoctorID: otherDoctor.ID, InstitutionID: fixture.institution.ID, Date: fixture.slot.Date, Period: fixture.slot.Period, Category: fixture.pkg.Category, StartTime: fixture.slot.StartTime, EndTime: fixture.slot.EndTime, Capacity: 3, BookedCount: 0, Status: "available"}
+	if err := db.Create(&otherDoctor).Error; err != nil {
+		t.Fatalf("create other doctor: %v", err)
+	}
+	if err := db.Create(&otherSlot).Error; err != nil {
+		t.Fatalf("create other slot: %v", err)
+	}
+	router := newAppointmentCreateRouter(handler, fixture.user)
+
+	first := performCreateAppointmentRequest(t, router, appointmentRequest{
+		PackageID:       fixture.pkg.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          fixture.slot.ID,
+		AppointmentType: "个人体检",
+		Date:            fixture.slot.Date,
+		Period:          fixture.slot.Period,
+	})
+	if first.Code != http.StatusCreated {
+		t.Fatalf("expected first appointment 201, got %d: %s", first.Code, first.Body.String())
+	}
+
+	second := performCreateAppointmentRequest(t, router, appointmentRequest{
+		PackageID:       fixture.pkg.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          otherSlot.ID,
+		AppointmentType: "个人体检",
+		Date:            otherSlot.Date,
+		Period:          otherSlot.Period,
+	})
+	if second.Code != http.StatusBadRequest {
+		t.Fatalf("expected duplicate appointment 400, got %d: %s", second.Code, second.Body.String())
+	}
+	assertErrorMessage(t, second.Body.Bytes(), "appointment already exists for this time slot")
+}
+
+func TestCreateAppointmentRejectsDuplicateWaitlistAtSameTime(t *testing.T) {
+	handler, db, fixture := newAppointmentCreateFixture(t)
+	if err := db.Model(&models.ScheduleSlot{}).Where("id = ?", fixture.slot.ID).Update("booked_count", fixture.slot.Capacity).Error; err != nil {
+		t.Fatalf("fill slot: %v", err)
+	}
+	existing := models.Appointment{
+		ID:              88,
+		OrderNo:         "HCDUP0001",
+		UserID:          fixture.user.ID,
+		DoctorID:        fixture.doctor.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          fixture.slot.ID,
+		PackageID:       fixture.pkg.ID,
+		AppointmentType: "个人体检",
+		Category:        fixture.pkg.Category,
+		Date:            fixture.slot.Date,
+		Period:          fixture.slot.Period,
+		StartTime:       fixture.slot.StartTime,
+		EndTime:         fixture.slot.EndTime,
+		Status:          "booked",
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing appointment: %v", err)
+	}
+	router := newAppointmentCreateRouter(handler, fixture.user)
+
+	response := performCreateAppointmentRequest(t, router, appointmentRequest{
+		PackageID:       fixture.pkg.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          fixture.slot.ID,
+		AppointmentType: "个人体检",
+		Date:            fixture.slot.Date,
+		Period:          fixture.slot.Period,
+	})
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected duplicate waitlist 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "appointment already exists for this time slot")
+}
+
 type appointmentCreateFixture struct {
 	user               models.User
 	doctor             models.User
