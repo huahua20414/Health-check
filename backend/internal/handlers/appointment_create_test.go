@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,30 +16,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestCreateAppointmentSnapshotsCouponPricing(t *testing.T) {
+func TestCreateAppointmentAutoAppliesBestCoupon(t *testing.T) {
 	handler, db, fixture := newAppointmentCreateFixture(t)
-	router := newAppointmentCreateRouter(handler, fixture.user)
-
-	response := performCreateAppointmentRequest(t, router, appointmentRequest{
-		PackageID:       fixture.pkg.ID,
-		InstitutionID:   fixture.institution.ID,
-		SlotID:          fixture.slot.ID,
-		CouponID:        fixture.amountCoupon.ID,
-		AppointmentType: "个人体检",
-		Date:            fixture.slot.Date,
-		Period:          fixture.slot.Period,
-		PaymentStatus:   "paid",
-	})
-
-	appointment := decodeCreateAppointmentResponse(t, response)
-	if appointment.OriginalAmount != 399 || appointment.DiscountAmount != 50 || appointment.PayableAmount != 349 || appointment.CouponID != fixture.amountCoupon.ID {
-		t.Fatalf("unexpected pricing snapshot: %#v", appointment)
-	}
-	assertCreatedAppointmentPricing(t, db, appointment.ID, 399, 50, 349)
-}
-
-func TestCreateAppointmentRejectsCouponBelowMinimumAmount(t *testing.T) {
-	handler, _, fixture := newAppointmentCreateFixture(t)
+	createHistoricalAppointment(t, db, fixture.user.ID, fixture.pkg.ID, fixture.institution.ID)
 	router := newAppointmentCreateRouter(handler, fixture.user)
 
 	response := performCreateAppointmentRequest(t, router, appointmentRequest{
@@ -49,52 +29,71 @@ func TestCreateAppointmentRejectsCouponBelowMinimumAmount(t *testing.T) {
 		AppointmentType: "个人体检",
 		Date:            fixture.slot.Date,
 		Period:          fixture.slot.Period,
+		PaymentStatus:   "paid",
 	})
 
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	appointment := decodeCreateAppointmentResponse(t, response)
+	if appointment.CouponID != fixture.percentCoupon.ID || !floatEquals(appointment.OriginalAmount, 399) || !floatEquals(appointment.DiscountAmount, 79.8) || !floatEquals(appointment.PayableAmount, 319.2) {
+		t.Fatalf("unexpected pricing snapshot: %#v", appointment)
 	}
-	assertErrorMessage(t, response.Body.Bytes(), "coupon minimum amount not reached")
+	assertCreatedAppointmentPricing(t, db, appointment.ID, 399, 79.8, 319.2)
 }
 
-func TestCreateAppointmentRejectsExpiredCoupon(t *testing.T) {
-	handler, _, fixture := newAppointmentCreateFixture(t)
+func TestCreateAppointmentAutoAppliesFirstOrderCouponOnlyForFirstOrder(t *testing.T) {
+	handler, db, fixture := newAppointmentCreateFixture(t)
 	router := newAppointmentCreateRouter(handler, fixture.user)
 
 	response := performCreateAppointmentRequest(t, router, appointmentRequest{
 		PackageID:       fixture.pkg.ID,
 		InstitutionID:   fixture.institution.ID,
 		SlotID:          fixture.slot.ID,
-		CouponID:        fixture.expiredCoupon.ID,
 		AppointmentType: "个人体检",
 		Date:            fixture.slot.Date,
 		Period:          fixture.slot.Period,
 	})
-
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	appointment := decodeCreateAppointmentResponse(t, response)
+	if appointment.CouponID != fixture.newUserCoupon.ID || appointment.DiscountAmount != 100 || appointment.PayableAmount != 299 {
+		t.Fatalf("expected first order coupon, got %#v", appointment)
 	}
-	assertErrorMessage(t, response.Body.Bytes(), "coupon is expired")
+
+	secondSlot := models.ScheduleSlot{ID: 31, DoctorID: fixture.doctor.ID, InstitutionID: fixture.institution.ID, Date: "2026-07-02", Period: "上午", Category: fixture.pkg.Category, StartTime: "09:00", EndTime: "09:30", Capacity: 1, Status: "available"}
+	if err := db.Create(&secondSlot).Error; err != nil {
+		t.Fatalf("create second slot: %v", err)
+	}
+	secondResponse := performCreateAppointmentRequest(t, router, appointmentRequest{
+		PackageID:       fixture.pkg.ID,
+		InstitutionID:   fixture.institution.ID,
+		SlotID:          secondSlot.ID,
+		AppointmentType: "个人体检",
+		Date:            secondSlot.Date,
+		Period:          secondSlot.Period,
+	})
+	secondAppointment := decodeCreateAppointmentResponse(t, secondResponse)
+	if secondAppointment.CouponID != fixture.percentCoupon.ID || !floatEquals(secondAppointment.DiscountAmount, 79.8) || !floatEquals(secondAppointment.PayableAmount, 319.2) {
+		t.Fatalf("expected non-new-user coupon on second order, got %#v", secondAppointment)
+	}
 }
 
-func TestCreateAppointmentRejectsPackageSpecificCouponMismatch(t *testing.T) {
-	handler, _, fixture := newAppointmentCreateFixture(t)
+func TestCreateAppointmentIgnoresInvalidAutoCoupons(t *testing.T) {
+	handler, db, fixture := newAppointmentCreateFixture(t)
+	if err := db.Model(&models.Coupon{}).Where("id IN ?", []uint{fixture.percentCoupon.ID, fixture.newUserCoupon.ID}).Update("status", "disabled").Error; err != nil {
+		t.Fatalf("disable competing coupons: %v", err)
+	}
 	router := newAppointmentCreateRouter(handler, fixture.user)
 
 	response := performCreateAppointmentRequest(t, router, appointmentRequest{
 		PackageID:       fixture.pkg.ID,
 		InstitutionID:   fixture.institution.ID,
 		SlotID:          fixture.slot.ID,
-		CouponID:        fixture.otherPackageCoupon.ID,
 		AppointmentType: "个人体检",
 		Date:            fixture.slot.Date,
 		Period:          fixture.slot.Period,
 	})
 
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	appointment := decodeCreateAppointmentResponse(t, response)
+	if appointment.CouponID != fixture.amountCoupon.ID || appointment.DiscountAmount != 50 || appointment.PayableAmount != 349 {
+		t.Fatalf("expected invalid coupons to be ignored and valid amount coupon applied, got %#v", appointment)
 	}
-	assertErrorMessage(t, response.Body.Bytes(), "coupon does not apply to this package")
 }
 
 func TestCreateAppointmentWaitlistCreatesNotifications(t *testing.T) {
@@ -138,6 +137,8 @@ type appointmentCreateFixture struct {
 	otherPackage       models.CheckupPackage
 	slot               models.ScheduleSlot
 	amountCoupon       models.Coupon
+	percentCoupon      models.Coupon
+	newUserCoupon      models.Coupon
 	highMinimumCoupon  models.Coupon
 	expiredCoupon      models.Coupon
 	otherPackageCoupon models.Coupon
@@ -165,14 +166,16 @@ func newAppointmentCreateFixture(t *testing.T) (*Handler, *gorm.DB, appointmentC
 		pkg:                models.CheckupPackage{ID: 20, Name: "年度体检", Category: "年度综合", Price: 399, Items: "血常规", Status: "active"},
 		otherPackage:       models.CheckupPackage{ID: 21, Name: "专项体检", Category: "影像专项", Price: 199, Items: "CT", Status: "active"},
 		slot:               models.ScheduleSlot{ID: 30, DoctorID: 200, InstitutionID: 10, Date: "2026-07-01", Period: "上午", Category: "年度综合", StartTime: "09:00", EndTime: "09:30", Capacity: 3, BookedCount: 0, Status: "available"},
-		amountCoupon:       models.Coupon{ID: 40, Name: "立减券", Code: "SAVE50", Type: "amount", Value: 50, MinAmount: 100, Status: "active", StartDate: "2026-01-01", EndDate: "2026-12-31"},
-		highMinimumCoupon:  models.Coupon{ID: 41, Name: "高门槛券", Code: "SAVE500", Type: "amount", Value: 100, MinAmount: 500, Status: "active", StartDate: "2026-01-01", EndDate: "2026-12-31"},
-		expiredCoupon:      models.Coupon{ID: 42, Name: "过期券", Code: "OLD50", Type: "amount", Value: 50, MinAmount: 0, Status: "active", StartDate: "2025-01-01", EndDate: "2025-12-31"},
-		otherPackageCoupon: models.Coupon{ID: 43, Name: "专项券", Code: "IMG20", Type: "amount", Value: 20, MinAmount: 0, PackageID: 21, Status: "active", StartDate: "2026-01-01", EndDate: "2026-12-31"},
+		amountCoupon:       models.Coupon{ID: 40, Name: "立减券", Code: "SAVE50", Type: "amount", Value: 50, MinAmount: 100, ApplyMode: "auto", Audience: "all", Status: "active"},
+		percentCoupon:      models.Coupon{ID: 41, Name: "八折券", Code: "OFF20", Type: "percent", Value: 20, MinAmount: 100, ApplyMode: "auto", Audience: "all", Status: "active"},
+		newUserCoupon:      models.Coupon{ID: 42, Name: "新人立减", Code: "NEW100", Type: "amount", Value: 100, MinAmount: 0, ApplyMode: "auto", Audience: "new_user", FirstOrderOnly: true, Status: "active"},
+		highMinimumCoupon:  models.Coupon{ID: 43, Name: "高门槛券", Code: "SAVE500", Type: "amount", Value: 100, MinAmount: 500, ApplyMode: "auto", Status: "active"},
+		expiredCoupon:      models.Coupon{ID: 44, Name: "过期券", Code: "OLD50", Type: "amount", Value: 300, MinAmount: 0, ApplyMode: "auto", Status: "active", StartDate: "2025-01-01", EndDate: "2025-12-31"},
+		otherPackageCoupon: models.Coupon{ID: 45, Name: "专项券", Code: "IMG20", Type: "amount", Value: 300, MinAmount: 0, PackageID: 21, ApplyMode: "auto", Status: "active"},
 	}
 	inAppSetting := models.SystemSetting{Key: "notification.in_app_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "站内信通知", Status: "active"}
 	smsSetting := models.SystemSetting{Key: "notification.sms_mock_enabled", Value: "true", ValueType: "boolean", Group: "notification", Label: "短信模拟通知", Status: "active"}
-	for _, row := range []any{&fixture.user, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.otherPackage, &fixture.slot, &fixture.amountCoupon, &fixture.highMinimumCoupon, &fixture.expiredCoupon, &fixture.otherPackageCoupon, &inAppSetting, &smsSetting} {
+	for _, row := range []any{&fixture.user, &fixture.doctor, &fixture.institution, &fixture.pkg, &fixture.otherPackage, &fixture.slot, &fixture.amountCoupon, &fixture.percentCoupon, &fixture.newUserCoupon, &fixture.highMinimumCoupon, &fixture.expiredCoupon, &fixture.otherPackageCoupon, &inAppSetting, &smsSetting} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create fixture row %#v: %v", row, err)
 		}
@@ -227,9 +230,34 @@ func assertCreatedAppointmentPricing(t *testing.T, db *gorm.DB, appointmentID ui
 	if err := db.First(&appointment, appointmentID).Error; err != nil {
 		t.Fatalf("load appointment: %v", err)
 	}
-	if appointment.OriginalAmount != original || appointment.DiscountAmount != discount || appointment.PayableAmount != payable {
+	if !floatEquals(appointment.OriginalAmount, original) || !floatEquals(appointment.DiscountAmount, discount) || !floatEquals(appointment.PayableAmount, payable) {
 		t.Fatalf("expected pricing %.2f/%.2f/%.2f, got %.2f/%.2f/%.2f", original, discount, payable, appointment.OriginalAmount, appointment.DiscountAmount, appointment.PayableAmount)
 	}
+}
+
+func createHistoricalAppointment(t *testing.T, db *gorm.DB, userID, packageID, institutionID uint) {
+	t.Helper()
+	appointment := models.Appointment{
+		ID:              900,
+		OrderNo:         "HC202601010001",
+		UserID:          userID,
+		InstitutionID:   institutionID,
+		PackageID:       packageID,
+		AppointmentType: "个人体检",
+		Category:        "年度综合",
+		Date:            "2026-01-01",
+		Period:          "上午",
+		Status:          "booked",
+		OriginalAmount:  399,
+		PayableAmount:   399,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create historical appointment: %v", err)
+	}
+}
+
+func floatEquals(got, want float64) bool {
+	return math.Abs(got-want) < 0.001
 }
 
 func assertCreateNotificationChannelCount(t *testing.T, db *gorm.DB, userID uint, kind, channel string, want int64) {

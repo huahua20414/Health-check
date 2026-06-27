@@ -68,6 +68,21 @@ export function announcementAudienceText(audience) {
   return { user: '用户公告', doctor: '医生公告', all: '全部公告', admin: '管理员公告' }[audience] || audience || '-'
 }
 
+export function couponApplyModeText(mode) {
+  return { auto: '自动生效', manual: '手动使用' }[mode || 'auto'] || mode || '-'
+}
+
+export function couponAudienceText(audience) {
+  return { all: '全部用户', new_user: '新人首单' }[audience || 'all'] || audience || '-'
+}
+
+export function couponDiscountText(coupon) {
+  if (!coupon) return '-'
+  const value = Number(coupon.value || 0)
+  if (coupon.type === 'percent') return `减免 ${value}%`
+  return moneyText(value)
+}
+
 export function moneyText(value) {
   const amount = Number(value)
   if (!Number.isFinite(amount)) return '-'

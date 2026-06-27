@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Field, PageHeader, Select, TextInput, Textarea, StatusTag } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { appointmentTypes, localDateString, moneyText } from '../utils'
+import { appointmentTypes, couponDiscountText, localDateString, moneyText } from '../utils'
 
 const bookingSteps = ['选择套餐', '选择机构', '选择号源', '确认提交']
 
@@ -25,7 +25,12 @@ export function BookingView() {
   const selectedInstitution = h.institutions.find((item) => item.id === Number(form.institutionId))
   const selectedSlot = h.slots.find((slot) => slot.id === Number(form.slotId))
   const selectedMember = h.familyMembers.find((member) => member.id === Number(form.familyMemberId))
-  const selectedCoupon = h.activeCoupons.find((coupon) => coupon.id === Number(form.couponId))
+  const originalAmount = Number(selectedPackage?.price || 0) + optionalAmount
+  const visibleAutoCoupons = h.activeCoupons.filter((coupon) => {
+    if (coupon.packageId && selectedPackage?.id && Number(coupon.packageId) !== Number(selectedPackage.id)) return false
+    if (coupon.minAmount && originalAmount > 0 && originalAmount < Number(coupon.minAmount)) return false
+    return true
+  }).slice(0, 3)
   const days = useMemo(() => nextDays(14), [])
   const filteredSlots = h.slots.filter((slot) => {
     if (form.institutionId && slot.institutionId !== Number(form.institutionId)) return false
@@ -160,12 +165,16 @@ export function BookingView() {
             <div className="form-grid compact booking-extra-form">
               <Field label="预约类型"><Select value={form.appointmentType} onChange={(e) => h.updateForm('appointment', { appointmentType: e.target.value })}>{appointmentTypes.map((t) => <option key={t}>{t}</option>)}</Select></Field>
               <Field label="家庭成员"><Select value={form.familyMemberId} onChange={(e) => h.updateForm('appointment', { familyMemberId: e.target.value })}><option value="">本人</option>{h.familyMembers.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.relation}</option>)}</Select></Field>
-              <Field label="优惠券"><Select value={form.couponId} onChange={(e) => h.updateForm('appointment', { couponId: e.target.value })}><option value="">不使用</option>{h.activeCoupons.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
               <Field label="发票抬头"><TextInput value={form.invoiceTitle} onChange={(e) => h.updateForm('appointment', { invoiceTitle: e.target.value })} /></Field>
               <Field label="发票税号"><TextInput value={form.invoiceTaxNo} onChange={(e) => h.updateForm('appointment', { invoiceTaxNo: e.target.value })} /></Field>
               <Field label="备注"><Textarea value={form.note} onChange={(e) => h.updateForm('appointment', { note: e.target.value })} /></Field>
             </div>
-            {selectedCoupon && <p className="muted">已选择优惠券：{selectedCoupon.name}</p>}
+            <div className="auto-discount-panel">
+              <div><span>原价</span><strong>{moneyText(originalAmount)}</strong></div>
+              <div><span>优惠方式</span><strong>系统自动匹配最优活动</strong></div>
+              <div><span>可用活动</span><strong>{visibleAutoCoupons.length ? visibleAutoCoupons.map((coupon) => `${coupon.name}（${couponDiscountText(coupon)}）`).join('、') : '暂无可用自动优惠'}</strong></div>
+              <p>最终优惠和应付金额以后端提交结果为准，新人首单活动会自动判断。</p>
+            </div>
           </div>
         )}
         <div className="booking-actions">

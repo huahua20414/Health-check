@@ -740,6 +740,7 @@ func (h *Handler) activeCoupons(c *gin.Context) {
 	var coupons []models.Coupon
 	today := time.Now().Format("2006-01-02")
 	query := h.db.Where("status = ?", "active").
+		Where("(apply_mode = '' OR apply_mode = ?)", "auto").
 		Where("(start_date = '' OR start_date <= ?) AND (end_date = '' OR end_date >= ?)", today, today).
 		Order("value desc, created_at desc").
 		Limit(20)
@@ -914,7 +915,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 		if itemErr != nil {
 			return itemErr
 		}
-		pricing, pricingErr := h.appointmentPricing(tx, pkg, req.CouponID, slot.Date, extraAmount)
+		pricing, pricingErr := h.appointmentPricing(tx, current.ID, pkg, extraAmount)
 		if pricingErr != nil {
 			return pricingErr
 		}
@@ -930,7 +931,7 @@ func (h *Handler) createAppointment(c *gin.Context) {
 			InstitutionID:   slot.InstitutionID,
 			SlotID:          slot.ID,
 			PackageID:       req.PackageID,
-			CouponID:        req.CouponID,
+			CouponID:        pricing.CouponID,
 			AppointmentType: appointmentType,
 			Category:        pkg.Category,
 			Date:            slot.Date,
@@ -2915,16 +2916,19 @@ func (h *Handler) createCoupon(c *gin.Context) {
 		return
 	}
 	coupon := models.Coupon{
-		Name:        strings.TrimSpace(req.Name),
-		Code:        strings.ToUpper(strings.TrimSpace(req.Code)),
-		Type:        normalizeStatus(req.Type, "amount"),
-		Value:       req.Value,
-		MinAmount:   req.MinAmount,
-		PackageID:   req.PackageID,
-		Status:      normalizeStatus(req.Status, "active"),
-		StartDate:   req.StartDate,
-		EndDate:     req.EndDate,
-		Description: req.Description,
+		Name:           strings.TrimSpace(req.Name),
+		Code:           strings.ToUpper(strings.TrimSpace(req.Code)),
+		Type:           normalizeStatus(req.Type, "amount"),
+		Value:          req.Value,
+		MinAmount:      req.MinAmount,
+		PackageID:      req.PackageID,
+		ApplyMode:      normalizeCouponApplyMode(req.ApplyMode),
+		Audience:       normalizeCouponAudience(req.Audience),
+		FirstOrderOnly: req.FirstOrderOnly,
+		Status:         normalizeStatus(req.Status, "active"),
+		StartDate:      req.StartDate,
+		EndDate:        req.EndDate,
+		Description:    req.Description,
 	}
 	if err := h.db.Create(&coupon).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2945,16 +2949,19 @@ func (h *Handler) updateCoupon(c *gin.Context) {
 		return
 	}
 	updates := map[string]any{
-		"name":        strings.TrimSpace(req.Name),
-		"code":        strings.ToUpper(strings.TrimSpace(req.Code)),
-		"type":        normalizeStatus(req.Type, "amount"),
-		"value":       req.Value,
-		"min_amount":  req.MinAmount,
-		"package_id":  req.PackageID,
-		"status":      normalizeStatus(req.Status, "active"),
-		"start_date":  req.StartDate,
-		"end_date":    req.EndDate,
-		"description": req.Description,
+		"name":             strings.TrimSpace(req.Name),
+		"code":             strings.ToUpper(strings.TrimSpace(req.Code)),
+		"type":             normalizeStatus(req.Type, "amount"),
+		"value":            req.Value,
+		"min_amount":       req.MinAmount,
+		"package_id":       req.PackageID,
+		"apply_mode":       normalizeCouponApplyMode(req.ApplyMode),
+		"audience":         normalizeCouponAudience(req.Audience),
+		"first_order_only": req.FirstOrderOnly,
+		"status":           normalizeStatus(req.Status, "active"),
+		"start_date":       req.StartDate,
+		"end_date":         req.EndDate,
+		"description":      req.Description,
 	}
 	if err := h.db.Model(&models.Coupon{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2989,7 +2996,7 @@ func (h *Handler) exportCoupons(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="coupons.csv"`)
 	writer := csv.NewWriter(c.Writer)
-	_ = writer.Write([]string{"code", "name", "type", "value", "min_amount", "package_id", "start_date", "end_date", "status", "description"})
+	_ = writer.Write([]string{"code", "name", "type", "value", "min_amount", "package_id", "apply_mode", "audience", "first_order_only", "start_date", "end_date", "status", "description"})
 	for _, coupon := range coupons {
 		_ = writer.Write([]string{
 			coupon.Code,
@@ -2998,6 +3005,9 @@ func (h *Handler) exportCoupons(c *gin.Context) {
 			fmt.Sprintf("%.2f", coupon.Value),
 			fmt.Sprintf("%.2f", coupon.MinAmount),
 			strconv.Itoa(int(coupon.PackageID)),
+			normalizeCouponApplyMode(coupon.ApplyMode),
+			normalizeCouponAudience(coupon.Audience),
+			strconv.FormatBool(coupon.FirstOrderOnly),
 			coupon.StartDate,
 			coupon.EndDate,
 			coupon.Status,
@@ -4244,51 +4254,91 @@ func containsString(values []string, target string) bool {
 }
 
 type appointmentPricing struct {
+	CouponID       uint
 	OriginalAmount float64
 	DiscountAmount float64
 	PayableAmount  float64
 }
 
-func (h *Handler) appointmentPricing(db *gorm.DB, pkg models.CheckupPackage, couponID uint, appointmentDate string, extraAmount float64) (appointmentPricing, error) {
+func (h *Handler) appointmentPricing(db *gorm.DB, userID uint, pkg models.CheckupPackage, extraAmount float64) (appointmentPricing, error) {
 	originalAmount := pkg.Price + extraAmount
+	orderDate := time.Now().Format("2006-01-02")
 	pricing := appointmentPricing{OriginalAmount: originalAmount, PayableAmount: originalAmount}
-	if couponID == 0 {
-		return pricing, nil
+	coupon, discount, err := h.bestAutoCoupon(db, userID, pkg.ID, originalAmount, orderDate)
+	if err != nil {
+		return pricing, err
 	}
-	var coupon models.Coupon
-	if err := db.First(&coupon, couponID).Error; err != nil {
-		return pricing, fmt.Errorf("coupon not found")
+	if coupon != nil {
+		pricing.CouponID = coupon.ID
+		pricing.DiscountAmount = discount
+		pricing.PayableAmount = originalAmount - discount
 	}
-	if coupon.Status != "active" {
-		return pricing, fmt.Errorf("coupon is not active")
+	return pricing, nil
+}
+
+func (h *Handler) bestAutoCoupon(db *gorm.DB, userID, packageID uint, originalAmount float64, orderDate string) (*models.Coupon, float64, error) {
+	var coupons []models.Coupon
+	query := db.Where("status = ?", "active").
+		Where("(apply_mode = '' OR apply_mode = ?)", "auto").
+		Where("(package_id = 0 OR package_id = ?)", packageID)
+	if orderDate != "" {
+		query = query.Where("(start_date = '' OR start_date <= ?) AND (end_date = '' OR end_date >= ?)", orderDate, orderDate)
 	}
-	if coupon.PackageID != 0 && coupon.PackageID != pkg.ID {
-		return pricing, fmt.Errorf("coupon does not apply to this package")
+	if err := query.Find(&coupons).Error; err != nil {
+		return nil, 0, err
 	}
-	if coupon.MinAmount > 0 && originalAmount < coupon.MinAmount {
-		return pricing, fmt.Errorf("coupon minimum amount not reached")
+	isFirstOrder, err := h.isFirstUserOrder(db, userID)
+	if err != nil {
+		return nil, 0, err
 	}
-	if appointmentDate != "" {
-		if coupon.StartDate != "" && appointmentDate < coupon.StartDate {
-			return pricing, fmt.Errorf("coupon is not started")
+	var best *models.Coupon
+	bestDiscount := 0.0
+	for i := range coupons {
+		coupon := &coupons[i]
+		discount, ok := autoCouponDiscount(*coupon, originalAmount, isFirstOrder)
+		if !ok {
+			continue
 		}
-		if coupon.EndDate != "" && appointmentDate > coupon.EndDate {
-			return pricing, fmt.Errorf("coupon is expired")
+		if best == nil || discount > bestDiscount || (discount == bestDiscount && coupon.ID > best.ID) {
+			best = coupon
+			bestDiscount = discount
+		}
+	}
+	return best, bestDiscount, nil
+}
+
+func (h *Handler) isFirstUserOrder(db *gorm.DB, userID uint) (bool, error) {
+	var count int64
+	if err := db.Model(&models.Appointment{}).Where("user_id = ? AND status <> ?", userID, "canceled").Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
+func autoCouponDiscount(coupon models.Coupon, originalAmount float64, isFirstOrder bool) (float64, bool) {
+	if coupon.MinAmount > 0 && originalAmount < coupon.MinAmount {
+		return 0, false
+	}
+	audience := strings.TrimSpace(coupon.Audience)
+	if audience == "" {
+		audience = "all"
+	}
+	if coupon.FirstOrderOnly || audience == "new_user" {
+		if !isFirstOrder {
+			return 0, false
 		}
 	}
 	discount := coupon.Value
 	if coupon.Type == "percent" {
 		discount = originalAmount * coupon.Value / 100
 	}
-	if discount < 0 {
-		discount = 0
+	if discount <= 0 {
+		return 0, false
 	}
 	if discount > originalAmount {
 		discount = originalAmount
 	}
-	pricing.DiscountAmount = discount
-	pricing.PayableAmount = originalAmount - discount
-	return pricing, nil
+	return discount, true
 }
 
 func (h *Handler) selectedAppointmentItems(db *gorm.DB, packageID uint, selectedIDs []uint) ([]models.PackageItem, float64, error) {
@@ -4812,16 +4862,19 @@ type reviewReplyRequest struct {
 }
 
 type couponRequest struct {
-	Name        string  `json:"name" binding:"required"`
-	Code        string  `json:"code" binding:"required"`
-	Type        string  `json:"type"`
-	Value       float64 `json:"value" binding:"required"`
-	MinAmount   float64 `json:"minAmount"`
-	PackageID   uint    `json:"packageId"`
-	Status      string  `json:"status"`
-	StartDate   string  `json:"startDate"`
-	EndDate     string  `json:"endDate"`
-	Description string  `json:"description"`
+	Name           string  `json:"name" binding:"required"`
+	Code           string  `json:"code" binding:"required"`
+	Type           string  `json:"type"`
+	Value          float64 `json:"value" binding:"required"`
+	MinAmount      float64 `json:"minAmount"`
+	PackageID      uint    `json:"packageId"`
+	ApplyMode      string  `json:"applyMode"`
+	Audience       string  `json:"audience"`
+	FirstOrderOnly bool    `json:"firstOrderOnly"`
+	Status         string  `json:"status"`
+	StartDate      string  `json:"startDate"`
+	EndDate        string  `json:"endDate"`
+	Description    string  `json:"description"`
 }
 
 type announcementRequest struct {
@@ -4894,6 +4947,28 @@ func normalizeStatus(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func normalizeCouponApplyMode(value string) string {
+	switch strings.TrimSpace(value) {
+	case "", "auto":
+		return "auto"
+	case "manual":
+		return "manual"
+	default:
+		return "auto"
+	}
+}
+
+func normalizeCouponAudience(value string) string {
+	switch strings.TrimSpace(value) {
+	case "", "all":
+		return "all"
+	case "new_user":
+		return "new_user"
+	default:
+		return "all"
+	}
 }
 
 func validNotificationStatus(status string, admin bool) bool {
@@ -5001,17 +5076,24 @@ func couponFromCSVRecord(record []string, index map[string]int) (models.Coupon, 
 		}
 		packageID = uint(parsed)
 	}
+	firstOrderOnly, err := parseCSVBool(csvValue(record, index, "first_order_only"), false)
+	if err != nil {
+		return models.Coupon{}, fmt.Errorf("invalid coupon first order flag for %s", code)
+	}
 	return models.Coupon{
-		Code:        code,
-		Name:        name,
-		Type:        normalizeStatus(csvValue(record, index, "type"), "amount"),
-		Value:       value,
-		MinAmount:   minAmount,
-		PackageID:   packageID,
-		StartDate:   csvValue(record, index, "start_date"),
-		EndDate:     csvValue(record, index, "end_date"),
-		Status:      normalizeStatus(csvValue(record, index, "status"), "active"),
-		Description: csvValue(record, index, "description"),
+		Code:           code,
+		Name:           name,
+		Type:           normalizeStatus(csvValue(record, index, "type"), "amount"),
+		Value:          value,
+		MinAmount:      minAmount,
+		PackageID:      packageID,
+		ApplyMode:      normalizeCouponApplyMode(csvValue(record, index, "apply_mode")),
+		Audience:       normalizeCouponAudience(csvValue(record, index, "audience")),
+		FirstOrderOnly: firstOrderOnly,
+		StartDate:      csvValue(record, index, "start_date"),
+		EndDate:        csvValue(record, index, "end_date"),
+		Status:         normalizeStatus(csvValue(record, index, "status"), "active"),
+		Description:    csvValue(record, index, "description"),
 	}, nil
 }
 

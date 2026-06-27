@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, RemoteTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { announcementAudienceText, formatDate, moneyText, nextDateString } from '../utils'
+import { announcementAudienceText, couponApplyModeText, couponAudienceText, couponDiscountText, formatDate, nextDateString } from '../utils'
 
 function usePagedParams(initial = {}) {
   return useState({ page: 1, pageSize: 10, keyword: '', status: '', ...initial })
@@ -47,7 +47,7 @@ function CouponPanel() {
         <Select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value }))}><option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option></Select>
       </FilterBar>
       <RemoteTable
-        columns={[{ title: '券码', render: (r) => r.code }, { title: '名称', render: (r) => r.name }, { title: '优惠', render: (r) => r.type === 'percent' ? `${r.value}%` : moneyText(r.value) }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveCoupon(r).then(() => h.loadCouponsPage(params)).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]}
+        columns={[{ title: '券码', render: (r) => r.code }, { title: '名称', render: (r) => r.name }, { title: '优惠', render: (r) => couponDiscountText(r) }, { title: '生效', render: (r) => couponApplyModeText(r.applyMode) }, { title: '人群', render: (r) => couponAudienceText(r.audience) }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveCoupon(r).then(() => h.loadCouponsPage(params)).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]}
         rows={h.coupons}
         pagination={h.paginations.coupons}
         onPageChange={(page) => setParams((current) => ({ ...current, page }))}
@@ -59,6 +59,9 @@ function CouponPanel() {
           <Field label="券码"><TextInput value={f.code} onChange={(e) => h.updateForm('coupon', { code: e.target.value })} /></Field>
           <Field label="类型"><Select value={f.type} onChange={(e) => h.updateForm('coupon', { type: e.target.value })}><option value="amount">金额</option><option value="percent">折扣百分比</option></Select></Field>
           <Field label="优惠值"><TextInput type="number" value={f.value} onChange={(e) => h.updateForm('coupon', { value: e.target.value })} /></Field>
+          <Field label="生效方式"><Select value={f.applyMode || 'auto'} onChange={(e) => h.updateForm('coupon', { applyMode: e.target.value })}><option value="auto">自动生效</option></Select></Field>
+          <Field label="适用人群"><Select value={f.audience || 'all'} onChange={(e) => h.updateForm('coupon', { audience: e.target.value, firstOrderOnly: e.target.value === 'new_user' ? true : f.firstOrderOnly })}><option value="all">全部用户</option><option value="new_user">新人首单</option></Select></Field>
+          <Field label="首单限制"><Select value={f.firstOrderOnly ? 'true' : 'false'} onChange={(e) => h.updateForm('coupon', { firstOrderOnly: e.target.value === 'true' })}><option value="false">不限制</option><option value="true">仅首单</option></Select></Field>
           <Field label="最低金额"><TextInput type="number" value={f.minAmount} onChange={(e) => h.updateForm('coupon', { minAmount: e.target.value })} /></Field>
           <Field label="限定套餐"><Select value={f.packageId} onChange={(e) => h.updateForm('coupon', { packageId: e.target.value })}><option value="">不限套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
           <Field label="开始日期"><TextInput type="date" value={f.startDate} onChange={(e) => h.updateForm('coupon', { startDate: e.target.value })} /></Field>

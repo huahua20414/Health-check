@@ -29,7 +29,10 @@ func TestExportCouponsSupportsStatusFilterAndAudits(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("expected header plus one coupon, got %#v", records)
 	}
-	if records[1][0] != "SAVE50" || records[1][1] != "立减券" || records[1][4] != "100.00" {
+	if records[0][6] != "apply_mode" || records[0][7] != "audience" || records[0][8] != "first_order_only" {
+		t.Fatalf("export header missing automatic coupon columns: %#v", records[0])
+	}
+	if records[1][0] != "SAVE50" || records[1][1] != "立减券" || records[1][4] != "100.00" || records[1][6] != "auto" || records[1][7] != "all" || records[1][8] != "false" {
 		t.Fatalf("export returned wrong coupon row: %#v", records[1])
 	}
 	assertCouponOperationLogCount(t, db, fixture.admin.ID, "export", 1)
@@ -54,9 +57,9 @@ func TestImportCouponsCreatesAndUpdatesByCode(t *testing.T) {
 	handler, db, fixture := newCouponExchangeFixture(t)
 	router := newCouponExchangeRouter(handler, fixture.admin)
 	csvText := strings.Join([]string{
-		"code,name,type,value,min_amount,package_id,start_date,end_date,status,description",
-		"SAVE50,更新立减券,amount,80,200,20,2026-02-01,2026-11-30,active,批量更新",
-		"NEW20,新人折扣,percent,20,0,0,2026-01-01,2026-12-31,active,批量新增",
+		"code,name,type,value,min_amount,package_id,apply_mode,audience,first_order_only,start_date,end_date,status,description",
+		"SAVE50,更新立减券,amount,80,200,20,auto,all,false,2026-02-01,2026-11-30,active,批量更新",
+		"NEW20,新人折扣,percent,20,0,0,auto,new_user,true,2026-01-01,2026-12-31,active,批量新增",
 		"",
 	}, "\n")
 
@@ -66,8 +69,8 @@ func TestImportCouponsCreatesAndUpdatesByCode(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
 	assertCouponImportResult(t, response.Body.String(), `"created":1`, `"updated":1`)
-	assertCoupon(t, db, "SAVE50", "更新立减券", "amount", 80, 200, 20)
-	assertCoupon(t, db, "NEW20", "新人折扣", "percent", 20, 0, 0)
+	assertCoupon(t, db, "SAVE50", "更新立减券", "amount", 80, 200, 20, "auto", "all", false)
+	assertCoupon(t, db, "NEW20", "新人折扣", "percent", 20, 0, 0, "auto", "new_user", true)
 	assertCouponOperationLogCount(t, db, fixture.admin.ID, "import", 1)
 }
 
@@ -108,7 +111,7 @@ func newCouponExchangeFixture(t *testing.T) (*Handler, *gorm.DB, couponExchangeF
 	}
 	rows := []any{
 		&fixture.admin,
-		&models.Coupon{ID: 10, Name: "立减券", Code: "SAVE50", Type: "amount", Value: 50, MinAmount: 100, PackageID: 20, StartDate: "2026-01-01", EndDate: "2026-12-31", Status: "active", Description: "可用"},
+		&models.Coupon{ID: 10, Name: "立减券", Code: "SAVE50", Type: "amount", Value: 50, MinAmount: 100, PackageID: 20, ApplyMode: "auto", Audience: "all", StartDate: "2026-01-01", EndDate: "2026-12-31", Status: "active", Description: "可用"},
 		&models.Coupon{ID: 11, Name: "归档券", Code: "OLD50", Type: "amount", Value: 50, Status: "deleted"},
 	}
 	for _, row := range rows {
@@ -201,13 +204,13 @@ func assertCouponImportResult(t *testing.T, body string, parts ...string) {
 	}
 }
 
-func assertCoupon(t *testing.T, db *gorm.DB, code, name, couponType string, value, minAmount float64, packageID uint) {
+func assertCoupon(t *testing.T, db *gorm.DB, code, name, couponType string, value, minAmount float64, packageID uint, applyMode, audience string, firstOrderOnly bool) {
 	t.Helper()
 	var coupon models.Coupon
 	if err := db.Where("code = ?", code).First(&coupon).Error; err != nil {
 		t.Fatalf("load coupon %s: %v", code, err)
 	}
-	if coupon.Name != name || coupon.Type != couponType || coupon.Value != value || coupon.MinAmount != minAmount || coupon.PackageID != packageID {
+	if coupon.Name != name || coupon.Type != couponType || coupon.Value != value || coupon.MinAmount != minAmount || coupon.PackageID != packageID || coupon.ApplyMode != applyMode || coupon.Audience != audience || coupon.FirstOrderOnly != firstOrderOnly {
 		t.Fatalf("unexpected coupon %s: %#v", code, coupon)
 	}
 }

@@ -86,19 +86,22 @@ type AppointmentItem struct {
 }
 
 type Coupon struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"size:128;not null"`
-	Code        string    `json:"code" gorm:"size:64;not null;uniqueIndex"`
-	Type        string    `json:"type" gorm:"size:24;not null;default:'amount'"`
-	Value       float64   `json:"value" gorm:"not null"`
-	MinAmount   float64   `json:"minAmount" gorm:"not null;default:0"`
-	PackageID   uint      `json:"packageId" gorm:"index"`
-	Status      string    `json:"status" gorm:"size:24;not null;default:'active';index"`
-	StartDate   string    `json:"startDate" gorm:"size:16"`
-	EndDate     string    `json:"endDate" gorm:"size:16"`
-	Description string    `json:"description" gorm:"type:text"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID             uint      `json:"id" gorm:"primaryKey"`
+	Name           string    `json:"name" gorm:"size:128;not null"`
+	Code           string    `json:"code" gorm:"size:64;not null;uniqueIndex"`
+	Type           string    `json:"type" gorm:"size:24;not null;default:'amount'"`
+	Value          float64   `json:"value" gorm:"not null"`
+	MinAmount      float64   `json:"minAmount" gorm:"not null;default:0"`
+	PackageID      uint      `json:"packageId" gorm:"index"`
+	ApplyMode      string    `json:"applyMode" gorm:"size:24;not null;default:'auto';index"`
+	Audience       string    `json:"audience" gorm:"size:32;not null;default:'all';index"`
+	FirstOrderOnly bool      `json:"firstOrderOnly" gorm:"not null;default:false"`
+	Status         string    `json:"status" gorm:"size:24;not null;default:'active';index"`
+	StartDate      string    `json:"startDate" gorm:"size:16"`
+	EndDate        string    `json:"endDate" gorm:"size:16"`
+	Description    string    `json:"description" gorm:"type:text"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type Appointment struct {

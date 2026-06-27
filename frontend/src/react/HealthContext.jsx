@@ -30,7 +30,7 @@ const defaultForms = {
   login: { email: devAuthShortcutEmail, code: '', role: 'user' },
   userRegister: { name: '', email: '', code: '', gender: '', idCard: '' },
   doctorRegister: { name: '', email: '', code: '', employeeNo: '', department: '', title: '' },
-  appointment: { appointmentType: '个人体检', institutionId: '', packageId: '', familyMemberId: '', slotId: '', couponId: '', date: '', period: '', note: '', paymentStatus: 'unpaid', invoiceTitle: '', invoiceTaxNo: '', selectedPackageItemIds: [] },
+  appointment: { appointmentType: '个人体检', institutionId: '', packageId: '', familyMemberId: '', slotId: '', date: '', period: '', note: '', paymentStatus: 'unpaid', invoiceTitle: '', invoiceTaxNo: '', selectedPackageItemIds: [] },
   waitlist: { appointmentType: '个人体检', institutionId: '', packageId: '', date: '', period: '', note: '' },
   profile: { name: '', gender: '', age: 0, idCard: '', email: '', bio: '', emailNotify: true },
   adminUser: { id: null, name: '', gender: '', idCard: '', email: '', bio: '', emailNotify: true, status: 'active' },
@@ -40,7 +40,7 @@ const defaultForms = {
   invoice: { appointmentId: null, invoiceTitle: '', invoiceTaxNo: '' },
   package: { id: null, name: '', category: '年度综合', description: '', price: 0, items: '', status: 'active' },
   institution: { id: null, name: '', address: '', phone: '', openHours: '', status: 'active' },
-  coupon: { id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: '', status: 'active', startDate: '', endDate: '', description: '' },
+  coupon: { id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: '', applyMode: 'auto', audience: 'all', firstOrderOnly: false, status: 'active', startDate: '', endDate: '', description: '' },
   review: { appointmentId: '', rating: 5, content: '' },
   reviewReply: { id: null, reply: '', status: 'published' },
   announcement: { id: null, title: '', content: '', audience: 'user', status: 'draft' },
@@ -85,7 +85,6 @@ function appointmentPayload(form) {
     packageId: Number(form.packageId || 0),
     institutionId: Number(form.institutionId || 0),
     familyMemberId: Number(form.familyMemberId || 0),
-    couponId: Number(form.couponId || 0),
     slotId: Number(form.slotId || 0),
     selectedPackageItemIds: (form.selectedPackageItemIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0),
   }
@@ -392,7 +391,7 @@ export function HealthProvider({ children }) {
       return result
     }),
     joinWaitlist: (slot) => action('appointment', '已提交候补请求', async () => {
-      const body = appointmentPayload({ ...forms.waitlist, appointmentType: forms.appointment.appointmentType, institutionId: forms.appointment.institutionId, packageId: forms.appointment.packageId, familyMemberId: forms.appointment.familyMemberId, couponId: forms.appointment.couponId, date: forms.appointment.date, period: slot?.period || forms.appointment.period, note: forms.appointment.note, slotId: slot?.id || 0, selectedPackageItemIds: forms.appointment.selectedPackageItemIds })
+      const body = appointmentPayload({ ...forms.waitlist, appointmentType: forms.appointment.appointmentType, institutionId: forms.appointment.institutionId, packageId: forms.appointment.packageId, familyMemberId: forms.appointment.familyMemberId, date: forms.appointment.date, period: slot?.period || forms.appointment.period, note: forms.appointment.note, slotId: slot?.id || 0, selectedPackageItemIds: forms.appointment.selectedPackageItemIds })
       await request('/appointments', { method: 'POST', body: JSON.stringify(body) })
       await loadAll()
     }),
@@ -493,7 +492,7 @@ export function HealthProvider({ children }) {
       await loaders.loadSlotsPage()
     }),
     archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => { await request(`/schedule/slots/${row.id}`, { method: 'DELETE' }); await loaders.loadSlotsPage() }),
-    saveCoupon: () => action('coupon', '优惠券已保存', async () => { const body = JSON.stringify({ ...forms.coupon, value: Number(forms.coupon.value || 0), minAmount: Number(forms.coupon.minAmount || 0), packageId: Number(forms.coupon.packageId || 0) }); if (forms.coupon.id) await request(`/coupons/${forms.coupon.id}`, { method: 'PATCH', body }); else await request('/coupons', { method: 'POST', body }); resetForm('coupon'); await loaders.loadCouponsPage() }),
+    saveCoupon: () => action('coupon', '优惠券已保存', async () => { const body = JSON.stringify({ ...forms.coupon, value: Number(forms.coupon.value || 0), minAmount: Number(forms.coupon.minAmount || 0), packageId: Number(forms.coupon.packageId || 0), applyMode: forms.coupon.applyMode || 'auto', audience: forms.coupon.audience || 'all', firstOrderOnly: Boolean(forms.coupon.firstOrderOnly || forms.coupon.audience === 'new_user') }); if (forms.coupon.id) await request(`/coupons/${forms.coupon.id}`, { method: 'PATCH', body }); else await request('/coupons', { method: 'POST', body }); resetForm('coupon'); await loaders.loadCouponsPage() }),
     archiveCoupon: (row) => action('coupon', '优惠券已归档', async () => { await request(`/coupons/${row.id}`, { method: 'DELETE' }); await loaders.loadCouponsPage() }),
     saveReviewReply: () => action('review', '评价处理已保存', async () => { await request(`/reviews/${forms.reviewReply.id}/reply`, { method: 'PATCH', body: JSON.stringify(forms.reviewReply) }); resetForm('reviewReply'); await loaders.loadReviewsPage() }),
     saveAnnouncement: () => action('announcement', '公告已保存', async () => { const body = JSON.stringify(forms.announcement); if (forms.announcement.id) await request(`/announcements/${forms.announcement.id}`, { method: 'PATCH', body }); else await request('/announcements', { method: 'POST', body }); resetForm('announcement'); await loaders.loadAnnouncementsPage() }),
