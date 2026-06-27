@@ -78,6 +78,18 @@ function useObjectState(initial) {
   return [value, patch, reset, setValue]
 }
 
+function appointmentPayload(form) {
+  return {
+    ...form,
+    packageId: Number(form.packageId || 0),
+    institutionId: Number(form.institutionId || 0),
+    familyMemberId: Number(form.familyMemberId || 0),
+    couponId: Number(form.couponId || 0),
+    slotId: Number(form.slotId || 0),
+    selectedPackageItemIds: (form.selectedPackageItemIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0),
+  }
+}
+
 export function HealthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('currentUser') || 'null'))
   const [data, setData] = useState(initialData)
@@ -365,12 +377,13 @@ export function HealthProvider({ children }) {
     loadInstitutions: async () => updateData({ institutions: await request('/institutions') }),
     loadAdminDashboard: async (params = {}) => setAdminDashboard(await request(`/admin/dashboard${toQuery(params) ? `?${toQuery(params)}` : ''}`)),
     createAppointment: () => action('appointment', (r) => r?.type === 'waitlist' ? '当前号源已满，已自动加入候补' : '预约成功，医生和时间已分配', async () => {
-      const result = await request('/appointments', { method: 'POST', body: JSON.stringify(forms.appointment) })
+      const body = appointmentPayload(forms.appointment)
+      const result = await request('/appointments', { method: 'POST', body: JSON.stringify(body) })
       await loadAll()
       return result
     }),
     joinWaitlist: (slot) => action('appointment', '已提交候补请求', async () => {
-      const body = { ...forms.waitlist, appointmentType: forms.appointment.appointmentType, institutionId: forms.appointment.institutionId, packageId: forms.appointment.packageId, date: forms.appointment.date, period: slot?.period || forms.appointment.period, note: forms.appointment.note, slotId: slot?.id || 0 }
+      const body = appointmentPayload({ ...forms.waitlist, appointmentType: forms.appointment.appointmentType, institutionId: forms.appointment.institutionId, packageId: forms.appointment.packageId, familyMemberId: forms.appointment.familyMemberId, couponId: forms.appointment.couponId, date: forms.appointment.date, period: slot?.period || forms.appointment.period, note: forms.appointment.note, slotId: slot?.id || 0, selectedPackageItemIds: forms.appointment.selectedPackageItemIds })
       await request('/appointments', { method: 'POST', body: JSON.stringify(body) })
       await loadAll()
     }),
