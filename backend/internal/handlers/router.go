@@ -2933,6 +2933,7 @@ func (h *Handler) createCoupon(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
+	audience := normalizeCouponAudience(req.Audience, req.FirstOrderOnly)
 	coupon := models.Coupon{
 		Name:           strings.TrimSpace(req.Name),
 		Code:           strings.ToUpper(strings.TrimSpace(req.Code)),
@@ -2941,8 +2942,8 @@ func (h *Handler) createCoupon(c *gin.Context) {
 		MinAmount:      req.MinAmount,
 		PackageID:      req.PackageID,
 		ApplyMode:      normalizeCouponApplyMode(req.ApplyMode),
-		Audience:       normalizeCouponAudience(req.Audience),
-		FirstOrderOnly: req.FirstOrderOnly,
+		Audience:       audience,
+		FirstOrderOnly: audience == "new_user",
 		Status:         normalizeStatus(req.Status, "active"),
 		StartDate:      req.StartDate,
 		EndDate:        req.EndDate,
@@ -2966,6 +2967,7 @@ func (h *Handler) updateCoupon(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
+	audience := normalizeCouponAudience(req.Audience, req.FirstOrderOnly)
 	updates := map[string]any{
 		"name":             strings.TrimSpace(req.Name),
 		"code":             strings.ToUpper(strings.TrimSpace(req.Code)),
@@ -2974,8 +2976,8 @@ func (h *Handler) updateCoupon(c *gin.Context) {
 		"min_amount":       req.MinAmount,
 		"package_id":       req.PackageID,
 		"apply_mode":       normalizeCouponApplyMode(req.ApplyMode),
-		"audience":         normalizeCouponAudience(req.Audience),
-		"first_order_only": req.FirstOrderOnly,
+		"audience":         audience,
+		"first_order_only": audience == "new_user",
 		"status":           normalizeStatus(req.Status, "active"),
 		"start_date":       req.StartDate,
 		"end_date":         req.EndDate,
@@ -3024,7 +3026,7 @@ func (h *Handler) exportCoupons(c *gin.Context) {
 			fmt.Sprintf("%.2f", coupon.MinAmount),
 			strconv.Itoa(int(coupon.PackageID)),
 			normalizeCouponApplyMode(coupon.ApplyMode),
-			normalizeCouponAudience(coupon.Audience),
+			normalizeCouponAudience(coupon.Audience, coupon.FirstOrderOnly),
 			strconv.FormatBool(coupon.FirstOrderOnly),
 			coupon.StartDate,
 			coupon.EndDate,
@@ -4978,7 +4980,12 @@ func normalizeCouponApplyMode(value string) string {
 	}
 }
 
-func normalizeCouponAudience(value string) string {
+func normalizeCouponAudience(value string, firstOrderOnly ...bool) string {
+	for _, enabled := range firstOrderOnly {
+		if enabled {
+			return "new_user"
+		}
+	}
 	switch strings.TrimSpace(value) {
 	case "", "all":
 		return "all"
@@ -5098,6 +5105,7 @@ func couponFromCSVRecord(record []string, index map[string]int) (models.Coupon, 
 	if err != nil {
 		return models.Coupon{}, fmt.Errorf("invalid coupon first order flag for %s", code)
 	}
+	audience := normalizeCouponAudience(csvValue(record, index, "audience"), firstOrderOnly)
 	return models.Coupon{
 		Code:           code,
 		Name:           name,
@@ -5106,8 +5114,8 @@ func couponFromCSVRecord(record []string, index map[string]int) (models.Coupon, 
 		MinAmount:      minAmount,
 		PackageID:      packageID,
 		ApplyMode:      normalizeCouponApplyMode(csvValue(record, index, "apply_mode")),
-		Audience:       normalizeCouponAudience(csvValue(record, index, "audience")),
-		FirstOrderOnly: firstOrderOnly,
+		Audience:       audience,
+		FirstOrderOnly: audience == "new_user",
 		StartDate:      csvValue(record, index, "start_date"),
 		EndDate:        csvValue(record, index, "end_date"),
 		Status:         normalizeStatus(csvValue(record, index, "status"), "active"),

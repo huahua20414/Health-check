@@ -60,8 +60,7 @@ function CouponPanel() {
           <Field label="类型"><Select value={f.type} onChange={(e) => h.updateForm('coupon', { type: e.target.value })}><option value="amount">金额</option><option value="percent">折扣百分比</option></Select></Field>
           <Field label="优惠值"><TextInput type="number" value={f.value} onChange={(e) => h.updateForm('coupon', { value: e.target.value })} /></Field>
           <Field label="生效方式"><Select value={f.applyMode || 'auto'} onChange={(e) => h.updateForm('coupon', { applyMode: e.target.value })}><option value="auto">自动生效</option></Select></Field>
-          <Field label="适用人群"><Select value={f.audience || 'all'} onChange={(e) => h.updateForm('coupon', { audience: e.target.value, firstOrderOnly: e.target.value === 'new_user' ? true : f.firstOrderOnly })}><option value="all">全部用户</option><option value="new_user">新人首单</option></Select></Field>
-          <Field label="首单限制"><Select value={f.firstOrderOnly ? 'true' : 'false'} onChange={(e) => h.updateForm('coupon', { firstOrderOnly: e.target.value === 'true' })}><option value="false">不限制</option><option value="true">仅首单</option></Select></Field>
+          <Field label="适用人群"><Select value={f.audience || 'all'} onChange={(e) => h.updateForm('coupon', { audience: e.target.value })}><option value="all">全部用户</option><option value="new_user">新人首单</option></Select></Field>
           <Field label="最低金额"><TextInput type="number" value={f.minAmount} onChange={(e) => h.updateForm('coupon', { minAmount: e.target.value })} /></Field>
           <Field label="限定套餐"><Select value={f.packageId} onChange={(e) => h.updateForm('coupon', { packageId: e.target.value })}><option value="">不限套餐</option>{h.packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
           <Field label="开始日期"><TextInput type="date" value={f.startDate} onChange={(e) => h.updateForm('coupon', { startDate: e.target.value })} /></Field>
