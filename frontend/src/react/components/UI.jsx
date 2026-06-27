@@ -42,8 +42,8 @@ export function Empty({ text = '暂无数据' }) {
   return <div className="empty-state">{text}</div>
 }
 
-export function Field({ label, children }) {
-  return <label className="field"><span>{label}</span>{children}</label>
+export function Field({ label, children, className = '' }) {
+  return <label className={`field ${className}`}><span>{label}</span>{children}</label>
 }
 
 export function TextInput(props) {
