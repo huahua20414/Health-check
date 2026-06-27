@@ -3985,7 +3985,19 @@ func (h *Handler) updateUserStatus(c *gin.Context) {
 			return
 		}
 	}
-	if err := h.db.Model(&models.User{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+			return err
+		}
+		if user.Role == "doctor" && req.Status == "active" && user.Status != "active" {
+			updated := user
+			updated.Status = req.Status
+			if err := ensureDoctorFutureSlots(tx, updated); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -4029,7 +4041,10 @@ func (h *Handler) updateDoctorProfile(c *gin.Context) {
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		return syncDoctorAvailableSlots(tx, uint(id), categories)
+		if err := syncDoctorAvailableSlots(tx, uint(id), categories); err != nil {
+			return err
+		}
+		return ensureDoctorFutureSlots(tx, models.User{ID: uint(id), Role: "doctor", Status: "active", Department: department, Specialties: specialties})
 	}); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
@@ -5321,6 +5336,12 @@ func syncDoctorAvailableSlots(tx *gorm.DB, doctorID uint, categories []string) e
 		}
 	}
 	return nil
+}
+
+func ensureDoctorFutureSlots(tx *gorm.DB, doctor models.User) error {
+	categories := splitCSV(doctor.Specialties)
+	_, err := seed.EnsureDoctorFutureScheduleSlots(tx, doctor.ID, categories, time.Now(), 14)
+	return err
 }
 
 func paginationParams(c *gin.Context) (int, int, bool) {

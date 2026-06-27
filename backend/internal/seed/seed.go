@@ -2,6 +2,7 @@ package seed
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"health-checkup/backend/internal/models"
@@ -30,12 +31,19 @@ func EnsureFutureScheduleSlots(db *gorm.DB, now time.Time, days int) (int, error
 	if len(doctors) == 0 || len(institutions) == 0 || len(packages) == 0 {
 		return 0, nil
 	}
-	slots := futureScheduleSlots(now, days, doctors, institutions, packages)
-	if err := appendDailyAvailableCoverageSlots(db, now, days, doctors, institutions, packageCategories(packages), &slots); err != nil {
+	templates, err := existingScheduleTemplates(db, doctors, institutions, packages)
+	if err != nil {
+		return 0, err
+	}
+	if len(templates) == 0 {
+		return 0, nil
+	}
+	slots, err := rollingFutureScheduleSlotsFromTemplates(db, now, days, templates)
+	if err != nil {
 		return 0, err
 	}
 	created := 0
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		for _, slot := range slots {
 			exists, err := scheduleSlotExists(tx, slot)
 			if err != nil {
@@ -55,6 +63,217 @@ func EnsureFutureScheduleSlots(db *gorm.DB, now time.Time, days int) (int, error
 		return 0, err
 	}
 	return created, nil
+}
+
+func rollingFutureScheduleSlotsFromTemplates(db *gorm.DB, now time.Time, days int, templates []scheduleTemplate) ([]models.ScheduleSlot, error) {
+	startDate := dayStart(now)
+	endDate := startDate.AddDate(0, 0, days-1)
+	var maxDate string
+	if err := db.Model(&models.ScheduleSlot{}).
+		Select("COALESCE(MAX(date), '')").
+		Where("status <> ?", "deleted").
+		Scan(&maxDate).Error; err != nil {
+		return nil, err
+	}
+	nextDate := startDate
+	if maxDate != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", maxDate, now.Location())
+		if err == nil && !parsed.Before(startDate) {
+			nextDate = parsed.AddDate(0, 0, 1)
+		}
+	}
+	if nextDate.After(endDate) {
+		return nil, nil
+	}
+	daysToCreate := int(endDate.Sub(nextDate).Hours()/24) + 1
+	return futureScheduleSlotsFromTemplates(nextDate, daysToCreate, templates), nil
+}
+
+func EnsureDoctorFutureScheduleSlots(db *gorm.DB, doctorID uint, categories []string, now time.Time, days int) (int, error) {
+	if days <= 0 {
+		days = 14
+	}
+	var doctor models.User
+	if err := db.Where("id = ? AND role = ? AND status = ?", doctorID, "doctor", "active").First(&doctor).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return 0, nil
+		}
+		return 0, err
+	}
+	var doctors []models.User
+	if err := db.Where("role = ? AND status = ?", "doctor", "active").Find(&doctors).Error; err != nil {
+		return 0, err
+	}
+	var institutions []models.CheckupInstitution
+	if err := db.Where("status = ?", "active").Find(&institutions).Error; err != nil {
+		return 0, err
+	}
+	var packages []models.CheckupPackage
+	if err := db.Where("status = ?", "active").Find(&packages).Error; err != nil {
+		return 0, err
+	}
+	if len(doctors) == 0 || len(institutions) == 0 || len(packages) == 0 {
+		return 0, nil
+	}
+	templates, err := existingScheduleTemplates(db, doctors, institutions, packages)
+	if err != nil {
+		return 0, err
+	}
+	templates = doctorScheduleTemplates(doctor.ID, categories, templates)
+	if len(templates) == 0 {
+		return 0, nil
+	}
+	slots := futureScheduleSlotsFromTemplates(now, days, templates)
+	created := 0
+	err = db.Transaction(func(tx *gorm.DB) error {
+		for _, slot := range slots {
+			exists, err := scheduleSlotExists(tx, slot)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+			if err := tx.Create(&slot).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return created, nil
+}
+
+type scheduleTemplate struct {
+	DoctorID      uint
+	InstitutionID uint
+	Weekday       int
+	Period        string
+	Category      string
+	StartTime     string
+	EndTime       string
+	Capacity      int
+}
+
+func doctorScheduleTemplates(doctorID uint, categories []string, templates []scheduleTemplate) []scheduleTemplate {
+	categorySet := make(map[string]bool, len(categories))
+	for _, category := range categories {
+		category = strings.TrimSpace(category)
+		if category != "" {
+			categorySet[category] = true
+		}
+	}
+	result := make([]scheduleTemplate, 0, len(templates))
+	for _, template := range templates {
+		if len(categorySet) > 0 && !categorySet[template.Category] {
+			continue
+		}
+		template.DoctorID = doctorID
+		result = append(result, template)
+	}
+	return result
+}
+
+func existingScheduleTemplates(db *gorm.DB, doctors []models.User, institutions []models.CheckupInstitution, packages []models.CheckupPackage) ([]scheduleTemplate, error) {
+	activeDoctors := make(map[uint]bool, len(doctors))
+	for _, doctor := range doctors {
+		activeDoctors[doctor.ID] = true
+	}
+	activeInstitutions := make(map[uint]bool, len(institutions))
+	for _, institution := range institutions {
+		activeInstitutions[institution.ID] = true
+	}
+	activeCategories := make(map[string]bool, len(packages))
+	for _, pkg := range packages {
+		activeCategories[pkg.Category] = true
+	}
+
+	var existingSlots []models.ScheduleSlot
+	if err := db.Where("status = ?", "available").Find(&existingSlots).Error; err != nil {
+		return nil, err
+	}
+	templatesByKey := make(map[string]scheduleTemplate)
+	for _, slot := range existingSlots {
+		if !activeDoctors[slot.DoctorID] || !activeInstitutions[slot.InstitutionID] || !activeCategories[slot.Category] {
+			continue
+		}
+		slotDate, err := time.Parse("2006-01-02", slot.Date)
+		if err != nil {
+			continue
+		}
+		capacity := slot.Capacity
+		if capacity <= 0 {
+			capacity = 1
+		}
+		key := fmt.Sprintf("%d|%d|%d|%s|%s", slot.DoctorID, slot.InstitutionID, int(slotDate.Weekday()), slot.Category, slot.StartTime)
+		template := scheduleTemplate{
+			DoctorID:      slot.DoctorID,
+			InstitutionID: slot.InstitutionID,
+			Weekday:       int(slotDate.Weekday()),
+			Period:        normalizeSeedPeriod(slot.Period, slot.StartTime),
+			Category:      slot.Category,
+			StartTime:     slot.StartTime,
+			EndTime:       slot.EndTime,
+			Capacity:      capacity,
+		}
+		if current, ok := templatesByKey[key]; ok && current.Capacity >= template.Capacity {
+			continue
+		}
+		templatesByKey[key] = template
+	}
+	templates := make([]scheduleTemplate, 0, len(templatesByKey))
+	for _, template := range templatesByKey {
+		templates = append(templates, template)
+	}
+	return templates, nil
+}
+
+func futureScheduleSlotsFromTemplates(now time.Time, days int, templates []scheduleTemplate) []models.ScheduleSlot {
+	startDate := dayStart(now)
+	slots := make([]models.ScheduleSlot, 0, len(templates)*days/7)
+	usedDoctorTimes := make(map[string]bool)
+	for offset := 0; offset < days; offset++ {
+		day := startDate.AddDate(0, 0, offset)
+		date := day.Format("2006-01-02")
+		weekday := int(day.Weekday())
+		for _, template := range templates {
+			if template.Weekday != weekday {
+				continue
+			}
+			key := fmt.Sprintf("%d|%s|%s", template.DoctorID, date, template.StartTime)
+			if usedDoctorTimes[key] {
+				continue
+			}
+			usedDoctorTimes[key] = true
+			endTime := template.EndTime
+			if endTime == "" {
+				endTime = addHalfHour(template.StartTime)
+			}
+			slots = append(slots, models.ScheduleSlot{
+				DoctorID:      template.DoctorID,
+				InstitutionID: template.InstitutionID,
+				Date:          date,
+				Period:        normalizeSeedPeriod(template.Period, template.StartTime),
+				Category:      template.Category,
+				StartTime:     template.StartTime,
+				EndTime:       endTime,
+				Capacity:      template.Capacity,
+				BookedCount:   0,
+				Status:        "available",
+			})
+		}
+	}
+	return slots
+}
+
+func normalizeSeedPeriod(period, start string) string {
+	if period == "上午" || period == "下午" {
+		return period
+	}
+	return periodForStart(start)
 }
 
 func Run(db *gorm.DB) error {
@@ -138,11 +357,54 @@ func Run(db *gorm.DB) error {
 	if err := seedDemoBusinessData(db, now, institutions, packages, coupons); err != nil {
 		return err
 	}
-	if _, err := EnsureFutureScheduleSlots(db, now, 14); err != nil {
+	if _, err := ensureDemoFutureScheduleCoverage(db, now, 14); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func ensureDemoFutureScheduleCoverage(db *gorm.DB, now time.Time, days int) (int, error) {
+	var doctors []models.User
+	if err := db.Where("role = ? AND status = ?", "doctor", "active").Find(&doctors).Error; err != nil {
+		return 0, err
+	}
+	var institutions []models.CheckupInstitution
+	if err := db.Where("status = ?", "active").Find(&institutions).Error; err != nil {
+		return 0, err
+	}
+	var packages []models.CheckupPackage
+	if err := db.Where("status = ?", "active").Find(&packages).Error; err != nil {
+		return 0, err
+	}
+	if len(doctors) == 0 || len(institutions) == 0 || len(packages) == 0 {
+		return 0, nil
+	}
+	slots := make([]models.ScheduleSlot, 0)
+	if err := appendDailyAvailableCoverageSlots(db, now, days, doctors, institutions, packageCategories(packages), &slots); err != nil {
+		return 0, err
+	}
+	created := 0
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, slot := range slots {
+			exists, err := scheduleSlotExists(tx, slot)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+			if err := tx.Create(&slot).Error; err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return created, nil
 }
 
 func seedDemoBusinessData(db *gorm.DB, now time.Time, institutions []models.CheckupInstitution, packages []models.CheckupPackage, coupons []models.Coupon) error {

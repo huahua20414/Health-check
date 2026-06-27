@@ -110,6 +110,66 @@ func TestEnsureFutureScheduleSlotsDoesNotRecreateDeletedSlot(t *testing.T) {
 	}
 }
 
+func TestEnsureFutureScheduleSlotsSkipsInstitutionWithoutScheduleTemplate(t *testing.T) {
+	db := openSeedTestDB(t)
+	if err := Run(db); err != nil {
+		t.Fatalf("run seed: %v", err)
+	}
+	institution := models.CheckupInstitution{Name: "未排班新机构", Address: "新机构路 1 号", Status: "active"}
+	if err := db.Create(&institution).Error; err != nil {
+		t.Fatalf("create institution: %v", err)
+	}
+
+	created, err := EnsureFutureScheduleSlots(db, time.Now().AddDate(0, 0, 1), 14)
+	if err != nil {
+		t.Fatalf("ensure future schedule slots: %v", err)
+	}
+	if created == 0 {
+		t.Fatalf("expected rolling ensure to create slots for existing schedules")
+	}
+
+	var count int64
+	if err := db.Model(&models.ScheduleSlot{}).Where("institution_id = ?", institution.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count new institution slots: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no slots for institution without schedule template, got %d", count)
+	}
+}
+
+func TestEnsureDoctorFutureScheduleSlotsUsesExistingInstitutionTemplates(t *testing.T) {
+	db := openSeedTestDB(t)
+	institution := models.CheckupInstitution{ID: 1, Name: "已有排班机构", Address: "健康路 1 号", Status: "active"}
+	newInstitution := models.CheckupInstitution{ID: 2, Name: "未排班新机构", Address: "新机构路 1 号", Status: "active"}
+	activeDoctor := models.User{ID: 10, Name: "已有医生", Email: "doctor1@example.com", Phone: "D001", Role: "doctor", Status: "active", PasswordHash: "hash"}
+	newDoctor := models.User{ID: 11, Name: "新医生", Email: "doctor2@example.com", Phone: "D002", Role: "doctor", Status: "active", PasswordHash: "hash", Specialties: "入职体检"}
+	pkg := models.CheckupPackage{ID: 20, Name: "入职基础体检", Category: "入职体检", Price: 199, Status: "active"}
+	templateDate := dayStart(time.Now()).Format("2006-01-02")
+	templateSlot := models.ScheduleSlot{ID: 30, DoctorID: activeDoctor.ID, InstitutionID: institution.ID, Date: templateDate, Period: "上午", Category: "入职体检", StartTime: "09:00", EndTime: "09:30", Capacity: 1, Status: "available"}
+	for _, row := range []any{&institution, &newInstitution, &activeDoctor, &newDoctor, &pkg, &templateSlot} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create row %#v: %v", row, err)
+		}
+	}
+
+	created, err := EnsureDoctorFutureScheduleSlots(db, newDoctor.ID, []string{"入职体检"}, time.Now(), 14)
+	if err != nil {
+		t.Fatalf("ensure doctor future schedule slots: %v", err)
+	}
+	if created == 0 {
+		t.Fatalf("expected slots to be created for new doctor from existing templates")
+	}
+	assertMinCount(t, db, &models.ScheduleSlot{}, "doctor_id = ? AND institution_id = ?", []any{newDoctor.ID, institution.ID}, 1)
+
+	var newInstitutionSlots int64
+	if err := db.Model(&models.ScheduleSlot{}).Where("doctor_id = ? AND institution_id = ?", newDoctor.ID, newInstitution.ID).Count(&newInstitutionSlots).Error; err != nil {
+		t.Fatalf("count new institution doctor slots: %v", err)
+	}
+	if newInstitutionSlots != 0 {
+		t.Fatalf("expected no slots for new institution without template, got %d", newInstitutionSlots)
+	}
+}
+
 func assertNextTwoWeeksHaveCompleteSlotTimes(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	today := time.Now()

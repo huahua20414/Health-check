@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"health-checkup/backend/internal/models"
 
@@ -68,6 +69,29 @@ func TestAdminCanReactivateDisabledUser(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
 	assertUserStatus(t, db, fixture.disabledUser.ID, "active")
+}
+
+func TestAdminActivatingDoctorEnsuresFutureScheduleSlots(t *testing.T) {
+	handler, db, fixture := newUserStatusFixture(t)
+	institution := models.CheckupInstitution{ID: 10, Name: "已有排班机构", Address: "健康路 1 号", Status: "active"}
+	pkg := models.CheckupPackage{ID: 20, Name: "入职基础体检", Category: "入职体检", Price: 199, Status: "active"}
+	activeDoctor := models.User{ID: 30, Name: "已有医生", Email: "active-doctor@example.com", Phone: "D001", Role: "doctor", Status: "active", PasswordHash: "hash"}
+	pendingDoctor := models.User{ID: 31, Name: "待审医生", Email: "pending-doctor@example.com", Phone: "D002", Role: "doctor", Status: "pending", PasswordHash: "hash"}
+	templateSlot := models.ScheduleSlot{ID: 40, DoctorID: activeDoctor.ID, InstitutionID: institution.ID, Date: time.Now().Format("2006-01-02"), Period: "上午", Category: "入职体检", StartTime: "09:00", EndTime: "09:30", Capacity: 1, Status: "available"}
+	for _, row := range []any{&institution, &pkg, &activeDoctor, &pendingDoctor, &templateSlot} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create row %#v: %v", row, err)
+		}
+	}
+	router := newUserStatusRouter(handler, fixture.admin)
+
+	response := performUserStatusPatch(t, router, pendingDoctor.ID, statusRequest{Status: "active"})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	assertUserStatus(t, db, pendingDoctor.ID, "active")
+	assertMinHandlerCount(t, db, &models.ScheduleSlot{}, "doctor_id = ? AND institution_id = ?", []any{pendingDoctor.ID, institution.ID}, 1)
 }
 
 func TestAdminCanUpdateUserProfile(t *testing.T) {
@@ -191,7 +215,7 @@ func newUserStatusFixture(t *testing.T) (*Handler, *gorm.DB, userStatusFixture) 
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.OperationLog{}, &models.CheckupInstitution{}, &models.CheckupPackage{}, &models.ScheduleSlot{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := userStatusFixture{
@@ -205,6 +229,17 @@ func newUserStatusFixture(t *testing.T) (*Handler, *gorm.DB, userStatusFixture) 
 		}
 	}
 	return &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}, db, fixture
+}
+
+func assertMinHandlerCount(t *testing.T, db *gorm.DB, model any, condition string, args []any, min int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(model).Where(condition, args...).Count(&count).Error; err != nil {
+		t.Fatalf("count %T: %v", model, err)
+	}
+	if count < min {
+		t.Fatalf("expected at least %d rows for %T, got %d", min, model, count)
+	}
 }
 
 func newUserStatusRouter(handler *Handler, current models.User) *gin.Engine {
