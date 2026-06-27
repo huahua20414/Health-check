@@ -51,7 +51,7 @@ const defaultForms = {
   systemSetting: { id: null, key: '', label: '', value: '', valueType: 'string', group: '', status: 'active', description: '' },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
   packageItem: { id: null, packageId: '', itemId: '', sortOrder: 0, required: true },
-  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', period: '上午', category: '', startTime: '08:30', startTimes: '08:30', endTime: '09:00', capacity: 1, status: 'available' },
+  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', weekdays: [], repeatWeeks: 2, period: '上午', category: '', startTime: '08:30', startTimes: [], endTime: '09:00', capacity: 1, status: 'available' },
   report: { appointmentId: '', summary: '', conclusion: '', recommendation: '' },
 }
 
@@ -95,6 +95,21 @@ function splitBatchValues(value) {
     .split(/[\n,，\s]+/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function scheduleDatesFromWeekdays(weekdays, repeatWeeks) {
+  const selected = new Set((weekdays || []).map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
+  if (!selected.size) return []
+  const weeks = Math.min(Math.max(Number(repeatWeeks || 2), 1), 8)
+  const dates = []
+  const today = new Date()
+  const totalDays = weeks * 7
+  for (let offset = 0; offset < totalDays; offset += 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() + offset)
+    if (selected.has(date.getDay())) dates.push(formatDate(date))
+  }
+  return dates
 }
 
 export function HealthProvider({ children }) {
@@ -523,13 +538,13 @@ export function HealthProvider({ children }) {
       if (forms.schedule.id) {
         await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body: JSON.stringify(base) })
       } else {
-        const dates = splitBatchValues(forms.schedule.dates || forms.schedule.date)
-        const startTimes = splitBatchValues(forms.schedule.startTimes || forms.schedule.startTime)
-        if (!dates.length || !startTimes.length) throw new Error('请至少填写一个日期和一个开始时间')
+        const dates = scheduleDatesFromWeekdays(forms.schedule.weekdays, forms.schedule.repeatWeeks)
+        const startTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes : splitBatchValues(forms.schedule.startTimes || forms.schedule.startTime)
+        if (!dates.length || !startTimes.length) throw new Error('请至少勾选一个星期和一个开始时间')
         const requests = []
         for (const date of dates) {
           for (const startTime of startTimes) {
-            requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, endTime: '' }) }))
+            requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, period: '', endTime: '' }) }))
           }
         }
         await Promise.all(requests)
