@@ -112,6 +112,13 @@ function scheduleDatesFromWeekdays(weekdays, repeatWeeks) {
   return dates
 }
 
+function scheduleEndTime(startTime) {
+  const [hour, minute] = String(startTime || '').split(':').map(Number)
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return ''
+  const date = new Date(2000, 0, 1, hour, minute + 30)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 export function HealthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('currentUser') || 'null'))
   const [data, setData] = useState(initialData)
@@ -544,7 +551,7 @@ export function HealthProvider({ children }) {
         const requests = []
         for (const date of dates) {
           for (const startTime of startTimes) {
-            requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, period: '', endTime: '' }) }))
+            requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, period: '', endTime: scheduleEndTime(startTime) }) }))
           }
         }
         await Promise.all(requests)
