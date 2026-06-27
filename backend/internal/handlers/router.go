@@ -758,7 +758,7 @@ func (h *Handler) activeAnnouncements(c *gin.Context) {
 	var announcements []models.SystemAnnouncement
 	query := h.db.Where("status = ?", "published").Order("published_at desc, created_at desc").Limit(10)
 	if audience := c.Query("audience"); audience != "" {
-		query = query.Where("audience = ? OR audience = ?", audience, "all")
+		query = query.Where("audience = ?", audience)
 	}
 	if err := query.Find(&announcements).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -3161,10 +3161,14 @@ func (h *Handler) createAnnouncement(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
+	audience, ok := normalizeAnnouncementAudience(c, req.Audience)
+	if !ok {
+		return
+	}
 	announcement := models.SystemAnnouncement{
 		Title:    strings.TrimSpace(req.Title),
 		Content:  strings.TrimSpace(req.Content),
-		Audience: normalizeStatus(req.Audience, "all"),
+		Audience: audience,
 		Status:   normalizeStatus(req.Status, "draft"),
 	}
 	if announcement.Status == "published" {
@@ -3189,11 +3193,15 @@ func (h *Handler) updateAnnouncement(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
+	audience, ok := normalizeAnnouncementAudience(c, req.Audience)
+	if !ok {
+		return
+	}
 	status := normalizeStatus(req.Status, "draft")
 	updates := map[string]any{
 		"title":    strings.TrimSpace(req.Title),
 		"content":  strings.TrimSpace(req.Content),
-		"audience": normalizeStatus(req.Audience, "all"),
+		"audience": audience,
 		"status":   status,
 	}
 	if status == "published" {
@@ -3221,6 +3229,15 @@ func (h *Handler) archiveAnnouncement(c *gin.Context) {
 	}
 	h.recordOperation(c, "archive", "announcement", strconv.Itoa(id), "success", "")
 	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
+func normalizeAnnouncementAudience(c *gin.Context, audience string) (string, bool) {
+	value := normalizeStatus(audience, "user")
+	if value != "user" && value != "doctor" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "announcement audience must be user or doctor"})
+		return "", false
+	}
+	return value, true
 }
 
 func (h *Handler) createPackage(c *gin.Context) {

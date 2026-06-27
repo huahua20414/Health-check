@@ -139,10 +139,47 @@ func TestExportAnnouncementsUsesFiltersAndAudits(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("expected header plus one announcement, got %d rows: %#v", len(rows), rows)
 	}
-	if rows[1][1] != "启用公告" || rows[1][2] != "all" || rows[1][3] != "published" {
+	if rows[1][1] != "启用公告" || rows[1][2] != "user" || rows[1][3] != "published" {
 		t.Fatalf("unexpected announcement csv row: %#v", rows[1])
 	}
 	assertArchiveOperationLogCount(t, db, admin.ID, "export", "announcement", 1)
+}
+
+func TestActiveAnnouncementsFilterUserAndDoctorAudiences(t *testing.T) {
+	handler, db := newArchiveTestHandler(t)
+	rows := []models.SystemAnnouncement{
+		{Title: "用户公告", Content: "用户内容", Audience: "user", Status: "published"},
+		{Title: "医生公告", Content: "医生内容", Audience: "doctor", Status: "published"},
+		{Title: "隐藏公告", Content: "隐藏内容", Audience: "user", Status: "hidden"},
+	}
+	for _, row := range rows {
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatalf("create announcement: %v", err)
+		}
+	}
+
+	body := performArchiveRequest(t, handler.activeAnnouncements, http.MethodGet, "/api/announcements/active?audience=doctor", false)
+
+	if len(body) != 1 {
+		t.Fatalf("expected one doctor announcement, got %#v", body)
+	}
+	encoded := encodeJSON(t, body[0])
+	if !jsonContains(encoded, "医生公告") || jsonContains(encoded, "用户公告") {
+		t.Fatalf("unexpected active announcements response: %s", encoded)
+	}
+}
+
+func TestCreateAnnouncementRejectsUnsupportedAudience(t *testing.T) {
+	handler, _ := newArchiveTestHandler(t)
+	admin := models.User{ID: 99, Name: "管理员", Role: "admin", Status: "active"}
+	router := newArchiveUserRouter(handler.createAnnouncement, http.MethodPost, "/api/announcements", admin)
+
+	response := performArchiveRouterRequest(t, router, http.MethodPost, "/api/announcements", `{"title":"全部公告","content":"内容","audience":"all","status":"published"}`)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
+	}
+	assertErrorMessage(t, response.Body.Bytes(), "announcement audience must be user or doctor")
 }
 
 func newArchiveTestHandler(t *testing.T) (*Handler, *gorm.DB) {
@@ -176,8 +213,8 @@ func seedArchiveRows(t *testing.T, db *gorm.DB) {
 		&institution,
 		&models.Coupon{Name: "启用优惠券", Code: "ACTIVE100", Type: "amount", Value: 100, Status: "active"},
 		&models.Coupon{Name: "归档优惠券", Code: "DELETED100", Type: "amount", Value: 100, Status: "deleted"},
-		&models.SystemAnnouncement{Title: "启用公告", Content: "公告内容", Audience: "all", Status: "published"},
-		&models.SystemAnnouncement{Title: "归档公告", Content: "公告内容", Audience: "all", Status: "deleted"},
+		&models.SystemAnnouncement{Title: "启用公告", Content: "公告内容", Audience: "user", Status: "published"},
+		&models.SystemAnnouncement{Title: "归档公告", Content: "公告内容", Audience: "user", Status: "deleted"},
 		&models.CheckupPackage{Name: "启用套餐", Category: "年度综合", Price: 399, Items: "血常规", Status: "active"},
 		&models.CheckupPackage{Name: "归档套餐", Category: "年度综合", Price: 399, Items: "血常规", Status: "deleted"},
 		&models.CheckupItem{Name: "启用项目", Category: "检验", Department: "检验科", Price: 30, DurationMin: 10, Status: "active"},
@@ -227,9 +264,18 @@ func newArchiveUserRouter(handler gin.HandlerFunc, method, path string, current 
 	return router
 }
 
-func performArchiveRouterRequest(t *testing.T, router *gin.Engine, method, path string) *httptest.ResponseRecorder {
+func performArchiveRouterRequest(t *testing.T, router *gin.Engine, method, path string, body ...string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	var requestBody *strings.Reader
+	if len(body) > 0 {
+		requestBody = strings.NewReader(body[0])
+	} else {
+		requestBody = strings.NewReader("")
+	}
+	req := httptest.NewRequest(method, path, requestBody)
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec

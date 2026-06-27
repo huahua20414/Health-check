@@ -64,6 +64,10 @@ export function paymentStatusText(status) {
   return { paid: '已支付', unpaid: '未支付', refunded: '已退款' }[status] || status || '-'
 }
 
+export function announcementAudienceText(audience) {
+  return { user: '用户公告', doctor: '医生公告', all: '全部公告', admin: '管理员公告' }[audience] || audience || '-'
+}
+
 export function moneyText(value) {
   const amount = Number(value)
   if (!Number.isFinite(amount)) return '-'

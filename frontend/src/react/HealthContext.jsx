@@ -43,7 +43,7 @@ const defaultForms = {
   coupon: { id: null, name: '', code: '', type: 'amount', value: 0, minAmount: 0, packageId: '', status: 'active', startDate: '', endDate: '', description: '' },
   review: { appointmentId: '', rating: 5, content: '' },
   reviewReply: { id: null, reply: '', status: 'published' },
-  announcement: { id: null, title: '', content: '', audience: 'all', status: 'draft' },
+  announcement: { id: null, title: '', content: '', audience: 'user', status: 'draft' },
   notification: { userId: '', role: 'user', channel: 'in_app', type: 'admin_notice', title: '', content: '' },
   supportTicket: { subject: '', content: '' },
   supportTicketReply: { id: null, reply: '', status: 'replied' },

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Card, Field, Modal, PageHeader, RemoteTable, Select, StatusTag, TextInput, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
-import { formatDate, moneyText, nextDateString } from '../utils'
+import { announcementAudienceText, formatDate, moneyText, nextDateString } from '../utils'
 
 function usePagedParams(initial = {}) {
   return useState({ page: 1, pageSize: 10, keyword: '', status: '', ...initial })
@@ -20,7 +20,7 @@ function FilterBar({ draft, setDraft, onApply, onReset, children }) {
 export function AdminEngagementView() {
   return (
     <>
-      <PageHeader title="营销与公告" subtitle="优惠券、系统公告和用户可见运营内容。" />
+      <PageHeader title="营销与公告" subtitle="优惠券、用户公告和医生公告。" />
       <div className="management-grid">
         <CouponPanel />
         <AnnouncementPanel />
@@ -81,7 +81,7 @@ function AnnouncementPanel({ title = '公告' }) {
   const apply = () => setParams((current) => ({ ...current, page: 1, ...draft }))
   const reset = () => { setDraft({ keyword: '', status: '' }); setParams((current) => ({ ...current, page: 1, keyword: '', status: '' })) }
   const openCreate = () => { h.resetForm('announcement'); setOpen(true) }
-  const openEdit = (row) => { h.updateForm('announcement', row); setOpen(true) }
+  const openEdit = (row) => { h.updateForm('announcement', { ...row, audience: row.audience === 'doctor' ? 'doctor' : 'user' }); setOpen(true) }
   const save = () => h.saveAnnouncement().then(() => { setOpen(false); h.loadAnnouncementsPage(params) }).catch((e) => h.notify('error', e.message))
   return (
     <Card title={title} actions={<><Button size="sm" onClick={openCreate}>新增</Button><Button size="sm" variant="ghost" onClick={() => h.exportBlob('/announcements/export', 'announcements.csv', 'exportAnnouncements')}>导出</Button></>}>
@@ -89,7 +89,7 @@ function AnnouncementPanel({ title = '公告' }) {
         <Select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value }))}><option value="">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="hidden">已隐藏</option></Select>
       </FilterBar>
       <RemoteTable
-        columns={[{ title: '标题', render: (r) => r.title }, { title: '受众', render: (r) => r.audience }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '时间', render: (r) => formatDate(r.createdAt) }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveAnnouncement(r).then(() => h.loadAnnouncementsPage(params)).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]}
+        columns={[{ title: '标题', render: (r) => r.title }, { title: '分类', render: (r) => announcementAudienceText(r.audience) }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '时间', render: (r) => formatDate(r.createdAt) }, { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveAnnouncement(r).then(() => h.loadAnnouncementsPage(params)).catch((e) => h.notify('error', e.message))}>归档</Button></div> }]}
         rows={h.announcements}
         pagination={h.paginations.announcements}
         onPageChange={(page) => setParams((current) => ({ ...current, page }))}
@@ -98,7 +98,7 @@ function AnnouncementPanel({ title = '公告' }) {
       <Modal open={open} title={f.id ? '编辑公告' : '新增公告'} onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.announcement} onClick={save}>保存</Button></>}>
         <Field label="标题"><TextInput value={f.title} onChange={(e) => h.updateForm('announcement', { title: e.target.value })} /></Field>
         <div className="form-grid">
-          <Field label="受众"><Select value={f.audience} onChange={(e) => h.updateForm('announcement', { audience: e.target.value })}><option value="all">全部</option><option value="user">用户</option><option value="doctor">医生</option><option value="admin">管理员</option></Select></Field>
+          <Field label="公告分类"><Select value={f.audience} onChange={(e) => h.updateForm('announcement', { audience: e.target.value })}><option value="user">用户公告</option><option value="doctor">医生公告</option></Select></Field>
           <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('announcement', { status: e.target.value })}><option value="draft">草稿</option><option value="published">发布</option><option value="hidden">隐藏</option></Select></Field>
         </div>
         <Field label="内容"><Textarea value={f.content} onChange={(e) => h.updateForm('announcement', { content: e.target.value })} /></Field>
@@ -110,7 +110,7 @@ function AnnouncementPanel({ title = '公告' }) {
 export function AdminCommunicationView() {
   return (
     <>
-      <PageHeader title="公告与客服" subtitle="公告发布、体检提醒、客服工单和服务评价。" />
+      <PageHeader title="公告与客服" subtitle="用户公告、医生公告、体检提醒、客服工单和服务评价。" />
       <div className="management-grid">
         <AnnouncementPanel title="管理公告" />
         <ReminderPanel />

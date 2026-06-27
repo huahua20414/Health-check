@@ -127,7 +127,7 @@ func Run(db *gorm.DB) error {
 	announcement := models.SystemAnnouncement{
 		Title:       "体检服务预约须知",
 		Content:     "请按预约时间携带有效证件到达体检机构，部分抽血项目建议空腹。",
-		Audience:    "all",
+		Audience:    "user",
 		Status:      "published",
 		PublishedAt: &now,
 	}
