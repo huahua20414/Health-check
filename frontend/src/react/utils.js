@@ -191,3 +191,94 @@ export function documentHTML(title, rows, footer) {
 export function downloadHTML(filename, html) {
   downloadBlob(filename, new Blob([html], { type: 'text/html;charset=utf-8' }))
 }
+
+export function downloadReportImage(filename, rows, footer) {
+  const width = 1200
+  const margin = 64
+  const labelWidth = 220
+  const rowGap = 0
+  const contentWidth = width - margin * 2 - labelWidth
+  const font = '"Microsoft YaHei", "PingFang SC", Arial, sans-serif'
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  ctx.font = `30px ${font}`
+
+  const normalizedRows = rows.map(([label, value]) => {
+    const text = String(value || '-')
+    const lines = wrapCanvasText(ctx, text, contentWidth - 56)
+    return { label, lines, height: Math.max(74, lines.length * 38 + 34) }
+  })
+  const gridHeight = normalizedRows.reduce((sum, row) => sum + row.height + rowGap, 0)
+  const height = margin + 112 + 40 + gridHeight + 96
+  const scale = window.devicePixelRatio || 1
+  canvas.width = width * scale
+  canvas.height = height * scale
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+  ctx.scale(scale, scale)
+
+  ctx.fillStyle = '#f3f6fa'
+  ctx.fillRect(0, 0, width, height)
+  ctx.fillStyle = '#ffffff'
+  ctx.strokeStyle = '#d8e2ec'
+  ctx.lineWidth = 2
+  ctx.fillRect(32, 32, width - 64, height - 64)
+  ctx.strokeRect(32, 32, width - 64, height - 64)
+
+  ctx.fillStyle = '#111827'
+  ctx.font = `700 42px ${font}`
+  ctx.fillText('体检报告详情', margin, 98)
+  ctx.fillStyle = '#667085'
+  ctx.font = `24px ${font}`
+  ctx.fillText('熙心健康体检管理系统', margin, 136)
+  ctx.strokeStyle = '#19c2d9'
+  ctx.lineWidth = 5
+  ctx.beginPath()
+  ctx.moveTo(margin, 164)
+  ctx.lineTo(width - margin, 164)
+  ctx.stroke()
+
+  let y = 204
+  for (const row of normalizedRows) {
+    ctx.fillStyle = '#f8fafc'
+    ctx.fillRect(margin, y, labelWidth, row.height)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(margin + labelWidth, y, contentWidth, row.height)
+    ctx.strokeStyle = '#e3ebf2'
+    ctx.lineWidth = 1
+    ctx.strokeRect(margin, y, labelWidth, row.height)
+    ctx.strokeRect(margin + labelWidth, y, contentWidth, row.height)
+
+    ctx.fillStyle = '#111827'
+    ctx.font = `700 25px ${font}`
+    ctx.fillText(String(row.label), margin + 28, y + 45)
+    ctx.font = `25px ${font}`
+    row.lines.forEach((line, index) => ctx.fillText(line, margin + labelWidth + 28, y + 45 + index * 38))
+    y += row.height + rowGap
+  }
+
+  ctx.fillStyle = '#667085'
+  ctx.font = `22px ${font}`
+  ctx.fillText(footer, margin, y + 52)
+  canvas.toBlob((blob) => {
+    if (blob) downloadBlob(filename, blob)
+  }, 'image/png')
+}
+
+function wrapCanvasText(ctx, text, maxWidth) {
+  const lines = []
+  for (const paragraph of String(text || '-').split('\n')) {
+    let line = ''
+    for (const char of paragraph) {
+      const next = line + char
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines.push(line)
+        line = char
+      } else {
+        line = next
+      }
+    }
+    lines.push(line || ' ')
+  }
+  return lines
+}

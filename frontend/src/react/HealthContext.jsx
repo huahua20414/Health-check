@@ -11,6 +11,7 @@ import {
   documentHTML,
   downloadBlob,
   downloadHTML,
+  downloadReportImage,
   formatDate,
   homePath,
   moneyText,
@@ -485,7 +486,7 @@ export function HealthProvider({ children }) {
     exportBlob: (path, filename, key) => action(key, 'CSV 已导出', async () => downloadBlob(filename, await requestBlob(path))),
     importFile: (path, file, key, after) => action(key, '导入完成', async () => { const formData = new FormData(); formData.append('file', file); await request(path, { method: 'POST', body: formData }); if (after) await after() }),
     downloadAppointment: (appointment) => downloadHTML(`appointment-${appointment.orderNo || appointment.id}.html`, documentHTML('体检预约订单', [['订单号', appointment.orderNo], ['客户', appointment.user?.name], ['机构', appointment.institution?.name], ['套餐', appointment.package?.name], ['日期', appointment.date], ['时段', `${appointment.startTime || ''}-${appointment.endTime || ''}`], ['支付状态', paymentStatusText(appointment.paymentStatus)], ['状态', statusText(appointment.status)]], '请按预约时间携带有效证件到检。')),
-    downloadReport: (report) => downloadHTML(`report-${report.reportNo || report.id}.html`, documentHTML('体检报告详情', [['报告编号', report.reportNo], ['客户', report.user?.name], ['套餐', report.appointment?.package?.name], ['医生', report.doctor?.name], ['检查摘要', report.summary], ['体检结论', report.conclusion], ['健康建议', report.recommendation], ['报告时间', formatDate(report.createdAt)]], '本报告仅供健康管理参考。')),
+    downloadReport: (report) => downloadReportImage(`report-${report.reportNo || report.id}.png`, [['报告编号', report.reportNo], ['客户', report.user?.name], ['套餐', report.appointment?.package?.name], ['医生', report.doctor?.name], ['检查摘要', report.summary], ['体检结论', report.conclusion], ['健康建议', report.recommendation], ['报告时间', formatDate(report.createdAt)]], '本报告仅供健康管理参考。'),
   }), [action, data.favorites, forms, loadAll, loaders, notify, role, saveUser, updateData, updateForm, resetForm])
 
   const derived = useMemo(() => {
