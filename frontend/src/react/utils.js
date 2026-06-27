@@ -107,7 +107,13 @@ export function localDateString(date) {
 }
 
 export function normalizeIDCard(value) {
-  return String(value || '').trim().toUpperCase()
+  const fullWidthDigits = '０１２３４５６７８９'
+  return String(value || '')
+    .trim()
+    .replace(/[０-９]/g, (char) => String(fullWidthDigits.indexOf(char)))
+    .replace(/[ｘＸ]/g, 'X')
+    .replace(/[\s-]+/g, '')
+    .toUpperCase()
 }
 
 export function isValidIDCard(value) {

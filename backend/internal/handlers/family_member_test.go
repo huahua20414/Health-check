@@ -123,6 +123,32 @@ func TestCreateFamilyMemberNormalizesIDCard(t *testing.T) {
 	}
 }
 
+func TestCreateFamilyMemberNormalizesSeparatedIDCard(t *testing.T) {
+	handler, _, fixture := newFamilyMemberFixture(t)
+	router := newFamilyMemberTestRouter(handler, fixture.user)
+	idCard := testIDCard("19880520")
+	inputIDCard := idCard[:6] + " " + idCard[6:14] + "-" + idCard[14:17] + toFullWidthIDCardCheck(idCard[17])
+
+	response := performFamilyRequest(t, router, http.MethodPost, "/family-members", familyMemberRequest{
+		Name:     "姐姐",
+		Relation: "姐姐",
+		Gender:   "female",
+		IDCard:   inputIDCard,
+		Phone:    "13900000005",
+	})
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
+	}
+	var created models.FamilyMember
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created member: %v", err)
+	}
+	if created.IDCard != idCard || created.Age <= 0 {
+		t.Fatalf("separated id card should be normalized, got %#v", created)
+	}
+}
+
 func TestCreateFamilyMemberRejectsInvalidIDCardChecksum(t *testing.T) {
 	handler, _, fixture := newFamilyMemberFixture(t)
 	router := newFamilyMemberTestRouter(handler, fixture.user)
@@ -139,6 +165,16 @@ func TestCreateFamilyMemberRejectsInvalidIDCardChecksum(t *testing.T) {
 		t.Fatalf("expected 400, got %d: %s", response.Code, response.Body.String())
 	}
 	assertErrorMessage(t, response.Body.Bytes(), "invalid id card")
+}
+
+func toFullWidthIDCardCheck(check byte) string {
+	if check == 'X' {
+		return "Ｘ"
+	}
+	if check >= '0' && check <= '9' {
+		return string('０' + rune(check-'0'))
+	}
+	return string(check)
 }
 
 func TestUpdateFamilyMemberRejectsOtherUsersMember(t *testing.T) {

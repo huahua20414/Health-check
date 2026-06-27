@@ -209,7 +209,7 @@ func (h *Handler) registerUser(c *gin.Context) {
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	name := strings.TrimSpace(req.Name)
-	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	idCard := normalizeIDCard(req.IDCard)
 	age, ok := ageFromIDCard(idCard, time.Now())
 	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入姓名"})
@@ -369,7 +369,7 @@ func (h *Handler) updateProfile(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
-	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	idCard := normalizeIDCard(req.IDCard)
 	age := 0
 	if idCard != "" {
 		calculatedAge, ok := ageFromIDCard(idCard, time.Now())
@@ -2054,7 +2054,7 @@ func (h *Handler) createFamilyMember(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
-	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	idCard := normalizeIDCard(req.IDCard)
 	age := 0
 	if idCard != "" {
 		calculatedAge, ok := ageFromIDCard(idCard, time.Now())
@@ -2093,7 +2093,7 @@ func (h *Handler) updateFamilyMember(c *gin.Context) {
 		return
 	}
 	current := currentUser(c)
-	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	idCard := normalizeIDCard(req.IDCard)
 	age := 0
 	if idCard != "" {
 		calculatedAge, ok := ageFromIDCard(idCard, time.Now())
@@ -4070,7 +4070,7 @@ func (h *Handler) updateUser(c *gin.Context) {
 			return
 		}
 	}
-	idCard := strings.ToUpper(strings.TrimSpace(req.IDCard))
+	idCard := normalizeIDCard(req.IDCard)
 	age := 0
 	if idCard != "" {
 		var ok bool
@@ -5671,7 +5671,7 @@ func (h *Handler) emailExists(email string) bool {
 }
 
 func ageFromIDCard(idCard string, now time.Time) (int, bool) {
-	idCard = strings.ToUpper(strings.TrimSpace(idCard))
+	idCard = normalizeIDCard(idCard)
 	if len(idCard) != 18 {
 		return 0, false
 	}
@@ -5704,6 +5704,29 @@ func ageFromIDCard(idCard string, now time.Time) (int, bool) {
 		return 0, false
 	}
 	return age, true
+}
+
+func normalizeIDCard(value string) string {
+	replacer := strings.NewReplacer(
+		" ", "",
+		"\t", "",
+		"\n", "",
+		"\r", "",
+		"-", "",
+		"ｘ", "X",
+		"Ｘ", "X",
+		"０", "0",
+		"１", "1",
+		"２", "2",
+		"３", "3",
+		"４", "4",
+		"５", "5",
+		"６", "6",
+		"７", "7",
+		"８", "8",
+		"９", "9",
+	)
+	return strings.ToUpper(replacer.Replace(strings.TrimSpace(value)))
 }
 
 func syntheticPhone(email string) string {
