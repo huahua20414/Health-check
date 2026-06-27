@@ -138,6 +138,28 @@ func TestUpdateBookedScheduleSlotAllowsCapacityIncrease(t *testing.T) {
 	}
 }
 
+func TestUpdateBookedScheduleSlotAllowsCategoryChange(t *testing.T) {
+	handler, db, fixture := newScheduleSlotOverlapFixture(t)
+	router := newScheduleSlotOverlapRouter(handler, fixture.admin)
+	if err := db.Model(&models.ScheduleSlot{}).Where("id = ?", fixture.existingSlot.ID).Update("booked_count", 1).Error; err != nil {
+		t.Fatalf("mark slot booked: %v", err)
+	}
+
+	req := scheduleSlotRequest{DoctorID: fixture.doctor.ID, InstitutionID: fixture.institution.ID, Date: "2026-07-01", Period: "上午", Category: "入职体检", StartTime: "09:00", EndTime: "09:30", Capacity: 2}
+	response := performUpdateScheduleSlotRequest(t, router, fixture.existingSlot.ID, req)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var slot models.ScheduleSlot
+	if err := db.First(&slot, fixture.existingSlot.ID).Error; err != nil {
+		t.Fatalf("load slot: %v", err)
+	}
+	if slot.Category != "入职体检" || slot.BookedCount != 1 {
+		t.Fatalf("expected category change with booked count preserved, got %#v", slot)
+	}
+}
+
 func TestCreateScheduleSlotRejectsInvalidTimeRange(t *testing.T) {
 	handler, _, fixture := newScheduleSlotOverlapFixture(t)
 	router := newScheduleSlotOverlapRouter(handler, fixture.admin)

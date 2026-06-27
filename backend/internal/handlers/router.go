@@ -4713,7 +4713,6 @@ func scheduleSlotAssignmentChanged(existing, next models.ScheduleSlot) bool {
 		existing.InstitutionID != next.InstitutionID ||
 		existing.Date != next.Date ||
 		existing.Period != next.Period ||
-		existing.Category != next.Category ||
 		existing.StartTime != next.StartTime ||
 		existing.EndTime != next.EndTime
 }

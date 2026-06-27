@@ -371,6 +371,7 @@ function SchedulePanel({ h }) {
   const categories = categoryOptions.map((option) => option.value)
   const selectedWeekdays = new Set((f.weekdays || []).map(Number))
   const selectedStartTimes = normalizeScheduleStartTimes(f.startTimes)
+  const assignmentLocked = Boolean(f.id && Number(f.bookedCount || 0) > 0)
   useEffect(() => {
     if (f.category && f.institutionId && !categories.includes(f.category)) {
       h.updateForm('schedule', { category: '' })
@@ -408,6 +409,7 @@ function SchedulePanel({ h }) {
       weekdays: slot.date ? [new Date(slot.date).getDay()] : [],
       endTime: slot.endTime || '',
       capacity: slot.capacity || 1,
+      bookedCount: slot.bookedCount || 0,
       status: slot.status || 'available',
     })
     setOpen(true)
@@ -426,13 +428,14 @@ function SchedulePanel({ h }) {
   ]} rows={rows} pagination={h.paginations.slots} onPageChange={(page) => setParams((current) => ({ ...current, page }))} onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))} />
     <Modal open={open} title={f.id ? '编辑医生号源' : '新增医生号源'} className="schedule-modal" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.schedule} onClick={save}>{f.id ? '保存编辑' : '新增号源'}</Button></>}>
       <div className="form-grid schedule-form-grid">
-        <Field label="医生"><Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
-        <Field label="机构"><Select value={f.institutionId} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value, category: '' })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
+        <Field label="医生"><Select value={f.doctorId} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
+        <Field label="机构"><Select value={f.institutionId} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value, category: '' })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
         <Field label="分类"><Select value={f.category} disabled={!f.institutionId || !categoryOptions.length} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">{f.institutionId ? '请选择机构已绑定套餐' : '请先选择机构'}</option>{categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
         {!f.id && <Field label="重复周数"><Select value={f.repeatWeeks} onChange={(e) => h.updateForm('schedule', { repeatWeeks: Number(e.target.value) })}><option value={1}>1 周</option><option value={2}>2 周</option><option value={4}>4 周</option><option value={8}>8 周</option></Select></Field>}
-        <Field label="星期" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-weekday-grid">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option schedule-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedWeekdays.has(day.value)} onChange={() => f.id ? selectEditWeekday(day.value) : toggleWeekday(day.value)} /><strong>{day.label}</strong><small>{f.id ? '本周' : '重复'}</small></label>)}</div></Field>
-        <Field label="时间段" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-time-grid">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option schedule-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedStartTimes.includes(time.start)} onChange={() => f.id ? selectEditTime(time.start) : toggleStartTime(time.start)} /><strong>{time.label}</strong><small>{time.start < '12:00' ? '上午' : '下午'}</small></label>)}</div></Field>
-        {f.id && <Field label="上午/下午"><Select value={f.period} onChange={(e) => h.updateForm('schedule', { period: e.target.value })}><option value="上午">上午</option><option value="下午">下午</option></Select></Field>}
+        <Field label="星期" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-weekday-grid">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option schedule-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedWeekdays.has(day.value)} onChange={() => f.id ? selectEditWeekday(day.value) : toggleWeekday(day.value)} /><strong>{day.label}</strong><small>{f.id ? '本周' : '重复'}</small></label>)}</div></Field>
+        <Field label="时间段" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-time-grid">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option schedule-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedStartTimes.includes(time.start)} onChange={() => f.id ? selectEditTime(time.start) : toggleStartTime(time.start)} /><strong>{time.label}</strong><small>{time.start < '12:00' ? '上午' : '下午'}</small></label>)}</div></Field>
+        {assignmentLocked && <p className="muted schedule-lock-note">该号源已有预约，医生、机构、星期和时间段已锁定，只能调整容量、状态或分类。</p>}
+        {f.id && <Field label="上午/下午"><Select value={f.period} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { period: e.target.value })}><option value="上午">上午</option><option value="下午">下午</option></Select></Field>}
         <Field label="容量"><TextInput type="number" min="1" value={f.capacity} onChange={(e) => h.updateForm('schedule', { capacity: e.target.value })} /></Field>
         <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('schedule', { status: e.target.value })}><option value="available">可预约</option><option value="disabled">停用</option></Select></Field>
       </div>

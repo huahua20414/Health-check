@@ -51,7 +51,7 @@ const defaultForms = {
   systemSetting: { id: null, key: '', label: '', value: '', valueType: 'string', group: '', status: 'active', description: '' },
   checkupItem: { id: null, name: '', category: '', department: '', price: 0, durationMin: 10, description: '', status: 'active' },
   packageItem: { id: null, packageId: '', itemId: '', sortOrder: 0, required: true },
-  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', weekdays: [], repeatWeeks: 2, period: '上午', category: '', startTime: '08:30', startTimes: [], endTime: '09:00', capacity: 1, status: 'available' },
+  schedule: { id: null, doctorId: '', institutionId: '', date: '', dates: '', weekdays: [], repeatWeeks: 2, period: '上午', category: '', startTime: '08:30', startTimes: [], endTime: '09:00', capacity: 1, bookedCount: 0, status: 'available' },
   report: { appointmentId: '', summary: '', conclusion: '', recommendation: '' },
 }
 
@@ -552,6 +552,7 @@ export function HealthProvider({ children }) {
         capacity: Number(forms.schedule.capacity || 1),
       }
       if (forms.schedule.id) {
+        const locked = Number(forms.schedule.bookedCount || 0) > 0
         const weekday = (forms.schedule.weekdays || []).map(Number).find((day) => Number.isInteger(day))
         const startTime = String(forms.schedule.startTime || '').trim()
         if (!Number.isInteger(weekday) || !startTime) throw new Error('请勾选一个星期和一个时间段')
@@ -559,12 +560,12 @@ export function HealthProvider({ children }) {
           method: 'PATCH',
           body: JSON.stringify({
             ...base,
-            date: dateInSameWeekByWeekday(forms.schedule.date, weekday),
+            date: locked ? forms.schedule.date : dateInSameWeekByWeekday(forms.schedule.date, weekday),
             dates: '',
             startTime,
             startTimes: startTime,
-            period: '',
-            endTime: scheduleEndTime(startTime),
+            period: locked ? forms.schedule.period : '',
+            endTime: locked ? forms.schedule.endTime : scheduleEndTime(startTime),
           }),
         })
       } else {
