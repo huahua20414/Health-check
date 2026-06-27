@@ -930,6 +930,40 @@ a { color: inherit; text-decoration: none; }
 .slot-card small { line-height: 1.35; overflow-wrap: anywhere; }
 .slot-card.is-full { border-color: rgba(245,158,11,.45); background: var(--soft-amber); }
 .slot-card .btn { justify-self: start; margin-top: 2px; }
+.slot-card.slot-card-multi {
+  align-content: start;
+  min-height: 138px;
+}
+.slot-doctor-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+}
+.slot-doctor-option {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+}
+.slot-doctor-option strong {
+  font-size: 13px;
+}
+.slot-doctor-option span,
+.slot-doctor-option small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.slot-doctor-option.is-selected {
+  border-color: var(--blue);
+  background: var(--soft-blue);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, .1);
+}
 .slot-card.is-selected {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);

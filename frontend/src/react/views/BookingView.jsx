@@ -77,7 +77,7 @@ export function BookingView() {
   }
   return (
     <>
-      <PageHeader title="预约体检" subtitle="选择机构、套餐和未来两周号源，医生由后端按可用号自动分配。" />
+      <PageHeader title="预约体检" subtitle="选择机构、套餐和未来两周号源；同一时间段有多位医生时，可单独选择医生。" />
       <div className="steps">{bookingSteps.map((label, index) => <span key={label} className={index === step ? 'active' : index < step ? 'done' : ''}>{index + 1} {label}</span>)}</div>
       <Card title={bookingSteps[step]} className="booking-step-card">
         {step === 0 && (
@@ -135,6 +135,34 @@ export function BookingView() {
                   </div>
                 )
               }
+              if (group.doctorCount > 1) {
+                const availableDoctors = group.slots.filter((slot) => Math.max(0, Number(slot.capacity || 0) - Number(slot.bookedCount || 0)) > 0)
+                return (
+                  <div key={`${group.date}-${group.startTime}`} className={`slot-card slot-card-multi ${availableDoctors.some((slot) => Number(form.slotId) === Number(slot.id)) ? 'is-selected' : ''}`}>
+                    <strong>{group.startTime}-{group.endTime}</strong>
+                    <span>总 {group.totalCapacity} · 余 {group.remaining} · 候补 {group.waitlistCount}</span>
+                    <small>请选择医生</small>
+                    <div className="slot-doctor-list">
+                      {availableDoctors.map((slot) => {
+                        const remaining = Math.max(0, Number(slot.capacity || 0) - Number(slot.bookedCount || 0))
+                        const selected = Number(form.slotId) === Number(slot.id)
+                        return (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            className={`slot-doctor-option ${selected ? 'is-selected' : ''}`}
+                            onClick={() => h.updateForm('appointment', { slotId: slot.id, date: group.date, period: group.period || group.startTime })}
+                          >
+                            <strong>{slot.doctor?.name || `医生 #${slot.doctorId}`}</strong>
+                            <span>{[slot.doctor?.title, slot.doctor?.department].filter(Boolean).join(' · ') || '可预约'}</span>
+                            <small>余号 {remaining}</small>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              }
               return (
                 <button key={`${group.date}-${group.startTime}`} className={`slot-card ${Number(form.slotId) === chosen.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { slotId: chosen.id, date: group.date, period: group.period || group.startTime })}>
                   <strong>{group.startTime}-{group.endTime}</strong>
@@ -156,6 +184,7 @@ export function BookingView() {
             <ConfirmRow label="机构" value={selectedInstitution?.name || '未选择'} />
             <ConfirmRow label="日期" value={form.date || '未选择'} />
             <ConfirmRow label="时间" value={selectedSlot ? `${selectedSlot.startTime}-${selectedSlot.endTime}` : form.period || '未选择'} />
+            <ConfirmRow label="医生" value={selectedSlot?.doctor?.name ? [selectedSlot.doctor.name, selectedSlot.doctor.title].filter(Boolean).join(' · ') : '未选择'} />
             <ConfirmRow label="体检人" value={selectedMember ? `${selectedMember.name} · ${selectedMember.relation}` : '本人'} />
             {!!selectedPackageItems.length && (
               <div className="package-item-picker">
