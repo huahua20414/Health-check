@@ -811,6 +811,9 @@ func (h *Handler) buildAppointmentQuery(c *gin.Context, withReport bool) *gorm.D
 	if withReport {
 		query = query.Preload("Report")
 	}
+	if h.db.Migrator().HasTable(&models.ServiceReview{}) {
+		query = query.Preload("Review")
+	}
 	if current.Role == "user" {
 		query = query.Where("user_id = ?", current.ID)
 	} else if current.Role == "doctor" {

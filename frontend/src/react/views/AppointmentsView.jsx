@@ -67,12 +67,15 @@ export function AppointmentsView() {
 function AppointmentActions({ appointment, h, openInvoice, openReview }) {
   const canEditBooking = appointment.status === 'booked'
   const canReview = appointment.status === 'checked' || appointment.status === 'reported'
+  const hasReview = Boolean(appointment.review?.id)
+  const hasInvoice = appointment.invoiceStatus && appointment.invoiceStatus !== 'none'
+  const invoiceText = appointment.invoiceStatus === 'issued' ? '发票已开具' : '发票已提交'
   return (
     <div className="action-grid">
       {canEditBooking && <Button variant="secondary" onClick={() => h.updateAppointmentPayment(appointment, appointment.paymentStatus === 'paid' ? 'unpaid' : 'paid').catch((e) => h.notify('error', e.message))}>{appointment.paymentStatus === 'paid' ? '撤销支付' : '标记已支付'}</Button>}
       {canEditBooking && <Button variant="danger" onClick={() => h.cancelAppointment(appointment).catch((e) => h.notify('error', e.message))}>取消预约</Button>}
-      {appointment.status !== 'canceled' && <Button variant="ghost" onClick={() => openInvoice(appointment)}>填写发票</Button>}
-      {canReview && <Button variant="ghost" onClick={() => openReview(appointment)}>评价</Button>}
+      {appointment.status !== 'canceled' && (hasInvoice ? <Button variant="ghost" onClick={() => h.notify('info', invoiceText)}>{invoiceText}</Button> : <Button variant="ghost" onClick={() => openInvoice(appointment)}>填写发票</Button>)}
+      {canReview && (hasReview ? <Button variant="ghost" onClick={() => h.notify('info', '该预约已评价')}>已评价</Button> : <Button variant="ghost" onClick={() => openReview(appointment)}>评价</Button>)}
       {!canEditBooking && !canReview && appointment.status === 'canceled' && <span className="muted-text">已取消预约无可用操作</span>}
     </div>
   )

@@ -135,6 +135,7 @@ type Appointment struct {
 	Slot             ScheduleSlot       `json:"slot"`
 	AppointmentItems []AppointmentItem  `json:"appointmentItems,omitempty" gorm:"foreignKey:AppointmentID"`
 	Report           *Report            `json:"report,omitempty"`
+	Review           *ServiceReview     `json:"review,omitempty" gorm:"foreignKey:AppointmentID"`
 	CreatedAt        time.Time          `json:"createdAt"`
 	UpdatedAt        time.Time          `json:"updatedAt"`
 }
