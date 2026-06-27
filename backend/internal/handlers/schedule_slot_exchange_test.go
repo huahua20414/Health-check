@@ -50,6 +50,31 @@ func TestScheduleSlotsSupportKeywordAndPagination(t *testing.T) {
 	}
 }
 
+func TestScheduleSlotsIncludeWaitlistCount(t *testing.T) {
+	handler, db, fixture := newScheduleSlotExchangeFixture(t)
+	router := newScheduleSlotExchangeRouter(handler, fixture.admin)
+	entries := []models.WaitlistEntry{
+		{ID: 30, UserID: fixture.admin.ID, PackageID: 1, InstitutionID: fixture.institution.ID, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "waiting"},
+		{ID: 31, UserID: fixture.doctor.ID, PackageID: 1, InstitutionID: fixture.institution.ID, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "waiting"},
+		{ID: 32, UserID: fixture.doctor.ID, PackageID: 1, InstitutionID: fixture.institution.ID, AppointmentType: "个人体检", Category: "年度综合", Date: "2026-07-01", Period: "上午", StartTime: "09:00", EndTime: "09:30", Status: "canceled"},
+	}
+	for _, entry := range entries {
+		if err := db.Create(&entry).Error; err != nil {
+			t.Fatalf("create waitlist entry %#v: %v", entry, err)
+		}
+	}
+
+	response := performScheduleSlotExchangeRequest(t, router, http.MethodGet, "/schedule/slots?date=2026-07-01&page=1&pageSize=10", nil, "")
+	page := decodeScheduleSlotPage(t, response)
+
+	if len(page.Items) != 1 {
+		t.Fatalf("expected one slot, got %#v", page.Items)
+	}
+	if page.Items[0].WaitlistCount != 2 {
+		t.Fatalf("expected two waiting waitlist entries, got %#v", page.Items[0])
+	}
+}
+
 func TestScheduleSlotsCanFilterFutureAvailableCapacity(t *testing.T) {
 	handler, _, fixture := newScheduleSlotExchangeFixture(t)
 	router := newScheduleSlotExchangeRouter(handler, fixture.admin)
@@ -117,7 +142,7 @@ func newScheduleSlotExchangeFixture(t *testing.T) (*Handler, *gorm.DB, scheduleS
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.OperationLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.WaitlistEntry{}, &models.OperationLog{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	fixture := scheduleSlotExchangeFixture{

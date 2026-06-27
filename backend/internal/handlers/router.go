@@ -1409,14 +1409,64 @@ func (h *Handler) scheduleSlots(c *gin.Context) {
 	var slots []models.ScheduleSlot
 	query := h.scheduleSlotsQuery(c)
 	if page, pageSize, ok := paginationParams(c); ok {
-		respondPaginated(c, query, page, pageSize, &slots)
+		var total int64
+		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&slots).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		h.attachScheduleSlotWaitlistCounts(slots)
+		c.JSON(http.StatusOK, gin.H{
+			"items":    slots,
+			"total":    total,
+			"page":     page,
+			"pageSize": pageSize,
+		})
 		return
 	}
 	if err := query.Find(&slots).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.attachScheduleSlotWaitlistCounts(slots)
 	c.JSON(http.StatusOK, slots)
+}
+
+func (h *Handler) attachScheduleSlotWaitlistCounts(slots []models.ScheduleSlot) {
+	if len(slots) == 0 || !h.db.Migrator().HasTable(&models.WaitlistEntry{}) {
+		return
+	}
+	conditions := make([]string, 0, len(slots))
+	args := make([]any, 0, len(slots)*5)
+	for _, slot := range slots {
+		conditions = append(conditions, "(date = ? AND institution_id = ? AND category = ? AND start_time = ? AND status = ?)")
+		args = append(args, slot.Date, slot.InstitutionID, slot.Category, slot.StartTime, "waiting")
+	}
+	type waitlistCountRow struct {
+		Date          string
+		InstitutionID uint
+		Category      string
+		StartTime     string
+		Count         int
+	}
+	var rows []waitlistCountRow
+	if err := h.db.Model(&models.WaitlistEntry{}).
+		Select("date, institution_id, category, start_time, COUNT(*) AS count").
+		Where(strings.Join(conditions, " OR "), args...).
+		Group("date, institution_id, category, start_time").
+		Scan(&rows).Error; err != nil {
+		return
+	}
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[fmt.Sprintf("%s|%d|%s|%s", row.Date, row.InstitutionID, row.Category, row.StartTime)] = row.Count
+	}
+	for i := range slots {
+		slots[i].WaitlistCount = counts[fmt.Sprintf("%s|%d|%s|%s", slots[i].Date, slots[i].InstitutionID, slots[i].Category, slots[i].StartTime)]
+	}
 }
 
 func (h *Handler) createScheduleSlot(c *gin.Context) {

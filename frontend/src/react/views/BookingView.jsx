@@ -14,7 +14,7 @@ export function BookingView() {
     const today = new Date()
     const endDate = new Date(today)
     endDate.setDate(today.getDate() + 13)
-    h.loadSlotsPage({ status: 'available', availableOnly: 'true', fromDate: localDateString(today), toDate: localDateString(endDate) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
+    h.loadSlotsPage({ status: 'available', fromDate: localDateString(today), toDate: localDateString(endDate) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
     h.loadFamilyMembersPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
   }, [])
   const form = h.forms.appointment
@@ -110,11 +110,11 @@ export function BookingView() {
             {selectedDaySlots.map((group) => {
               const chosen = group.availableSlot || group.slots[0]
               const full = group.remaining <= 0
-              if (full) {
+              if (full && group.totalCapacity > 0) {
                 return (
                   <div key={`${group.date}-${group.startTime}`} className="slot-card is-full">
                     <strong>{group.startTime}-{group.endTime}</strong>
-                    <span>{group.doctorCount} 位医生 · 已满</span>
+                    <span>总 {group.totalCapacity} · 余 0 · 候补 {group.waitlistCount}</span>
                     <StatusTag status="full" />
                     <Button size="sm" variant="secondary" loading={h.loading.appointment} onClick={() => h.joinWaitlist(chosen).then(() => navigate('/my-appointments')).catch((e) => h.notify('error', e.message))}>加入候补</Button>
                   </div>
@@ -123,7 +123,7 @@ export function BookingView() {
               return (
                 <button key={`${group.date}-${group.startTime}`} className={`slot-card ${Number(form.slotId) === chosen.id ? 'is-selected' : ''}`} onClick={() => h.updateForm('appointment', { slotId: chosen.id, date: group.date, period: group.period || group.startTime })}>
                   <strong>{group.startTime}-{group.endTime}</strong>
-                  <span>{group.doctorCount} 位医生 · 余 {group.remaining}</span>
+                  <span>总 {group.totalCapacity} · 余 {group.remaining} · 候补 {group.waitlistCount}</span>
                   <StatusTag status="available" />
                 </button>
               )
@@ -214,12 +214,16 @@ function groupSlotsByDateTime(slots) {
         slots: [],
         doctorIds: new Set(),
         remaining: 0,
+        totalCapacity: 0,
+        waitlistCount: 0,
         availableSlot: null,
       }
     }
     grouped[key].slots.push(slot)
     grouped[key].doctorIds.add(slot.doctorId)
     grouped[key].remaining += remaining
+    grouped[key].totalCapacity += Number(slot.capacity || 0)
+    grouped[key].waitlistCount = Math.max(grouped[key].waitlistCount, Number(slot.waitlistCount || 0))
     if (!grouped[key].availableSlot && remaining > 0) grouped[key].availableSlot = slot
   }
   return Object.values(grouped)

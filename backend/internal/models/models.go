@@ -253,6 +253,7 @@ type ScheduleSlot struct {
 	EndTime       string             `json:"endTime" gorm:"size:8;not null"`
 	Capacity      int                `json:"capacity" gorm:"not null;default:1"`
 	BookedCount   int                `json:"bookedCount" gorm:"not null;default:0"`
+	WaitlistCount int                `json:"waitlistCount" gorm:"-"`
 	Status        string             `json:"status" gorm:"size:16;not null;default:'available'"`
 	Doctor        User               `json:"doctor"`
 	Institution   CheckupInstitution `json:"institution"`
