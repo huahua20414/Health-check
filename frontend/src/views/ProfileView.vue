@@ -34,7 +34,6 @@
           </el-form-item>
           <el-form-item label="身份证号"><el-input v-model="profileForm.idCard" maxlength="18" /></el-form-item>
           <el-form-item label="年龄"><el-input :model-value="profileAgeText" disabled /></el-form-item>
-          <el-form-item label="头像 URL"><el-input v-model="profileForm.avatarUrl" /></el-form-item>
           <el-form-item label="个人简介"><el-input v-model="profileForm.bio" type="textarea" :rows="4" /></el-form-item>
           <el-form-item label="消息通知">
             <el-switch v-model="profileForm.emailNotify" active-text="接收邮件" inactive-text="不接收" />

@@ -95,7 +95,7 @@ const appointmentForm = reactive({
   invoiceTaxNo: '',
 })
 const waitlistForm = reactive({ appointmentType: '个人体检', institutionId: null, packageId: null, date: '', period: '', note: '' })
-const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true })
+const profileForm = reactive({ name: '', gender: '', age: 0, idCard: '', email: '', bio: '', emailNotify: true })
 const emailForm = reactive({ email: '', code: '' })
 const familyMemberForm = reactive({ id: null, name: '', relation: '', gender: '', age: null, idCard: '', phone: '' })
 const rescheduleForm = reactive({ appointmentId: null, institutionId: null, slotId: null, date: '', period: '', note: '' })
@@ -405,7 +405,6 @@ function saveUser(user) {
       age: user.age || 0,
       idCard: user.idCard || '',
       email: user.email || '',
-      avatarUrl: user.avatarUrl || '',
       bio: user.bio || '',
       emailNotify: user.emailNotify !== false,
     })
@@ -1591,7 +1590,6 @@ export function useHealthData() {
         name: profileForm.name,
         gender: profileForm.gender,
         idCard: profileForm.idCard,
-        avatarUrl: profileForm.avatarUrl,
         bio: profileForm.bio,
         emailNotify: profileForm.emailNotify,
       }

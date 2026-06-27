@@ -66,7 +66,7 @@ export function AdminUsersView() {
   const refresh = () => h.loadUsersPage(filters).catch((e) => h.notify('error', e.message))
   const updateStatus = (row, status) => h.updateUserStatus(row, status).then(refresh).catch((e) => h.notify('error', e.message))
   const openEdit = (row) => {
-    h.updateForm('adminUser', { id: row.id, name: row.name || '', gender: row.gender || '', idCard: row.idCard || '', email: row.email || '', avatarUrl: row.avatarUrl || '', bio: row.bio || '', emailNotify: row.emailNotify !== false, status: row.status || 'active' })
+    h.updateForm('adminUser', { id: row.id, name: row.name || '', gender: row.gender || '', idCard: row.idCard || '', email: row.email || '', bio: row.bio || '', emailNotify: row.emailNotify !== false, status: row.status || 'active' })
     setOpen(true)
   }
   const save = () => h.saveAdminUser().then(() => { setOpen(false); refresh() }).catch((e) => h.notify('error', e.message))
@@ -98,7 +98,6 @@ export function AdminUsersView() {
           <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('adminUser', { status: e.target.value })}><option value="active">启用</option><option value="pending">待审核</option><option value="disabled">停用</option></Select></Field>
           <Field label="邮箱通知"><Select value={String(f.emailNotify)} onChange={(e) => h.updateForm('adminUser', { emailNotify: e.target.value === 'true' })}><option value="true">开启</option><option value="false">关闭</option></Select></Field>
         </div>
-        <Field label="头像地址"><TextInput value={f.avatarUrl} onChange={(e) => h.updateForm('adminUser', { avatarUrl: e.target.value })} /></Field>
         <Field label="简介"><Textarea value={f.bio} onChange={(e) => h.updateForm('adminUser', { bio: e.target.value })} /></Field>
       </Modal>
     </>

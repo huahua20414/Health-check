@@ -32,8 +32,8 @@ const defaultForms = {
   doctorRegister: { name: '', email: '', code: '', employeeNo: '', department: '', title: '' },
   appointment: { appointmentType: '个人体检', institutionId: '', packageId: '', familyMemberId: '', slotId: '', couponId: '', date: '', period: '', note: '', paymentStatus: 'unpaid', invoiceTitle: '', invoiceTaxNo: '', selectedPackageItemIds: [] },
   waitlist: { appointmentType: '个人体检', institutionId: '', packageId: '', date: '', period: '', note: '' },
-  profile: { name: '', gender: '', age: 0, idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true },
-  adminUser: { id: null, name: '', gender: '', idCard: '', email: '', avatarUrl: '', bio: '', emailNotify: true, status: 'active' },
+  profile: { name: '', gender: '', age: 0, idCard: '', email: '', bio: '', emailNotify: true },
+  adminUser: { id: null, name: '', gender: '', idCard: '', email: '', bio: '', emailNotify: true, status: 'active' },
   email: { email: '', code: '' },
   familyMember: { id: null, name: '', relation: '', gender: '', age: null, idCard: '', phone: '' },
   reschedule: { appointmentId: null, institutionId: '', slotId: '', date: '', period: '', note: '' },
@@ -126,7 +126,7 @@ export function HealthProvider({ children }) {
     if (user) {
       setForms((current) => ({
         ...current,
-        profile: { ...current.profile, name: user.name || '', gender: user.gender || '', age: user.age || 0, idCard: user.idCard || '', email: user.email || '', avatarUrl: user.avatarUrl || '', bio: user.bio || '', emailNotify: user.emailNotify !== false },
+        profile: { ...current.profile, name: user.name || '', gender: user.gender || '', age: user.age || 0, idCard: user.idCard || '', email: user.email || '', bio: user.bio || '', emailNotify: user.emailNotify !== false },
         email: { ...current.email, email: user.email || '', code: '' },
       }))
     }
@@ -414,7 +414,7 @@ export function HealthProvider({ children }) {
       assertRequired(forms.profile.name, '请输入姓名')
       const idCard = normalizeIDCard(forms.profile.idCard)
       assertIDCard(idCard)
-      const user = await request('/profile', { method: 'PATCH', body: JSON.stringify({ ...forms.profile, idCard }) })
+      const user = await request('/profile', { method: 'PATCH', body: JSON.stringify({ name: forms.profile.name, gender: forms.profile.gender, idCard, bio: forms.profile.bio, emailNotify: forms.profile.emailNotify }) })
       saveUser(user)
       await loadAll()
     }),
@@ -428,7 +428,7 @@ export function HealthProvider({ children }) {
       assertEmail(forms.adminUser.email)
       const idCard = normalizeIDCard(forms.adminUser.idCard)
       assertIDCard(idCard)
-      const user = await request(`/users/${forms.adminUser.id}`, { method: 'PATCH', body: JSON.stringify({ ...forms.adminUser, idCard }) })
+      const user = await request(`/users/${forms.adminUser.id}`, { method: 'PATCH', body: JSON.stringify({ id: forms.adminUser.id, name: forms.adminUser.name, email: forms.adminUser.email, gender: forms.adminUser.gender, idCard, bio: forms.adminUser.bio, emailNotify: forms.adminUser.emailNotify, status: forms.adminUser.status }) })
       resetForm('adminUser')
       return user
     }),

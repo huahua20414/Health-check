@@ -384,7 +384,6 @@ func (h *Handler) updateProfile(c *gin.Context) {
 		"gender":       strings.TrimSpace(req.Gender),
 		"age":          age,
 		"id_card":      idCard,
-		"avatar_url":   req.AvatarURL,
 		"bio":          req.Bio,
 		"email_notify": req.EmailNotify,
 	}
@@ -3926,14 +3925,13 @@ func (h *Handler) updateUser(c *gin.Context) {
 		}
 	}
 	updates := map[string]any{
-		"name":       name,
-		"email":      email,
-		"gender":     strings.TrimSpace(req.Gender),
-		"id_card":    idCard,
-		"age":        age,
-		"avatar_url": strings.TrimSpace(req.AvatarURL),
-		"bio":        strings.TrimSpace(req.Bio),
-		"status":     status,
+		"name":    name,
+		"email":   email,
+		"gender":  strings.TrimSpace(req.Gender),
+		"id_card": idCard,
+		"age":     age,
+		"bio":     strings.TrimSpace(req.Bio),
+		"status":  status,
 	}
 	if req.EmailNotify != nil {
 		updates["email_notify"] = *req.EmailNotify
