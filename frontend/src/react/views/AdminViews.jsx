@@ -382,6 +382,7 @@ function SchedulePanel({ h }) {
     else next.add(value)
     h.updateForm('schedule', { weekdays: Array.from(next) })
   }
+  const selectEditWeekday = (value) => h.updateForm('schedule', { weekdays: [value] })
   const toggleStartTime = (value) => {
     const next = new Set(selectedStartTimes)
     if (next.has(value)) next.delete(value)
@@ -404,6 +405,7 @@ function SchedulePanel({ h }) {
       category: slot.category || '',
       startTime: slot.startTime || '08:30',
       startTimes: slot.startTime || '08:30',
+      weekdays: slot.date ? [new Date(slot.date).getDay()] : [],
       endTime: slot.endTime || '',
       capacity: slot.capacity || 1,
       status: slot.status || 'available',
@@ -427,9 +429,9 @@ function SchedulePanel({ h }) {
         <Field label="医生"><Select value={f.doctorId} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
         <Field label="机构"><Select value={f.institutionId} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value, category: '' })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
         <Field label="分类"><Select value={f.category} disabled={!f.institutionId || !categoryOptions.length} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">{f.institutionId ? '请选择机构已绑定套餐' : '请先选择机构'}</option>{categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
-        {f.id ? <Field label="日期"><TextInput type="date" value={f.date} onChange={(e) => h.updateForm('schedule', { date: e.target.value, dates: e.target.value })} /></Field> : <Field label="重复周数"><Select value={f.repeatWeeks} onChange={(e) => h.updateForm('schedule', { repeatWeeks: Number(e.target.value) })}><option value={1}>1 周</option><option value={2}>2 周</option><option value={4}>4 周</option><option value={8}>8 周</option></Select></Field>}
-        {!f.id && <Field label="星期"><div className="package-item-picker institution-package-picker">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedWeekdays.has(day.value)} onChange={() => toggleWeekday(day.value)} /><strong>{day.label}</strong><small>每周重复</small></label>)}</div></Field>}
-        {f.id ? <Field label="时间段"><Select value={f.startTime} onChange={(e) => selectEditTime(e.target.value)}><option value="">请选择时间段</option>{scheduleTimeOptions.map((time) => <option key={time.start} value={time.start}>{time.label}</option>)}</Select></Field> : <Field label="时间段"><div className="package-item-picker institution-package-picker">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedStartTimes.includes(time.start)} onChange={() => toggleStartTime(time.start)} /><strong>{time.label}</strong><small>{time.start < '12:00' ? '上午' : '下午'}</small></label>)}</div></Field>}
+        {!f.id && <Field label="重复周数"><Select value={f.repeatWeeks} onChange={(e) => h.updateForm('schedule', { repeatWeeks: Number(e.target.value) })}><option value={1}>1 周</option><option value={2}>2 周</option><option value={4}>4 周</option><option value={8}>8 周</option></Select></Field>}
+        <Field label="星期"><div className="package-item-picker institution-package-picker">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedWeekdays.has(day.value)} onChange={() => f.id ? selectEditWeekday(day.value) : toggleWeekday(day.value)} /><strong>{day.label}</strong><small>{f.id ? '编辑到本周对应日期' : '每周重复'}</small></label>)}</div></Field>
+        <Field label="时间段"><div className="package-item-picker institution-package-picker">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedStartTimes.includes(time.start)} onChange={() => f.id ? selectEditTime(time.start) : toggleStartTime(time.start)} /><strong>{time.label}</strong><small>{time.start < '12:00' ? '上午' : '下午'}</small></label>)}</div></Field>
         {f.id && <Field label="上午/下午"><Select value={f.period} onChange={(e) => h.updateForm('schedule', { period: e.target.value })}><option value="上午">上午</option><option value="下午">下午</option></Select></Field>}
         <Field label="容量"><TextInput type="number" min="1" value={f.capacity} onChange={(e) => h.updateForm('schedule', { capacity: e.target.value })} /></Field>
         <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('schedule', { status: e.target.value })}><option value="available">可预约</option><option value="disabled">停用</option></Select></Field>

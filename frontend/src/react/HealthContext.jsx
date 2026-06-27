@@ -119,6 +119,15 @@ function scheduleEndTime(startTime) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+function dateInSameWeekByWeekday(baseDate, weekday) {
+  const date = new Date(baseDate)
+  if (Number.isNaN(date.getTime())) return ''
+  const target = Number(weekday)
+  if (!Number.isInteger(target) || target < 0 || target > 6) return formatDate(date)
+  date.setDate(date.getDate() + target - date.getDay())
+  return formatDate(date)
+}
+
 export function HealthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('currentUser') || 'null'))
   const [data, setData] = useState(initialData)
@@ -543,7 +552,21 @@ export function HealthProvider({ children }) {
         capacity: Number(forms.schedule.capacity || 1),
       }
       if (forms.schedule.id) {
-        await request(`/schedule/slots/${forms.schedule.id}`, { method: 'PATCH', body: JSON.stringify(base) })
+        const weekday = (forms.schedule.weekdays || []).map(Number).find((day) => Number.isInteger(day))
+        const startTime = String(forms.schedule.startTime || '').trim()
+        if (!Number.isInteger(weekday) || !startTime) throw new Error('请勾选一个星期和一个时间段')
+        await request(`/schedule/slots/${forms.schedule.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...base,
+            date: dateInSameWeekByWeekday(forms.schedule.date, weekday),
+            dates: '',
+            startTime,
+            startTimes: startTime,
+            period: '',
+            endTime: scheduleEndTime(startTime),
+          }),
+        })
       } else {
         const dates = scheduleDatesFromWeekdays(forms.schedule.weekdays, forms.schedule.repeatWeeks)
         const startTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes : splitBatchValues(forms.schedule.startTimes || forms.schedule.startTime)
