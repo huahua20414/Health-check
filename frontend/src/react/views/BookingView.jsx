@@ -11,7 +11,10 @@ export function BookingView() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   useEffect(() => {
-    h.loadSlotsPage({ page: 1, pageSize: 2000, status: 'available', availableOnly: 'true', fromDate: localDateString(new Date()) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
+    const today = new Date()
+    const endDate = new Date(today)
+    endDate.setDate(today.getDate() + 13)
+    h.loadSlotsPage({ status: 'available', availableOnly: 'true', fromDate: localDateString(today), toDate: localDateString(endDate) }, 'bookingSlots', 'slots').catch((e) => h.notify('error', e.message))
     h.loadFamilyMembersPage({ page: 1, pageSize: 50 }).catch((e) => h.notify('error', e.message))
   }, [])
   const form = h.forms.appointment
