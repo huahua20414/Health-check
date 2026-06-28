@@ -577,7 +577,12 @@ export function HealthProvider({ children }) {
       resetForm('schedule')
       await loaders.loadSlotsPage({ template: 'true' })
     }),
-    archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => { await request(`/schedule/slots/${row.id}?template=true`, { method: 'DELETE' }); await loaders.loadSlotsPage({ template: 'true' }) }),
+    archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => {
+      loaders.clearSchedulePreviewSlots()
+      if (Number(forms.schedule.id) === Number(row.id)) resetForm('schedule')
+      await request(`/schedule/slots/${row.id}?template=true`, { method: 'DELETE' })
+      await loaders.loadSlotsPage({ template: 'true' })
+    }),
     saveCoupon: () => action('coupon', '优惠券已保存', async () => { const audience = forms.coupon.audience || 'all'; const body = JSON.stringify({ ...forms.coupon, value: Number(forms.coupon.value || 0), minAmount: Number(forms.coupon.minAmount || 0), packageId: Number(forms.coupon.packageId || 0), applyMode: forms.coupon.applyMode || 'auto', audience, firstOrderOnly: audience === 'new_user' }); if (forms.coupon.id) await request(`/coupons/${forms.coupon.id}`, { method: 'PATCH', body }); else await request('/coupons', { method: 'POST', body }); resetForm('coupon'); await loaders.loadCouponsPage() }),
     archiveCoupon: (row) => action('coupon', '优惠券已归档', async () => { await request(`/coupons/${row.id}`, { method: 'DELETE' }); await loaders.loadCouponsPage() }),
     saveReviewReply: () => action('review', '评价处理已保存', async () => { await request(`/reviews/${forms.reviewReply.id}/reply`, { method: 'PATCH', body: JSON.stringify(forms.reviewReply) }); resetForm('reviewReply'); await loaders.loadReviewsPage() }),

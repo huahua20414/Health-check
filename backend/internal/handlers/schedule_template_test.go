@@ -295,3 +295,87 @@ func TestScheduleTemplateUpdateReusesScopedFutureSlots(t *testing.T) {
 		t.Fatalf("expected scoped slot to be rebound to template, got template_id=%d", rebound.TemplateID)
 	}
 }
+
+func TestArchiveScheduleTemplateRemovesItFromTemplateQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.CheckupInstitution{},
+		&models.CheckupPackage{},
+		&models.InstitutionPackage{},
+		&models.ScheduleTemplate{},
+		&models.ScheduleSlot{},
+		&models.OperationLog{},
+	); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	admin := models.User{ID: 1, Name: "管理员", Email: "admin@example.com", Phone: "13800000001", Role: "admin", Status: "active", PasswordHash: "hash"}
+	doctor := models.User{ID: 2, Name: "李四", Email: "doctor@example.com", Phone: "13800000002", Role: "doctor", Status: "active", PasswordHash: "hash"}
+	institution := models.CheckupInstitution{ID: 10, Name: "总院", Address: "健康路 1 号", Status: "active"}
+	pkg := models.CheckupPackage{ID: 20, Name: "入职基础体检", Category: "入职体检", Price: 199, Status: "active"}
+	link := models.InstitutionPackage{InstitutionID: institution.ID, PackageID: pkg.ID}
+	for _, row := range []any{&admin, &doctor, &institution, &pkg, &link} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create fixture row %#v: %v", row, err)
+		}
+	}
+
+	handler := &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user", admin)
+		c.Next()
+	})
+	router.POST("/schedule/slots", handler.createScheduleSlot)
+	router.DELETE("/schedule/slots/:id", handler.archiveScheduleSlot)
+	router.GET("/schedule/slots", handler.scheduleSlots)
+
+	createBody, _ := json.Marshal(scheduleSlotRequest{
+		DoctorID:      doctor.ID,
+		InstitutionID: institution.ID,
+		Category:      "入职体检",
+		Weekdays:      []int{1},
+		StartTimes:    []string{"08:00"},
+		Capacity:      1,
+		Status:        "available",
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/schedule/slots?template=true", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	router.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected create 201, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	var created models.ScheduleTemplate
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode template: %v", err)
+	}
+
+	archiveReq := httptest.NewRequest(http.MethodDelete, "/schedule/slots/"+strconv.Itoa(int(created.ID))+"?template=true", nil)
+	archiveRec := httptest.NewRecorder()
+	router.ServeHTTP(archiveRec, archiveReq)
+	if archiveRec.Code != http.StatusOK {
+		t.Fatalf("expected archive 200, got %d: %s", archiveRec.Code, archiveRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/schedule/slots?template=true&doctorId=2&institutionId=10&category=入职体检", nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected list 200, got %d: %s", listRec.Code, listRec.Body.String())
+	}
+
+	var templates []models.ScheduleTemplate
+	if err := json.Unmarshal(listRec.Body.Bytes(), &templates); err != nil {
+		t.Fatalf("decode templates: %v", err)
+	}
+	if len(templates) != 0 {
+		t.Fatalf("expected archived template to disappear from template query, got %d", len(templates))
+	}
+}
