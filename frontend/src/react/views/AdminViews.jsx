@@ -471,19 +471,7 @@ function SchedulePanel({ h }) {
         <Field label="时间段" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-time-grid">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option schedule-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedStartTimes.includes(time.start)} onChange={() => f.id ? selectEditTime(time.start) : toggleStartTime(time.start)} /><strong>{time.label}</strong></label>)}</div></Field>
         {!f.id && f.doctorId && f.institutionId && <div className="schedule-wide-field">
           {h.loading.schedulePreviewSlots && <p className="muted schedule-lock-note">正在检查该医生在当前机构的未来排班...</p>}
-          {!h.loading.schedulePreviewSlots && existingPreviewSlots.length > 0 && (
-            <div className="schedule-existing-list">
-              <p className="muted schedule-lock-note">已按该医生现有号源预勾选星期和时间段，具体已有组合如下，可直接编辑：</p>
-              <div className="package-item-picker schedule-option-grid">
-                {existingPreviewSlots.map((slot) => (
-                  <button key={slot.id} type="button" className="package-item-option schedule-option is-checked schedule-existing-button" onClick={() => openEdit(slot)}>
-                    <strong>{formatDate(slot.date)} {slot.startTime}-{slot.endTime}</strong>
-                    <small>{slot.doctor?.name || '医生'} · {slot.category || '未分类'}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {!h.loading.schedulePreviewSlots && existingPreviewSlots.length > 0 && <p className="muted schedule-lock-note">已按该医生在当前机构的现有号源预勾选星期和时间段。</p>}
           {!h.loading.schedulePreviewSlots && previewDates.length > 0 && selectedStartTimes.length > 0 && existingPreviewSlots.length === 0 && (
             <p className="muted schedule-lock-note">当前选择下暂无已有号源，可直接新增。</p>
           )}
