@@ -21,6 +21,16 @@ export function AppointmentsView() {
     h.updateForm('review', { appointmentId: appointment.id })
     setModal('review')
   }
+  const cancelSelectedAppointment = (appointment) => h.cancelAppointment(appointment).then(() => {
+    setSelected((current) => {
+      if (!current || current.id !== appointment.id) return current
+      return {
+        ...current,
+        status: 'canceled',
+        paymentStatus: appointment.paymentStatus === 'paid' ? 'refunded' : appointment.paymentStatus,
+      }
+    })
+  }).catch((e) => h.notify('error', e.message))
   const saveInvoice = () => h.saveInvoice().then(() => setModal('')).catch((e) => h.notify('error', e.message))
   const saveReview = () => h.createReview().then(() => setModal('')).catch((e) => h.notify('error', e.message))
   return (
@@ -49,7 +59,7 @@ export function AppointmentsView() {
             ))}
           </div>
         )}
-        <AppointmentActions appointment={selected} h={h} openInvoice={openInvoice} openReview={openReview} />
+        <AppointmentActions appointment={selected} h={h} openInvoice={openInvoice} openReview={openReview} onCancel={cancelSelectedAppointment} />
       </Card>}
       <Modal open={modal === 'invoice'} title={`填写发票：${selected?.orderNo || selected?.id || ''}`} onClose={() => setModal('')} actions={<><Button variant="ghost" onClick={() => setModal('')}>取消</Button><Button loading={h.loading.appointment} onClick={saveInvoice}>保存发票</Button></>}>
         <Field label="发票抬头"><TextInput value={h.forms.invoice.invoiceTitle} onChange={(e) => h.updateForm('invoice', { invoiceTitle: e.target.value })} /></Field>
@@ -64,7 +74,7 @@ export function AppointmentsView() {
   )
 }
 
-function AppointmentActions({ appointment, h, openInvoice, openReview }) {
+function AppointmentActions({ appointment, h, openInvoice, openReview, onCancel }) {
   const canEditBooking = appointment.status === 'booked'
   const canReview = appointment.status === 'checked' || appointment.status === 'reported'
   const hasReview = Boolean(appointment.review?.id)
@@ -73,7 +83,7 @@ function AppointmentActions({ appointment, h, openInvoice, openReview }) {
   return (
     <div className="action-grid">
       {canEditBooking && <Button variant="secondary" onClick={() => h.updateAppointmentPayment(appointment, appointment.paymentStatus === 'paid' ? 'unpaid' : 'paid').catch((e) => h.notify('error', e.message))}>{appointment.paymentStatus === 'paid' ? '撤销支付' : '标记已支付'}</Button>}
-      {canEditBooking && <Button variant="danger" onClick={() => h.cancelAppointment(appointment).catch((e) => h.notify('error', e.message))}>取消预约</Button>}
+      {canEditBooking && <Button variant="danger" loading={h.loading.status} onClick={() => onCancel(appointment)}>取消预约</Button>}
       {appointment.status !== 'canceled' && (hasInvoice ? <Button variant="ghost" onClick={() => h.notify('info', invoiceText)}>{invoiceText}</Button> : <Button variant="ghost" onClick={() => openInvoice(appointment)}>填写发票</Button>)}
       {canReview && (hasReview ? <Button variant="ghost" onClick={() => h.notify('info', '该预约已评价')}>已评价</Button> : <Button variant="ghost" onClick={() => openReview(appointment)}>评价</Button>)}
       {!canEditBooking && !canReview && appointment.status === 'canceled' && <span className="muted-text">已取消预约无可用操作</span>}
