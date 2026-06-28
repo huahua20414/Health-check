@@ -394,6 +394,15 @@ function SchedulePanel({ h }) {
       toDate: previewRange.toDate,
     }).catch((e) => h.notify('error', e.message))
   }, [open, f.id, f.doctorId, f.institutionId, f.repeatWeeks])
+  useEffect(() => {
+    if (!open || f.id || !f.doctorId || !f.institutionId || h.loading.schedulePreviewSlots) return
+    if ((f.weekdays || []).length || normalizeScheduleStartTimes(f.startTimes).length) return
+    if (!previewSlots.length) return
+    const weekdays = Array.from(new Set(previewSlots.map((slot) => new Date(slot.date).getDay()).filter((day) => Number.isInteger(day))))
+    const startTimes = Array.from(new Set(previewSlots.map((slot) => slot.startTime).filter(Boolean)))
+    if (!weekdays.length && !startTimes.length) return
+    h.updateForm('schedule', { weekdays, startTimes, startTime: startTimes[0] || '' })
+  }, [open, f.id, f.doctorId, f.institutionId, f.weekdays, f.startTimes, h.loading.schedulePreviewSlots, previewSlots])
   const toggleWeekday = (value) => {
     const next = new Set((f.weekdays || []).map(Number))
     if (next.has(value)) next.delete(value)
@@ -454,7 +463,7 @@ function SchedulePanel({ h }) {
           {h.loading.schedulePreviewSlots && <p className="muted schedule-lock-note">正在检查该医生未来排班...</p>}
           {!h.loading.schedulePreviewSlots && existingPreviewSlots.length > 0 && (
             <div className="schedule-existing-list">
-              <p className="muted schedule-lock-note">以下组合已存在号源，可直接编辑：</p>
+              <p className="muted schedule-lock-note">已按该医生现有号源预勾选星期和时间段，具体已有组合如下，可直接编辑：</p>
               <div className="package-item-picker schedule-option-grid">
                 {existingPreviewSlots.map((slot) => (
                   <button key={slot.id} type="button" className="package-item-option schedule-option is-checked schedule-existing-button" onClick={() => openEdit(slot)}>
