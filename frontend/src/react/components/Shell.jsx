@@ -23,6 +23,7 @@ export const menuItems = [
   ] },
   { path: '/doctor', label: '医生工作台', icon: 'Home', roles: ['doctor'] },
   { label: '体检业务', icon: 'ClipboardList', roles: ['doctor'], children: [
+    { path: '/doctor/schedule', label: '我的排班', icon: 'Calendar', roles: ['doctor'] },
     { path: '/appointments', label: '预约处理', icon: 'ClipboardList', roles: ['doctor'] },
     { path: '/reports', label: '报告录入', icon: 'FileText', roles: ['doctor'] },
   ] },

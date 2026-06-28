@@ -618,6 +618,90 @@ a { color: inherit; text-decoration: none; }
   opacity: .62;
   cursor: not-allowed;
 }
+.doctor-schedule-metrics {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+.doctor-schedule-list {
+  display: grid;
+  gap: 18px;
+}
+.doctor-schedule-day {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.doctor-schedule-day-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.doctor-schedule-day-head strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.2;
+}
+.doctor-schedule-day-head span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.doctor-schedule-day-total {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+}
+.doctor-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.doctor-schedule-slot {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.doctor-schedule-slot-top,
+.doctor-schedule-slot-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.doctor-schedule-slot-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 760;
+}
+.doctor-schedule-slot-main {
+  display: grid;
+  gap: 8px;
+}
+.doctor-schedule-slot-main p {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.doctor-schedule-slot-foot span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.doctor-schedule-slot-foot strong {
+  color: var(--cyan-text);
+  font-size: 13px;
+}
 .schedule-option.is-disabled input { cursor: not-allowed; }
 .schedule-existing-list {
   display: grid;
@@ -1114,7 +1198,10 @@ a { color: inherit; text-decoration: none; }
   .main-panel { height: auto; min-height: 100vh; }
   .topbar, .page-title { align-items: flex-start; flex-direction: column; }
   .workspace { padding: 0 16px 28px; }
-  .metrics-grid, .two-col, .management-grid, .auth-panel, .form-grid, .form-grid.compact, .mini-form, .mini-form.schedule-form, .steps { grid-template-columns: 1fr; }
+  .metrics-grid, .two-col, .management-grid, .auth-panel, .form-grid, .form-grid.compact, .mini-form, .mini-form.schedule-form, .steps, .doctor-schedule-grid, .doctor-schedule-metrics { grid-template-columns: 1fr; }
+  .doctor-schedule-day-head,
+  .doctor-schedule-slot-top,
+  .doctor-schedule-slot-foot { align-items: flex-start; flex-direction: column; }
   .schedule-option-grid, .schedule-time-grid { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
   .filter-bar { grid-template-columns: 1fr; }
   .filter-bar .row-actions { justify-content: stretch; }

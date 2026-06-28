@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Field, Modal, PageHeader, PaginatedTable, Select, StatusTag, Textarea } from '../components/UI.jsx'
+import { CalendarDays, Clock3, MapPin, Stethoscope } from 'lucide-react'
+import { Button, Card, Empty, Field, Metric, Modal, PageHeader, PaginatedTable, Select, StatusTag, Textarea } from '../components/UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 import { formatDate } from '../utils'
 
@@ -78,6 +79,105 @@ export function PeopleView({ admin = false }) {
       <Card title="人员列表"><PaginatedTable columns={[{ title: '姓名', render: (r) => r.name }, { title: '邮箱', render: (r) => r.email }, { title: '角色', render: (r) => r.role || r.source }, { title: '状态', render: (r) => <StatusTag status={r.status} /> }, { title: '操作', render: (r) => admin ? <UserStatusActions row={r} h={h} /> : '-' }]} rows={rows} /></Card>
     </>
   )
+}
+
+export function DoctorScheduleView() {
+  const h = useHealth()
+  const doctorId = h.currentUser?.id
+  useEffect(() => {
+    if (!doctorId) return
+    h.loadSlotsPage({ doctorId, fromDate: formatDate(new Date()), page: 1, pageSize: 100 }, 'slots', 'scheduleSlotRows').catch((e) => h.notify('error', e.message))
+  }, [doctorId])
+
+  const rows = (h.scheduleSlotRows || [])
+    .filter((slot) => Number(slot.doctorId) === Number(doctorId) && slot.status !== 'deleted')
+    .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`))
+
+  const groups = groupDoctorSchedule(rows)
+  const today = formatDate(new Date())
+  const thisWeekEnd = addDays(today, 6)
+  const todayCount = rows.filter((slot) => slot.date === today).length
+  const thisWeekCount = rows.filter((slot) => slot.date >= today && slot.date <= thisWeekEnd).length
+  const bookedCount = rows.reduce((sum, slot) => sum + Number(slot.bookedCount || 0), 0)
+  const remainingCount = rows.reduce((sum, slot) => sum + Math.max(0, Number(slot.capacity || 0) - Number(slot.bookedCount || 0)), 0)
+
+  return (
+    <>
+      <PageHeader title="我的排班" subtitle="查看自己接下来在哪家机构上班、什么时间出诊，仅展示不编辑。" />
+      <div className="metrics-grid doctor-schedule-metrics">
+        <Metric label="未来班次数" value={rows.length} tone="cyan" />
+        <Metric label="今日班次" value={todayCount} tone="green" />
+        <Metric label="本周班次" value={thisWeekCount} tone="violet" />
+        <Metric label="剩余可约/已约" value={`${remainingCount}/${bookedCount}`} tone="amber" />
+      </div>
+      <Card title="近期出诊安排" subtitle="按日期查看机构、时间段、分类和当前预约情况。">
+        {!rows.length && <Empty text={h.loading.slots ? '正在加载排班...' : '最近暂无排班'} />}
+        {!!rows.length && <div className="doctor-schedule-list">
+          {groups.map((group) => <section className="doctor-schedule-day" key={group.date}>
+            <header className="doctor-schedule-day-head">
+              <div>
+                <strong>{group.date}</strong>
+                <span>{weekdayText(group.date)} · {group.items.length} 个班次</span>
+              </div>
+              <span className="doctor-schedule-day-total">总容量 {group.items.reduce((sum, item) => sum + Number(item.capacity || 0), 0)}</span>
+            </header>
+            <div className="doctor-schedule-grid">
+              {group.items.map((slot) => {
+                const remaining = Math.max(0, Number(slot.capacity || 0) - Number(slot.bookedCount || 0))
+                return (
+                  <article className="doctor-schedule-slot" key={slot.id}>
+                    <div className="doctor-schedule-slot-top">
+                      <div className="doctor-schedule-slot-time"><Clock3 size={16} />{slot.startTime}-{slot.endTime}</div>
+                      <StatusTag status={slot.status}>{slot.status === 'available' ? '可出诊' : undefined}</StatusTag>
+                    </div>
+                    <div className="doctor-schedule-slot-main">
+                      <p><MapPin size={15} />{slot.institution?.name || '未设置机构'}</p>
+                      <p><Stethoscope size={15} />{slot.category || '未设置分类'}</p>
+                      <p><CalendarDays size={15} />{slot.period || timePeriod(slot.startTime)}</p>
+                    </div>
+                    <div className="doctor-schedule-slot-foot">
+                      <span>已约 {slot.bookedCount || 0} / 容量 {slot.capacity || 0}</span>
+                      <strong>{remaining > 0 ? `剩余 ${remaining}` : '已满'}</strong>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>)}
+        </div>}
+      </Card>
+    </>
+  )
+}
+
+function groupDoctorSchedule(rows) {
+  const grouped = new Map()
+  rows.forEach((row) => {
+    if (!grouped.has(row.date)) grouped.set(row.date, [])
+    grouped.get(row.date).push(row)
+  })
+  return Array.from(grouped.entries()).map(([date, items]) => ({
+    date,
+    items: items.sort((a, b) => `${a.startTime}-${a.id}`.localeCompare(`${b.startTime}-${b.id}`)),
+  }))
+}
+
+function weekdayText(value) {
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return '-'
+  return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
+}
+
+function addDays(value, days) {
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  date.setDate(date.getDate() + days)
+  return formatDate(date)
+}
+
+function timePeriod(startTime) {
+  const hour = Number(String(startTime || '').split(':')[0] || 0)
+  return hour < 12 ? '上午' : '下午'
 }
 
 function UserStatusActions({ row, h }) {

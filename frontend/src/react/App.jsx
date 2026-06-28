@@ -12,7 +12,7 @@ import { ReportsView } from './views/ReportsView.jsx'
 import { ProfileView } from './views/ProfileView.jsx'
 import { FamilyView } from './views/FamilyView.jsx'
 import { NotificationsView } from './views/NotificationsView.jsx'
-import { DoctorAppointmentsView, DoctorReportsView, PeopleView } from './views/DoctorViews.jsx'
+import { DoctorAppointmentsView, DoctorReportsView, DoctorScheduleView, PeopleView } from './views/DoctorViews.jsx'
 import { AdminDashboardView, AdminUsersView, DoctorReviewView, PackageManageView, ResourceManageView } from './views/AdminViews.jsx'
 import { AdminCommunicationView, AdminEngagementView, AdminSystemView } from './views/AdminExtraViews.jsx'
 import { formatDate, homePath } from './utils.js'
@@ -92,6 +92,7 @@ function AppRoutes() {
           <Route path="family-members" element={<Guarded roles={['user']}><FamilyView /></Guarded>} />
           <Route path="notifications" element={<Guarded roles={['user']}><NotificationsView /></Guarded>} />
           <Route path="doctor" element={<Guarded roles={['doctor']}><DashboardView /></Guarded>} />
+          <Route path="doctor/schedule" element={<Guarded roles={['doctor']}><DoctorScheduleView /></Guarded>} />
           <Route path="appointments" element={<Guarded roles={['doctor']}><DoctorAppointmentsView /></Guarded>} />
           <Route path="reports" element={<Guarded roles={['doctor']}><DoctorReportsView /></Guarded>} />
           <Route path="people" element={<Guarded roles={['doctor']}><PeopleView /></Guarded>} />
