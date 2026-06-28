@@ -2972,7 +2972,7 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 		Select("date AS label, COUNT(*) AS count").
 		Where("date BETWEEN ? AND ?", appointmentStartDate, appointmentEndDate).
 		Group("date").
-		Order("date asc").
+		Order("date desc").
 		Scan(&appointmentTrend)
 	var packageSales []row
 	h.db.Model(&models.Appointment{}).
@@ -2988,7 +2988,7 @@ func (h *Handler) adminDashboard(c *gin.Context) {
 		Select("DATE(created_at) AS label, COUNT(*) AS count").
 		Where("role = ? AND created_at >= ?", "user", growthStartTime).
 		Group("DATE(created_at)").
-		Order("label asc").
+		Order("label desc").
 		Scan(&userGrowth)
 	var averageRating struct {
 		Average float64 `json:"average"`

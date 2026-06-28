@@ -55,6 +55,28 @@ func TestAdminDashboardClampsDaysRange(t *testing.T) {
 	}
 }
 
+func TestAdminDashboardOrdersTimeSeriesByMostRecentFirst(t *testing.T) {
+	handler, db, fixture := newAdminDashboardFixture(t)
+	router := newAdminDashboardRouter(handler)
+
+	earlierAppointmentDay := fixture.recentAppointmentDay
+	laterAppointmentDay := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+	laterUserDay := time.Now().AddDate(0, 0, -1)
+
+	laterUser := models.User{ID: 4, Name: "较新用户", Email: "newer@example.com", Phone: "13800000004", Role: "user", Status: "active", PasswordHash: "hash", CreatedAt: laterUserDay}
+	laterPackage := models.CheckupPackage{ID: 22, Name: "较新套餐", Category: "年度综合", Price: 499, Items: "血常规", Status: "active"}
+	laterAppointment := models.Appointment{ID: 42, OrderNo: "HCNEWER", UserID: laterUser.ID, DoctorID: 3, InstitutionID: 10, SlotID: 30, PackageID: laterPackage.ID, AppointmentType: "个人体检", Category: "年度综合", Date: laterAppointmentDay, Period: "上午", StartTime: "11:00", EndTime: "11:30", Status: "booked", PaymentStatus: "paid", OriginalAmount: 499, PayableAmount: 499}
+	for _, row := range []any{&laterUser, &laterPackage, &laterAppointment} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create fixture row %#v: %v", row, err)
+		}
+	}
+
+	payload := decodeAdminDashboardPayload(t, performAdminDashboardRequest(t, router, "/admin/dashboard?days=7"))
+	assertDashboardLabels(t, payload.AppointmentTrend, []string{laterAppointmentDay, earlierAppointmentDay})
+	assertDashboardLabels(t, payload.UserGrowth, []string{time.Now().Format("2006-01-02"), laterUserDay.Format("2006-01-02")})
+}
+
 type dashboardPayload struct {
 	Summary          map[string]any `json:"summary"`
 	Range            dashboardRange `json:"range"`
