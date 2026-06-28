@@ -5057,9 +5057,25 @@ func (h *Handler) syncScheduleTemplate(tx *gorm.DB, template models.ScheduleTemp
 	if err := tx.Where("template_id = ? AND date >= ?", template.ID, startDate.Format("2006-01-02")).Find(&existing).Error; err != nil {
 		return err
 	}
+	var scoped []models.ScheduleSlot
+	if err := tx.Where(
+		"doctor_id = ? AND institution_id = ? AND category = ? AND date >= ? AND status <> ?",
+		template.DoctorID,
+		template.InstitutionID,
+		template.Category,
+		startDate.Format("2006-01-02"),
+		"deleted",
+	).Find(&scoped).Error; err != nil {
+		return err
+	}
 	existingByKey := make(map[string]models.ScheduleSlot, len(existing))
 	for _, slot := range existing {
 		existingByKey[slot.Date+"|"+slot.StartTime] = slot
+	}
+	scopedByKey := make(map[string][]models.ScheduleSlot, len(scoped))
+	for _, slot := range scoped {
+		key := slot.Date + "|" + slot.StartTime
+		scopedByKey[key] = append(scopedByKey[key], slot)
 	}
 	desiredByKey := make(map[string]models.ScheduleSlot, len(desired))
 	for _, slot := range desired {
@@ -5103,12 +5119,49 @@ func (h *Handler) syncScheduleTemplate(tx *gorm.DB, template models.ScheduleTemp
 				continue
 			}
 		}
+		if reusable := reusableScopedSlot(scopedByKey[key], template.ID); reusable != nil {
+			if next.Capacity < reusable.BookedCount {
+				return fmt.Errorf("capacity cannot be lower than booked count")
+			}
+			if err := tx.Model(&models.ScheduleSlot{}).Where("id = ?", reusable.ID).Updates(map[string]any{
+				"doctor_id":      next.DoctorID,
+				"institution_id": next.InstitutionID,
+				"date":           next.Date,
+				"period":         next.Period,
+				"category":       next.Category,
+				"start_time":     next.StartTime,
+				"end_time":       next.EndTime,
+				"capacity":       next.Capacity,
+				"status":         next.Status,
+				"template_id":    template.ID,
+			}).Error; err != nil {
+				return err
+			}
+			continue
+		}
 		if err := ensureScheduleSlotDoesNotOverlapDB(tx, next, 0); err != nil {
 			return err
 		}
 		if err := tx.Create(&next).Error; err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func reusableScopedSlot(slots []models.ScheduleSlot, templateID uint) *models.ScheduleSlot {
+	for i := range slots {
+		if slots[i].TemplateID == templateID {
+			return &slots[i]
+		}
+	}
+	for i := range slots {
+		if slots[i].TemplateID == 0 {
+			return &slots[i]
+		}
+	}
+	for i := range slots {
+		return &slots[i]
 	}
 	return nil
 }
