@@ -375,8 +375,9 @@ function SchedulePanel({ h }) {
   const previewDates = !f.id ? scheduleDatesFromWeekdays(f.weekdays, f.repeatWeeks) : []
   const previewDateSet = new Set(previewDates)
   const previewTimeSet = new Set(selectedStartTimes)
+  const previewSlots = Array.isArray(h.schedulePreviewSlots) ? h.schedulePreviewSlots : []
   const existingPreviewSlots = !f.id
-    ? (h.schedulePreviewSlots || []).filter((slot) => previewDateSet.has(slot.date) && previewTimeSet.has(slot.startTime))
+    ? previewSlots.filter((slot) => previewDateSet.has(slot.date) && previewTimeSet.has(slot.startTime))
     : []
   useEffect(() => {
     if (f.category && f.institutionId && !categories.includes(f.category)) {
@@ -391,7 +392,6 @@ function SchedulePanel({ h }) {
       institutionId: f.institutionId,
       fromDate: previewRange.fromDate,
       toDate: previewRange.toDate,
-      pageSize: 500,
     }).catch((e) => h.notify('error', e.message))
   }, [open, f.id, f.doctorId, f.institutionId, f.repeatWeeks])
   const toggleWeekday = (value) => {
@@ -464,6 +464,9 @@ function SchedulePanel({ h }) {
                 ))}
               </div>
             </div>
+          )}
+          {!h.loading.schedulePreviewSlots && previewDates.length > 0 && selectedStartTimes.length > 0 && existingPreviewSlots.length === 0 && (
+            <p className="muted schedule-lock-note">当前选择下暂无已有号源，可直接新增。</p>
           )}
         </div>}
         {assignmentLocked && <p className="muted schedule-lock-note">该号源已有预约，医生、机构、星期、时间段和容量已锁定，只能调整状态或分类。</p>}
