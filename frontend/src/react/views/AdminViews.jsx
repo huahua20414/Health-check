@@ -380,6 +380,22 @@ function SchedulePanel({ h }) {
   const existingPreviewSlots = !f.id
     ? scopedPreviewSlots.filter((slot) => previewDateSet.has(slot.date) && previewTimeSet.has(slot.startTime))
     : scopedPreviewSlots
+  const resetScheduleScope = (patch = {}) => {
+    h.clearSchedulePreviewSlots()
+    h.updateForm('schedule', {
+      id: null,
+      date: '',
+      dates: '',
+      weekdays: [],
+      startTime: '',
+      startTimes: [],
+      endTime: '',
+      bookedCount: 0,
+      category: '',
+      repeatWeeks: 2,
+      ...patch,
+    })
+  }
   const loadSlotIntoForm = (slot) => {
     h.updateForm('schedule', {
       id: slot.id,
@@ -462,8 +478,8 @@ function SchedulePanel({ h }) {
   ]} rows={rows} pagination={h.paginations.slots} onPageChange={(page) => setParams((current) => ({ ...current, page }))} onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))} />
     <Modal open={open} title={f.id ? '编辑医生号源' : '新增医生号源'} className="schedule-modal" onClose={() => setOpen(false)} actions={<><Button variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button loading={h.loading.schedule} onClick={save}>{f.id ? '保存编辑' : '新增号源'}</Button></>}>
       <div className="form-grid schedule-form-grid">
-        <Field label="医生"><Select value={f.doctorId} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { doctorId: e.target.value })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
-        <Field label="机构"><Select value={f.institutionId} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { institutionId: e.target.value, category: '' })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
+        <Field label="医生"><Select value={f.doctorId} disabled={assignmentLocked} onChange={(e) => resetScheduleScope({ doctorId: e.target.value, institutionId: f.institutionId || '' })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
+        <Field label="机构"><Select value={f.institutionId} disabled={assignmentLocked} onChange={(e) => resetScheduleScope({ doctorId: f.doctorId || '', institutionId: e.target.value })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
         {f.id && existingPreviewSlots.length > 0 && <Field label="已有排期">
           <Select value={String(f.id)} onChange={(e) => {
             const next = existingPreviewSlots.find((slot) => String(slot.id) === String(e.target.value))
