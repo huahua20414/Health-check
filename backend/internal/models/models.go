@@ -259,6 +259,7 @@ type SystemSetting struct {
 
 type ScheduleSlot struct {
 	ID            uint               `json:"id" gorm:"primaryKey"`
+	TemplateID    uint               `json:"templateId" gorm:"index"`
 	DoctorID      uint               `json:"doctorId" gorm:"not null;index"`
 	InstitutionID uint               `json:"institutionId" gorm:"not null;index"`
 	Date          string             `json:"date" gorm:"size:16;not null;index"`
@@ -274,6 +275,23 @@ type ScheduleSlot struct {
 	Institution   CheckupInstitution `json:"institution"`
 	CreatedAt     time.Time          `json:"createdAt"`
 	UpdatedAt     time.Time          `json:"updatedAt"`
+}
+
+type ScheduleTemplate struct {
+	ID             uint               `json:"id" gorm:"primaryKey"`
+	DoctorID       uint               `json:"doctorId" gorm:"not null;index"`
+	InstitutionID  uint               `json:"institutionId" gorm:"not null;index"`
+	Category       string             `json:"category" gorm:"size:64;not null;default:'综合体检';index"`
+	WeekdaysText   string             `json:"-" gorm:"column:weekdays;type:text"`
+	StartTimesText string             `json:"-" gorm:"column:start_times;type:text"`
+	Capacity       int                `json:"capacity" gorm:"not null;default:1"`
+	Status         string             `json:"status" gorm:"size:16;not null;default:'available';index"`
+	Doctor         User               `json:"doctor"`
+	Institution    CheckupInstitution `json:"institution"`
+	Weekdays       []int              `json:"weekdays,omitempty" gorm:"-"`
+	StartTimes     []string           `json:"startTimes,omitempty" gorm:"-"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
 }
 
 type WaitlistEntry struct {

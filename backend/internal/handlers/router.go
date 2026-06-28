@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1552,6 +1553,10 @@ func (h *Handler) createReport(c *gin.Context) {
 }
 
 func (h *Handler) scheduleSlots(c *gin.Context) {
+	if c.Query("template") == "true" {
+		h.scheduleTemplates(c)
+		return
+	}
 	var slots []models.ScheduleSlot
 	query := h.scheduleSlotsQuery(c)
 	if page, pageSize, ok := paginationParams(c); ok {
@@ -1579,6 +1584,35 @@ func (h *Handler) scheduleSlots(c *gin.Context) {
 	}
 	h.attachScheduleSlotWaitlistCounts(slots)
 	c.JSON(http.StatusOK, slots)
+}
+
+func (h *Handler) scheduleTemplates(c *gin.Context) {
+	var templates []models.ScheduleTemplate
+	query := h.scheduleTemplatesQuery(c)
+	if page, pageSize, ok := paginationParams(c); ok {
+		var total int64
+		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&templates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		for i := range templates {
+			templates[i] = parseScheduleTemplate(templates[i])
+		}
+		c.JSON(http.StatusOK, gin.H{"items": templates, "total": total, "page": page, "pageSize": pageSize})
+		return
+	}
+	if err := query.Find(&templates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range templates {
+		templates[i] = parseScheduleTemplate(templates[i])
+	}
+	c.JSON(http.StatusOK, templates)
 }
 
 func (h *Handler) attachScheduleSlotWaitlistCounts(slots []models.ScheduleSlot) {
@@ -1620,6 +1654,10 @@ func (h *Handler) createScheduleSlot(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
+	if c.Query("template") == "true" || isTemplateScheduleRequest(req) {
+		h.upsertScheduleTemplate(c, 0, req)
+		return
+	}
 	slot, ok := h.buildScheduleSlot(c, req, 0)
 	if !ok {
 		return
@@ -1649,6 +1687,10 @@ func (h *Handler) updateScheduleSlot(c *gin.Context) {
 	}
 	var req scheduleSlotRequest
 	if !bind(c, &req) {
+		return
+	}
+	if c.Query("template") == "true" || isTemplateScheduleRequest(req) {
+		h.upsertScheduleTemplate(c, uint(id), req)
 		return
 	}
 	slot, ok := h.buildScheduleSlot(c, req, existing.BookedCount)
@@ -1689,6 +1731,10 @@ func (h *Handler) archiveScheduleSlot(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.Query("template") == "true" {
+		h.archiveScheduleTemplate(c, uint(id))
+		return
+	}
 	var slot models.ScheduleSlot
 	if err := h.db.First(&slot, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "schedule slot not found"})
@@ -1707,6 +1753,10 @@ func (h *Handler) archiveScheduleSlot(c *gin.Context) {
 }
 
 func (h *Handler) exportScheduleSlots(c *gin.Context) {
+	if c.Query("template") == "true" {
+		h.exportScheduleTemplates(c)
+		return
+	}
 	var slots []models.ScheduleSlot
 	query := h.scheduleSlotsQuery(c)
 	if err := query.Find(&slots).Error; err != nil {
@@ -1734,6 +1784,171 @@ func (h *Handler) exportScheduleSlots(c *gin.Context) {
 	}
 	writer.Flush()
 	h.recordOperation(c, "export", "schedule_slot", "", "success", fmt.Sprintf("%d schedule slots", len(slots)))
+}
+
+func (h *Handler) scheduleTemplatesQuery(c *gin.Context) *gorm.DB {
+	query := h.db.Model(&models.ScheduleTemplate{}).
+		Preload("Doctor").
+		Preload("Institution").
+		Joins("LEFT JOIN users doctor_filter ON doctor_filter.id = schedule_templates.doctor_id").
+		Joins("LEFT JOIN checkup_institutions institution_filter ON institution_filter.id = schedule_templates.institution_id").
+		Order("schedule_templates.id desc")
+	if doctorID := c.Query("doctorId"); doctorID != "" {
+		query = query.Where("schedule_templates.doctor_id = ?", doctorID)
+	}
+	if institutionID := c.Query("institutionId"); institutionID != "" {
+		query = query.Where("schedule_templates.institution_id = ?", institutionID)
+	}
+	if category := c.Query("category"); category != "" {
+		query = query.Where("schedule_templates.category = ?", category)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("schedule_templates.status = ?", status)
+	} else {
+		query = query.Where("schedule_templates.status <> ?", "deleted")
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("doctor_filter.name LIKE ? OR doctor_filter.email LIKE ? OR institution_filter.name LIKE ? OR schedule_templates.category LIKE ?", pattern, pattern, pattern, pattern)
+	}
+	return query
+}
+
+func (h *Handler) upsertScheduleTemplate(c *gin.Context, id uint, req scheduleSlotRequest) {
+	template, ok := h.buildScheduleTemplate(c, req)
+	if !ok {
+		return
+	}
+	var saved models.ScheduleTemplate
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if id == 0 {
+			if err := tx.Where("doctor_id = ? AND institution_id = ? AND category = ? AND status <> ?", template.DoctorID, template.InstitutionID, template.Category, "deleted").First(&saved).Error; err != nil {
+				if err != gorm.ErrRecordNotFound {
+					return err
+				}
+				saved = template
+				if err := tx.Create(&saved).Error; err != nil {
+					return err
+				}
+			} else {
+				template.ID = saved.ID
+				if err := tx.Model(&saved).Updates(map[string]any{
+					"weekdays":    template.WeekdaysText,
+					"start_times": template.StartTimesText,
+					"capacity":    template.Capacity,
+					"status":      template.Status,
+				}).Error; err != nil {
+					return err
+				}
+				saved = template
+			}
+		} else {
+			if err := tx.First(&saved, id).Error; err != nil {
+				return err
+			}
+			if scheduleTemplateScopeChanged(saved, template) {
+				var bookedCount int64
+				if err := tx.Model(&models.ScheduleSlot{}).Where("template_id = ? AND date >= ? AND booked_count > 0 AND status <> ?", saved.ID, time.Now().Format("2006-01-02"), "deleted").Count(&bookedCount).Error; err != nil {
+					return err
+				}
+				if bookedCount > 0 {
+					return fmt.Errorf("booked schedule slot cannot change doctor, institution or category")
+				}
+			}
+			template.ID = saved.ID
+			if err := tx.Model(&saved).Updates(map[string]any{
+				"doctor_id":      template.DoctorID,
+				"institution_id": template.InstitutionID,
+				"category":       template.Category,
+				"weekdays":       template.WeekdaysText,
+				"start_times":    template.StartTimesText,
+				"capacity":       template.Capacity,
+				"status":         template.Status,
+			}).Error; err != nil {
+				return err
+			}
+			saved = template
+		}
+		if saved.ID == 0 {
+			return fmt.Errorf("schedule template save failed")
+		}
+		saved.Weekdays = template.Weekdays
+		saved.StartTimes = template.StartTimes
+		return h.syncScheduleTemplate(tx, saved)
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "schedule template not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.db.Preload("Doctor").Preload("Institution").First(&saved, saved.ID)
+	saved = parseScheduleTemplate(saved)
+	action := "create"
+	if id != 0 {
+		action = "update"
+	}
+	h.recordOperation(c, action, "schedule_template", strconv.Itoa(int(saved.ID)), "success", fmt.Sprintf("%d weekdays %d startTimes", len(saved.Weekdays), len(saved.StartTimes)))
+	if id == 0 {
+		c.JSON(http.StatusCreated, saved)
+		return
+	}
+	c.JSON(http.StatusOK, saved)
+}
+
+func (h *Handler) archiveScheduleTemplate(c *gin.Context, id uint) {
+	var template models.ScheduleTemplate
+	if err := h.db.First(&template, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "schedule template not found"})
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.ScheduleTemplate{}).Where("id = ?", id).Update("status", "deleted").Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.ScheduleSlot{}).
+			Where("template_id = ? AND booked_count = 0 AND status <> ?", id, "deleted").
+			Update("status", "deleted").Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.recordOperation(c, "archive", "schedule_template", strconv.Itoa(int(id)), "success", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "deleted"})
+}
+
+func (h *Handler) exportScheduleTemplates(c *gin.Context) {
+	var templates []models.ScheduleTemplate
+	if err := h.scheduleTemplatesQuery(c).Find(&templates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range templates {
+		templates[i] = parseScheduleTemplate(templates[i])
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="schedule-templates.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"doctor_email", "doctor_name", "institution_name", "category", "weekdays", "start_times", "capacity", "status"})
+	for _, template := range templates {
+		weekdayParts := make([]string, 0, len(template.Weekdays))
+		for _, weekday := range template.Weekdays {
+			weekdayParts = append(weekdayParts, strconv.Itoa(weekday))
+		}
+		_ = writer.Write([]string{
+			template.Doctor.Email,
+			template.Doctor.Name,
+			template.Institution.Name,
+			template.Category,
+			strings.Join(weekdayParts, ","),
+			strings.Join(template.StartTimes, ","),
+			strconv.Itoa(template.Capacity),
+			template.Status,
+		})
+	}
+	writer.Flush()
+	h.recordOperation(c, "export", "schedule_template", "", "success", fmt.Sprintf("%d schedule templates", len(templates)))
 }
 
 func (h *Handler) scheduleSlotsQuery(c *gin.Context) *gorm.DB {
@@ -4656,6 +4871,248 @@ func (h *Handler) booleanSettingWithDB(db *gorm.DB, key string, fallback bool) b
 	return value == "true"
 }
 
+const scheduleTemplateHorizonDays = 90
+
+func isTemplateScheduleRequest(req scheduleSlotRequest) bool {
+	return len(req.Weekdays) > 0 || len(req.StartTimes) > 0
+}
+
+func parseScheduleTemplate(raw models.ScheduleTemplate) models.ScheduleTemplate {
+	raw.Weekdays = normalizeScheduleWeekdays(raw.Weekdays, raw.WeekdaysText)
+	raw.StartTimes = normalizeScheduleStartTimes(raw.StartTimes, raw.StartTimesText)
+	return raw
+}
+
+func normalizeScheduleWeekdays(values []int, fallback string) []int {
+	set := map[int]bool{}
+	for _, value := range values {
+		if value >= 0 && value <= 6 {
+			set[value] = true
+		}
+	}
+	if len(set) == 0 && strings.TrimSpace(fallback) != "" {
+		var decoded []int
+		if err := json.Unmarshal([]byte(fallback), &decoded); err == nil {
+			for _, value := range decoded {
+				if value >= 0 && value <= 6 {
+					set[value] = true
+				}
+			}
+		}
+	}
+	normalized := make([]int, 0, len(set))
+	for value := range set {
+		normalized = append(normalized, value)
+	}
+	sort.Ints(normalized)
+	return normalized
+}
+
+func normalizeScheduleStartTimes(values []string, fallback string) []string {
+	set := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		set[value] = true
+	}
+	if len(set) == 0 && strings.TrimSpace(fallback) != "" {
+		var decoded []string
+		if err := json.Unmarshal([]byte(fallback), &decoded); err == nil {
+			for _, value := range decoded {
+				value = strings.TrimSpace(value)
+				if value != "" {
+					set[value] = true
+				}
+			}
+		}
+	}
+	normalized := make([]string, 0, len(set))
+	for value := range set {
+		normalized = append(normalized, value)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func scheduleTemplateScopeChanged(existing models.ScheduleTemplate, next models.ScheduleTemplate) bool {
+	return existing.DoctorID != next.DoctorID ||
+		existing.InstitutionID != next.InstitutionID ||
+		existing.Category != next.Category
+}
+
+func (h *Handler) buildScheduleTemplate(c *gin.Context, req scheduleSlotRequest) (models.ScheduleTemplate, bool) {
+	var doctor models.User
+	if err := h.db.Where("id = ? AND role = ? AND status = ?", req.DoctorID, "doctor", "active").First(&doctor).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "active doctor not found"})
+		return models.ScheduleTemplate{}, false
+	}
+	var institution models.CheckupInstitution
+	if err := h.db.Where("id = ? AND status = ?", req.InstitutionID, "active").First(&institution).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "active institution not found"})
+		return models.ScheduleTemplate{}, false
+	}
+	category := strings.TrimSpace(req.Category)
+	if ok, err := institutionSupportsCategory(h.db, req.InstitutionID, category); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return models.ScheduleTemplate{}, false
+	} else if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "institution does not support selected category"})
+		return models.ScheduleTemplate{}, false
+	}
+	weekdays := normalizeScheduleWeekdays(req.Weekdays, "")
+	if len(weekdays) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one weekday is required"})
+		return models.ScheduleTemplate{}, false
+	}
+	startTimes := normalizeScheduleStartTimes(req.StartTimes, req.StartTime)
+	if len(startTimes) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one start time is required"})
+		return models.ScheduleTemplate{}, false
+	}
+	for _, startTime := range startTimes {
+		endTime, err := addMinutes(startTime, 30)
+		if err != nil || !validTimeRange(startTime, endTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start time"})
+			return models.ScheduleTemplate{}, false
+		}
+	}
+	capacity := req.Capacity
+	if capacity <= 0 {
+		capacity = 1
+	}
+	weekdaysJSON, err := json.Marshal(weekdays)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return models.ScheduleTemplate{}, false
+	}
+	startTimesJSON, err := json.Marshal(startTimes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return models.ScheduleTemplate{}, false
+	}
+	return models.ScheduleTemplate{
+		DoctorID:       req.DoctorID,
+		InstitutionID:  req.InstitutionID,
+		Category:       category,
+		WeekdaysText:   string(weekdaysJSON),
+		StartTimesText: string(startTimesJSON),
+		Weekdays:       weekdays,
+		StartTimes:     startTimes,
+		Capacity:       capacity,
+		Status:         normalizeStatus(req.Status, "available"),
+	}, true
+}
+
+func scheduleTemplateOccurrences(template models.ScheduleTemplate, startDate time.Time, days int) ([]models.ScheduleSlot, error) {
+	template = parseScheduleTemplate(template)
+	if days <= 0 {
+		return nil, nil
+	}
+	weekdays := map[int]bool{}
+	for _, weekday := range template.Weekdays {
+		weekdays[weekday] = true
+	}
+	slots := make([]models.ScheduleSlot, 0, len(template.Weekdays)*len(template.StartTimes)*days/7+1)
+	for offset := 0; offset < days; offset++ {
+		day := startDate.AddDate(0, 0, offset)
+		if !weekdays[int(day.Weekday())] {
+			continue
+		}
+		for _, startTime := range template.StartTimes {
+			endTime, err := addMinutes(startTime, 30)
+			if err != nil {
+				return nil, err
+			}
+			period := "上午"
+			if startTime >= "12:00" {
+				period = "下午"
+			}
+			slots = append(slots, models.ScheduleSlot{
+				TemplateID:    template.ID,
+				DoctorID:      template.DoctorID,
+				InstitutionID: template.InstitutionID,
+				Date:          day.Format("2006-01-02"),
+				Period:        period,
+				Category:      template.Category,
+				StartTime:     startTime,
+				EndTime:       endTime,
+				Capacity:      template.Capacity,
+				Status:        template.Status,
+			})
+		}
+	}
+	return slots, nil
+}
+
+func (h *Handler) syncScheduleTemplate(tx *gorm.DB, template models.ScheduleTemplate) error {
+	startDate := time.Now()
+	startDate = time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, startDate.Location())
+	desired, err := scheduleTemplateOccurrences(template, startDate, scheduleTemplateHorizonDays)
+	if err != nil {
+		return err
+	}
+	var existing []models.ScheduleSlot
+	if err := tx.Where("template_id = ? AND date >= ?", template.ID, startDate.Format("2006-01-02")).Find(&existing).Error; err != nil {
+		return err
+	}
+	existingByKey := make(map[string]models.ScheduleSlot, len(existing))
+	for _, slot := range existing {
+		existingByKey[slot.Date+"|"+slot.StartTime] = slot
+	}
+	desiredByKey := make(map[string]models.ScheduleSlot, len(desired))
+	for _, slot := range desired {
+		desiredByKey[slot.Date+"|"+slot.StartTime] = slot
+	}
+	for key, current := range existingByKey {
+		next, keep := desiredByKey[key]
+		if !keep {
+			if current.BookedCount > 0 {
+				continue
+			}
+			if err := tx.Model(&models.ScheduleSlot{}).Where("id = ?", current.ID).Updates(map[string]any{
+				"status":      "deleted",
+				"template_id": template.ID,
+			}).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if next.Capacity < current.BookedCount {
+			return fmt.Errorf("capacity cannot be lower than booked count")
+		}
+		if err := tx.Model(&models.ScheduleSlot{}).Where("id = ?", current.ID).Updates(map[string]any{
+			"doctor_id":      next.DoctorID,
+			"institution_id": next.InstitutionID,
+			"date":           next.Date,
+			"period":         next.Period,
+			"category":       next.Category,
+			"start_time":     next.StartTime,
+			"end_time":       next.EndTime,
+			"capacity":       next.Capacity,
+			"status":         next.Status,
+			"template_id":    template.ID,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	for key, next := range desiredByKey {
+		if current, ok := existingByKey[key]; ok {
+			if current.ID != 0 {
+				continue
+			}
+		}
+		if err := ensureScheduleSlotDoesNotOverlapDB(tx, next, 0); err != nil {
+			return err
+		}
+		if err := tx.Create(&next).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (h *Handler) buildScheduleSlot(c *gin.Context, req scheduleSlotRequest, bookedCount int) (models.ScheduleSlot, bool) {
 	var doctor models.User
 	if err := h.db.Where("id = ? AND role = ? AND status = ?", req.DoctorID, "doctor", "active").First(&doctor).Error; err != nil {
@@ -5005,15 +5462,17 @@ type packageItemRequest struct {
 }
 
 type scheduleSlotRequest struct {
-	DoctorID      uint   `json:"doctorId" binding:"required"`
-	InstitutionID uint   `json:"institutionId" binding:"required"`
-	Date          string `json:"date" binding:"required"`
-	Period        string `json:"period"`
-	Category      string `json:"category" binding:"required"`
-	StartTime     string `json:"startTime" binding:"required"`
-	EndTime       string `json:"endTime"`
-	Capacity      int    `json:"capacity"`
-	Status        string `json:"status"`
+	DoctorID      uint     `json:"doctorId" binding:"required"`
+	InstitutionID uint     `json:"institutionId" binding:"required"`
+	Date          string   `json:"date"`
+	Period        string   `json:"period"`
+	Category      string   `json:"category" binding:"required"`
+	StartTime     string   `json:"startTime"`
+	Weekdays      []int    `json:"weekdays"`
+	StartTimes    []string `json:"startTimes"`
+	EndTime       string   `json:"endTime"`
+	Capacity      int      `json:"capacity"`
+	Status        string   `json:"status"`
 }
 
 type reportRequest struct {

@@ -363,7 +363,7 @@ function SchedulePanel({ h }) {
   const f = h.forms.schedule
   const [open, setOpen] = useState(false)
   const [params, setParams] = useState({ page: 1, pageSize: 10 })
-  useEffect(() => { h.loadSlotsPage(params).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
+  useEffect(() => { h.loadSlotsPage({ ...params, template: 'true' }).catch((e) => h.notify('error', e.message)) }, [params.page, params.pageSize])
   const rows = h.scheduleSlotRows.length ? h.scheduleSlotRows : h.slots
   const doctors = h.activeDoctors.length ? h.activeDoctors : h.users.filter((u) => u.role === 'doctor' && u.status === 'active')
   const selectedInstitution = h.institutions.find((item) => Number(item.id) === Number(f.institutionId))
@@ -371,28 +371,19 @@ function SchedulePanel({ h }) {
   const categories = categoryOptions.map((option) => option.value)
   const selectedWeekdays = new Set((f.weekdays || []).map(Number))
   const selectedStartTimes = normalizeScheduleStartTimes(f.startTimes)
-  const assignmentLocked = Boolean(f.id && Number(f.bookedCount || 0) > 0)
-  const previewDates = !f.id ? scheduleDatesFromWeekdays(f.weekdays, f.repeatWeeks) : []
-  const previewDateSet = new Set(previewDates)
-  const previewTimeSet = new Set(selectedStartTimes)
+  const assignmentLocked = false
   const previewSlots = Array.isArray(h.schedulePreviewSlots) ? h.schedulePreviewSlots : []
-  const scopedPreviewSlots = previewSlots.filter((slot) => Number(slot.doctorId) === Number(f.doctorId) && Number(slot.institutionId) === Number(f.institutionId))
-  const existingPreviewSlots = !f.id
-    ? scopedPreviewSlots.filter((slot) => previewDateSet.has(slot.date) && previewTimeSet.has(slot.startTime))
-    : scopedPreviewSlots
+  const scopedPreviewSlots = previewSlots.filter((slot) => Number(slot.doctorId) === Number(f.doctorId) && Number(slot.institutionId) === Number(f.institutionId) && String(slot.category || '') === String(f.category || ''))
+  const existingPreviewSlots = scopedPreviewSlots
   const resetScheduleScope = (patch = {}) => {
     h.clearSchedulePreviewSlots()
     h.updateForm('schedule', {
       id: null,
-      date: '',
-      dates: '',
       weekdays: [],
-      startTime: '',
       startTimes: [],
-      endTime: '',
-      bookedCount: 0,
       category: '',
-      repeatWeeks: 2,
+      capacity: 1,
+      status: 'available',
       ...patch,
     })
   }
@@ -401,16 +392,10 @@ function SchedulePanel({ h }) {
       id: slot.id,
       doctorId: slot.doctorId,
       institutionId: slot.institutionId,
-      date: slot.date,
-      dates: slot.date,
-      period: slot.period || '上午',
       category: slot.category || '',
-      startTime: slot.startTime || '08:30',
-      startTimes: slot.startTime || '08:30',
-      weekdays: slot.date ? [new Date(slot.date).getDay()] : [],
-      endTime: slot.endTime || '',
+      startTimes: slot.startTimes || [],
+      weekdays: slot.weekdays || [],
       capacity: slot.capacity || 1,
-      bookedCount: slot.bookedCount || 0,
       status: slot.status || 'available',
     })
   }
@@ -420,59 +405,54 @@ function SchedulePanel({ h }) {
     }
   }, [f.institutionId, f.category, categories.join('|')])
   useEffect(() => {
-    if (!open || f.id || !f.doctorId || !f.institutionId) {
+    if (!open || f.id || !f.doctorId || !f.institutionId || !f.category) {
       h.clearSchedulePreviewSlots()
       return undefined
     }
     h.clearSchedulePreviewSlots()
-    const previewRange = scheduleExistingRange()
     const timer = window.setTimeout(() => {
       h.loadSchedulePreviewSlots({
+        template: 'true',
         doctorId: f.doctorId,
         institutionId: f.institutionId,
-        fromDate: previewRange.fromDate,
-        toDate: previewRange.toDate,
+        category: f.category,
       }).catch((e) => h.notify('error', e.message))
     }, 220)
     return () => window.clearTimeout(timer)
-  }, [open, f.id, f.doctorId, f.institutionId])
+  }, [open, f.id, f.doctorId, f.institutionId, f.category])
   useEffect(() => {
     if (!open || f.id || h.loading.schedulePreviewSlots) return
-    if (!f.doctorId || !f.institutionId) return
+    if (!f.doctorId || !f.institutionId || !f.category) return
     if (!scopedPreviewSlots.length) return
     loadSlotIntoForm(scopedPreviewSlots[0])
     h.notify('warn', '该医生在当前机构已有号源，已切换到编辑模式')
-  }, [open, f.id, f.doctorId, f.institutionId, h.loading.schedulePreviewSlots, scopedPreviewSlots])
+  }, [open, f.id, f.doctorId, f.institutionId, f.category, h.loading.schedulePreviewSlots, scopedPreviewSlots])
   const toggleWeekday = (value) => {
     const next = new Set((f.weekdays || []).map(Number))
     if (next.has(value)) next.delete(value)
     else next.add(value)
     h.updateForm('schedule', { weekdays: Array.from(next) })
   }
-  const selectEditWeekday = (value) => h.updateForm('schedule', { weekdays: [value] })
   const toggleStartTime = (value) => {
     const next = new Set(selectedStartTimes)
     if (next.has(value)) next.delete(value)
     else next.add(value)
-    h.updateForm('schedule', { startTimes: Array.from(next), startTime: Array.from(next)[0] || '' })
-  }
-  const selectEditTime = (value) => {
-    const option = scheduleTimeOptions.find((item) => item.start === value)
-    h.updateForm('schedule', { startTime: value, startTimes: value, endTime: option?.end || '' })
+    h.updateForm('schedule', { startTimes: Array.from(next) })
   }
   const openCreate = () => { h.clearSchedulePreviewSlots(); h.resetForm('schedule'); setOpen(true) }
   const openEdit = (slot) => {
     loadSlotIntoForm(slot)
     setOpen(true)
   }
-  const reload = () => h.loadSlotsPage(params).catch((e) => h.notify('error', e.message))
+  const reload = () => h.loadSlotsPage({ ...params, template: 'true' }).catch((e) => h.notify('error', e.message))
   const save = () => h.saveScheduleSlot().then(() => { setOpen(false); reload() }).catch((e) => h.notify('error', e.message))
   return <Card title="医生号源" actions={<Button size="sm" onClick={openCreate}>新增</Button>}><RemoteTable loading={h.loading.slots} columns={[
     { title: '医生', render: (r) => r.doctor?.name || r.doctorId },
     { title: '机构', render: (r) => r.institution?.name || r.institutionId },
-    { title: '时段', render: (r) => `${r.startTime || ''}-${r.endTime || ''}` },
+    { title: '星期', render: (r) => scheduleWeekdaySummary(r.weekdays) },
+    { title: '时段', render: (r) => scheduleTimeSummary(r.startTimes) },
     { title: '分类', render: (r) => r.category || '-' },
-    { title: '余号', render: (r) => `${Math.max(0, Number(r.capacity || 0) - Number(r.bookedCount || 0))}/${r.capacity || 0}` },
+    { title: '容量', render: (r) => `${r.capacity || 0}` },
     { title: '状态', render: (r) => <StatusTag status={r.status} /> },
     { title: '操作', render: (r) => <div className="row-actions"><Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button><Button size="sm" variant="danger" onClick={() => h.archiveScheduleSlot(r).then(reload).catch((e) => h.notify('error', e.message))}>归档</Button></div> },
   ]} rows={rows} pagination={h.paginations.slots} onPageChange={(page) => setParams((current) => ({ ...current, page }))} onPageSizeChange={(pageSize) => setParams((current) => ({ ...current, page: 1, pageSize }))} />
@@ -480,26 +460,14 @@ function SchedulePanel({ h }) {
       <div className="form-grid schedule-form-grid">
         <Field label="医生"><Select value={f.doctorId} disabled={assignmentLocked} onChange={(e) => resetScheduleScope({ doctorId: e.target.value, institutionId: f.institutionId || '' })}><option value="">请选择医生</option>{doctors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></Field>
         <Field label="机构"><Select value={f.institutionId} disabled={assignmentLocked} onChange={(e) => resetScheduleScope({ doctorId: f.doctorId || '', institutionId: e.target.value })}><option value="">请选择机构</option>{h.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>
-        {f.id && existingPreviewSlots.length > 0 && <Field label="已有排期">
-          <Select value={String(f.id)} onChange={(e) => {
-            const next = existingPreviewSlots.find((slot) => String(slot.id) === String(e.target.value))
-            if (next) loadSlotIntoForm(next)
-          }}>
-            {existingPreviewSlots.map((slot) => <option key={slot.id} value={slot.id}>{`${formatDate(slot.date)} ${slot.startTime}-${slot.endTime} · ${slot.category || '未分类'}`}</option>)}
-          </Select>
-        </Field>}
-        <Field label="分类"><Select value={f.category} disabled={!f.institutionId || !categoryOptions.length} onChange={(e) => h.updateForm('schedule', { category: e.target.value })}><option value="">{f.institutionId ? '请选择机构已绑定套餐' : '请先选择机构'}</option>{categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
-        {!f.id && <Field label="重复周数"><Select value={f.repeatWeeks} onChange={(e) => h.updateForm('schedule', { repeatWeeks: Number(e.target.value) })}><option value={1}>1 周</option><option value={2}>2 周</option><option value={4}>4 周</option><option value={8}>8 周</option></Select></Field>}
-        <Field label="星期" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-weekday-grid">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option schedule-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedWeekdays.has(day.value)} onChange={() => f.id ? selectEditWeekday(day.value) : toggleWeekday(day.value)} /><strong>{day.label}</strong><small>{f.id ? '本周' : '重复'}</small></label>)}</div></Field>
-        <Field label="时间段" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-time-grid">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option schedule-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedStartTimes.includes(time.start)} onChange={() => f.id ? selectEditTime(time.start) : toggleStartTime(time.start)} /><strong>{time.label}</strong></label>)}</div></Field>
-        {!f.id && f.doctorId && f.institutionId && <div className="schedule-wide-field">
-          {h.loading.schedulePreviewSlots && <p className="muted schedule-lock-note">正在检查该医生在当前机构的未来排班...</p>}
-          {!h.loading.schedulePreviewSlots && existingPreviewSlots.length > 0 && <p className="muted schedule-lock-note">该医生在当前机构已有号源，已自动切换到编辑模式。</p>}
-          {!h.loading.schedulePreviewSlots && previewDates.length > 0 && selectedStartTimes.length > 0 && existingPreviewSlots.length === 0 && (
-            <p className="muted schedule-lock-note">当前选择下暂无已有号源，可直接新增。</p>
-          )}
+        <Field label="分类"><Select value={f.category} disabled={!f.institutionId || !categoryOptions.length} onChange={(e) => resetScheduleScope({ doctorId: f.doctorId || '', institutionId: f.institutionId || '', category: e.target.value })}><option value="">{f.institutionId ? '请选择机构已绑定套餐' : '请先选择机构'}</option>{categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
+        <Field label="星期" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-weekday-grid">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option schedule-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedWeekdays.has(day.value)} onChange={() => toggleWeekday(day.value)} /><strong>{day.label}</strong><small>重复</small></label>)}</div></Field>
+        <Field label="时间段" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-time-grid">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option schedule-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''}`}><input type="checkbox" checked={selectedStartTimes.includes(time.start)} onChange={() => toggleStartTime(time.start)} /><strong>{time.label}</strong></label>)}</div></Field>
+        {f.doctorId && f.institutionId && f.category && <div className="schedule-wide-field">
+          {h.loading.schedulePreviewSlots && <p className="muted schedule-lock-note">正在检查当前医生、机构和分类的排班模板...</p>}
+          {!h.loading.schedulePreviewSlots && existingPreviewSlots.length > 0 && <p className="muted schedule-lock-note">当前范围已有排班模板，已切换到编辑模式，可直接多选修改星期和时间段。</p>}
+          {!h.loading.schedulePreviewSlots && existingPreviewSlots.length === 0 && <p className="muted schedule-lock-note">当前范围暂无排班模板，保存后会新增一条模板记录。</p>}
         </div>}
-        {assignmentLocked && <p className="muted schedule-lock-note">该号源已有预约，医生、机构、星期、时间段和容量已锁定，只能调整状态或分类。</p>}
         <Field label="容量"><TextInput type="number" min="1" value={f.capacity} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { capacity: e.target.value })} /></Field>
         <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('schedule', { status: e.target.value })}><option value="available">可预约</option><option value="disabled">停用</option></Select></Field>
       </div>
@@ -528,23 +496,15 @@ function normalizeScheduleStartTimes(value) {
   return String(value || '').split(/[\n,，\s]+/).map((item) => item.trim()).filter(Boolean)
 }
 
-function scheduleExistingRange() {
-  const today = new Date()
-  const end = new Date(today)
-  end.setDate(today.getDate() + 180)
-  return { fromDate: formatDate(today), toDate: formatDate(end) }
+function scheduleWeekdaySummary(weekdays) {
+  const set = new Set((weekdays || []).map(Number))
+  return scheduleWeekdays.filter((day) => set.has(day.value)).map((day) => day.label).join('、') || '-'
 }
 
-function scheduleDatesFromWeekdays(weekdays, repeatWeeks) {
-  const selected = new Set((weekdays || []).map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
-  if (!selected.size) return []
-  const weeks = Math.min(Math.max(Number(repeatWeeks || 2), 1), 8)
-  const dates = []
-  const today = new Date()
-  for (let offset = 0; offset < weeks * 7; offset += 1) {
-    const date = new Date(today)
-    date.setDate(today.getDate() + offset)
-    if (selected.has(date.getDay())) dates.push(formatDate(date))
-  }
-  return dates
+function scheduleTimeSummary(startTimes) {
+  const values = normalizeScheduleStartTimes(startTimes)
+  return values.map((startTime) => {
+    const option = scheduleTimeOptions.find((item) => item.start === startTime)
+    return option?.label || startTime
+  }).join('、') || '-'
 }

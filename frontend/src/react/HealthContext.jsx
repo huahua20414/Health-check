@@ -559,56 +559,25 @@ export function HealthProvider({ children }) {
       await loaders.loadPackageItemsCollection({ packageId: items[0]?.packageId || '' })
     }),
     saveScheduleSlot: () => action('schedule', '排班号源已保存', async () => {
-      const base = {
-        ...forms.schedule,
+      const weekdays = Array.from(new Set((forms.schedule.weekdays || []).map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)))
+      const selectedStartTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes.filter(Boolean) : splitBatchValues(forms.schedule.startTimes)
+      const startTimes = Array.from(new Set((selectedStartTimes.length ? selectedStartTimes : splitBatchValues(forms.schedule.startTime)).filter(Boolean)))
+      if (!weekdays.length || !startTimes.length) throw new Error('请至少勾选一个星期和一个开始时间')
+      const body = JSON.stringify({
         doctorId: Number(forms.schedule.doctorId || 0),
         institutionId: Number(forms.schedule.institutionId || 0),
+        category: forms.schedule.category,
+        weekdays,
+        startTimes,
         capacity: Number(forms.schedule.capacity || 1),
-      }
-      if (forms.schedule.id) {
-        const locked = Number(forms.schedule.bookedCount || 0) > 0
-        const weekday = (forms.schedule.weekdays || []).map(Number).find((day) => Number.isInteger(day))
-        const startTime = String(forms.schedule.startTime || '').trim()
-        if (!Number.isInteger(weekday) || !startTime) throw new Error('请勾选一个星期和一个时间段')
-        await request(`/schedule/slots/${forms.schedule.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            ...base,
-            date: locked ? forms.schedule.date : dateInSameWeekByWeekday(forms.schedule.date, weekday),
-            dates: '',
-            startTime,
-            startTimes: startTime,
-            period: locked ? forms.schedule.period : '',
-            endTime: locked ? forms.schedule.endTime : scheduleEndTime(startTime),
-          }),
-        })
-      } else {
-        const dates = Array.from(new Set(scheduleDatesFromWeekdays(forms.schedule.weekdays, forms.schedule.repeatWeeks)))
-        const selectedStartTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes.filter(Boolean) : splitBatchValues(forms.schedule.startTimes)
-        const startTimes = Array.from(new Set((selectedStartTimes.length ? selectedStartTimes : splitBatchValues(forms.schedule.startTime)).filter(Boolean)))
-        if (!dates.length || !startTimes.length) throw new Error('请至少勾选一个星期和一个开始时间')
-        const existingKeys = new Set((data.schedulePreviewSlots || []).map((slot) => `${slot.date}|${slot.startTime}`))
-        const requests = []
-        for (const date of dates) {
-          for (const startTime of startTimes) {
-            if (existingKeys.has(`${date}|${startTime}`)) continue
-            requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, period: '', endTime: scheduleEndTime(startTime) }) }))
-          }
-        }
-        if (!requests.length && existingKeys.size) throw new Error('所选组合已有号源，请直接编辑下方已有号源')
-        const results = await Promise.allSettled(requests)
-        const rejected = results.filter((result) => result.status === 'rejected').map((result) => result.reason)
-        const overlapErrors = rejected.filter((error) => error?.message === '该医生在这个时间段已有号源，请调整时间后再试')
-        const otherErrors = rejected.filter((error) => error?.message !== '该医生在这个时间段已有号源，请调整时间后再试')
-        const successCount = results.length - rejected.length
-        if (otherErrors.length) throw otherErrors[0]
-        if (!successCount && overlapErrors.length) throw new Error('所选时间段都已有号源，请调整后再试')
-        if (successCount && overlapErrors.length) notify('warn', `已新增 ${successCount} 个号源，另有 ${overlapErrors.length} 个时间段已有号源，已跳过`)
-      }
+        status: forms.schedule.status || 'available',
+      })
+      if (forms.schedule.id) await request(`/schedule/slots/${forms.schedule.id}?template=true`, { method: 'PATCH', body })
+      else await request('/schedule/slots?template=true', { method: 'POST', body })
       resetForm('schedule')
-      await loaders.loadSlotsPage()
+      await loaders.loadSlotsPage({ template: 'true' })
     }),
-    archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => { await request(`/schedule/slots/${row.id}`, { method: 'DELETE' }); await loaders.loadSlotsPage() }),
+    archiveScheduleSlot: (row) => action('schedule', '排班号源已归档', async () => { await request(`/schedule/slots/${row.id}?template=true`, { method: 'DELETE' }); await loaders.loadSlotsPage({ template: 'true' }) }),
     saveCoupon: () => action('coupon', '优惠券已保存', async () => { const audience = forms.coupon.audience || 'all'; const body = JSON.stringify({ ...forms.coupon, value: Number(forms.coupon.value || 0), minAmount: Number(forms.coupon.minAmount || 0), packageId: Number(forms.coupon.packageId || 0), applyMode: forms.coupon.applyMode || 'auto', audience, firstOrderOnly: audience === 'new_user' }); if (forms.coupon.id) await request(`/coupons/${forms.coupon.id}`, { method: 'PATCH', body }); else await request('/coupons', { method: 'POST', body }); resetForm('coupon'); await loaders.loadCouponsPage() }),
     archiveCoupon: (row) => action('coupon', '优惠券已归档', async () => { await request(`/coupons/${row.id}`, { method: 'DELETE' }); await loaders.loadCouponsPage() }),
     saveReviewReply: () => action('review', '评价处理已保存', async () => { await request(`/reviews/${forms.reviewReply.id}/reply`, { method: 'PATCH', body: JSON.stringify(forms.reviewReply) }); resetForm('reviewReply'); await loaders.loadReviewsPage() }),
