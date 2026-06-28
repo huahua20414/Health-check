@@ -427,15 +427,6 @@ function SchedulePanel({ h }) {
     loadSlotIntoForm(scopedPreviewSlots[0])
     h.notify('warn', '该医生在当前机构已有号源，已切换到编辑模式')
   }, [open, f.id, f.doctorId, f.institutionId, h.loading.schedulePreviewSlots, scopedPreviewSlots])
-  useEffect(() => {
-    if (!open || f.id || !f.doctorId || !f.institutionId || h.loading.schedulePreviewSlots) return
-    if ((f.weekdays || []).length || normalizeScheduleStartTimes(f.startTimes).length) return
-    if (!scopedPreviewSlots.length) return
-    const weekdays = Array.from(new Set(scopedPreviewSlots.map((slot) => new Date(slot.date).getDay()).filter((day) => Number.isInteger(day))))
-    const startTimes = Array.from(new Set(scopedPreviewSlots.map((slot) => slot.startTime).filter(Boolean)))
-    if (!weekdays.length && !startTimes.length) return
-    h.updateForm('schedule', { weekdays, startTimes, startTime: startTimes[0] || '' })
-  }, [open, f.id, f.doctorId, f.institutionId, f.weekdays, f.startTimes, h.loading.schedulePreviewSlots, scopedPreviewSlots])
   const toggleWeekday = (value) => {
     const next = new Set((f.weekdays || []).map(Number))
     if (next.has(value)) next.delete(value)
