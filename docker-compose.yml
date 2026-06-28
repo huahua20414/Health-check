@@ -3,6 +3,7 @@ services:
     image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-root}"
+      MYSQL_ROOT_HOST: "${MYSQL_ROOT_HOST:-%}"
       MYSQL_DATABASE: health_checkup
       MYSQL_USER: "${MYSQL_USER:-health}"
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:-health123}"
