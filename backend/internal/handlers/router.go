@@ -40,7 +40,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	router := gin.New()
 	router.Use(gin.Logger(), middleware.RequestID(), middleware.UnifiedJSONResponse(), middleware.Recovery())
 	router.Use(cors.Default())
-	router.Use(middleware.IPRateLimit(120, time.Minute))
+	router.Use(middleware.IPRateLimit(300, time.Minute))
 
 	api := router.Group("/api")
 	api.GET("/health", handler.health)

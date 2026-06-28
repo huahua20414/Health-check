@@ -54,6 +54,46 @@ func TestScheduleSlotsFiltersByDoctorID(t *testing.T) {
 	}
 }
 
+func TestScheduleSlotsFiltersByInstitutionID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.CheckupInstitution{}, &models.ScheduleSlot{}, &models.WaitlistEntry{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	doctor := models.User{ID: 1, Name: "医生甲", Phone: "13800000011", Email: "a@example.com", Role: "doctor", Status: "active"}
+	institutionA := models.CheckupInstitution{ID: 10, Name: "主院区", Status: "active"}
+	institutionB := models.CheckupInstitution{ID: 11, Name: "滨江院区", Status: "active"}
+	slotA := models.ScheduleSlot{ID: 20, DoctorID: doctor.ID, InstitutionID: institutionA.ID, Date: "2026-07-01", Period: "上午", Category: "年度综合", StartTime: "09:00", EndTime: "09:30", Capacity: 1, Status: "available"}
+	slotB := models.ScheduleSlot{ID: 21, DoctorID: doctor.ID, InstitutionID: institutionB.ID, Date: "2026-07-02", Period: "上午", Category: "年度综合", StartTime: "10:00", EndTime: "10:30", Capacity: 1, Status: "available"}
+	for _, row := range []any{&doctor, &institutionA, &institutionB, &slotA, &slotB} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create row %#v: %v", row, err)
+		}
+	}
+
+	handler := &Handler{db: db, redis: redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})}
+	router := gin.New()
+	router.GET("/schedule/slots", handler.scheduleSlots)
+
+	req := httptest.NewRequest(http.MethodGet, "/schedule/slots?institutionId=11", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var slots []models.ScheduleSlot
+	if err := json.Unmarshal(rec.Body.Bytes(), &slots); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(slots) != 1 || slots[0].InstitutionID != institutionB.ID {
+		t.Fatalf("expected only institution B slots, got %#v", slots)
+	}
+}
+
 func TestScheduleSlotsOrdersNewestFirst(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

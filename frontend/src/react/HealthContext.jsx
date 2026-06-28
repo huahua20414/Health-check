@@ -140,6 +140,7 @@ export function HealthProvider({ children }) {
   const [authCodeCooldown, setAuthCodeCooldown] = useState(0)
   const [toast, setToast] = useState(null)
   const bootstrapped = useRef(false)
+  const collectionRequestSeq = useRef({})
   const role = currentUser?.role || ''
   const isAuthenticated = Boolean(getAuthToken() && currentUser)
   const isUser = role === 'user'
@@ -378,14 +379,20 @@ export function HealthProvider({ children }) {
   }, [requestPage, setLoadingKey, updateData])
 
   const loadCollection = useCallback(async (path, stateKey, params = {}) => {
+    const requestSeq = (collectionRequestSeq.current[stateKey] || 0) + 1
+    collectionRequestSeq.current[stateKey] = requestSeq
     setLoadingKey(stateKey, true)
     try {
       const query = toQuery(params)
       const rows = await request(`${path}${query ? `?${query}` : ''}`)
-      updateData({ [stateKey]: rows })
+      if (collectionRequestSeq.current[stateKey] === requestSeq) {
+        updateData({ [stateKey]: rows })
+      }
       return rows
     } finally {
-      setLoadingKey(stateKey, false)
+      if (collectionRequestSeq.current[stateKey] === requestSeq) {
+        setLoadingKey(stateKey, false)
+      }
     }
   }, [setLoadingKey, updateData])
 
@@ -414,6 +421,11 @@ export function HealthProvider({ children }) {
     loadPackageItemsCollection: (params = {}) => loadCollection('/package-items', 'packageItems', params),
     loadSlotsPage: (params = {}, key = 'slots', stateKey = 'scheduleSlotRows') => loadPage('/schedule/slots', key, stateKey, params),
     loadSchedulePreviewSlots: (params = {}) => loadCollection('/schedule/slots', 'schedulePreviewSlots', params),
+    clearSchedulePreviewSlots: () => {
+      collectionRequestSeq.current.schedulePreviewSlots = (collectionRequestSeq.current.schedulePreviewSlots || 0) + 1
+      setLoadingKey('schedulePreviewSlots', false)
+      updateData({ schedulePreviewSlots: [] })
+    },
   }), [loadPage, loadCollection])
 
   const paginationActions = useMemo(() => ({

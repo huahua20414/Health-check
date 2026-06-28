@@ -116,10 +116,16 @@ body[data-theme="dark"] {
   width: 6px;
   height: 6px;
   background: transparent;
+  background-color: transparent;
 }
 *::-webkit-scrollbar-track,
 *::-webkit-scrollbar-corner {
   background: transparent;
+  background-color: transparent;
+}
+*::-webkit-scrollbar-track-piece {
+  background: transparent;
+  background-color: transparent;
 }
 *::-webkit-scrollbar-thumb {
   border-radius: 999px;
@@ -165,8 +171,8 @@ a { color: inherit; text-decoration: none; }
   scrollbar-width: thin;
   scrollbar-color: var(--sidebar-scrollbar) transparent;
 }
-.side-nav::-webkit-scrollbar { width: 6px; background: transparent; }
-.side-nav::-webkit-scrollbar-track, .side-nav::-webkit-scrollbar-corner { background: transparent; }
+.side-nav::-webkit-scrollbar { width: 6px; background: transparent; background-color: transparent; }
+.side-nav::-webkit-scrollbar-track, .side-nav::-webkit-scrollbar-corner, .side-nav::-webkit-scrollbar-track-piece { background: transparent; background-color: transparent; }
 .side-nav::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--sidebar-scrollbar);
