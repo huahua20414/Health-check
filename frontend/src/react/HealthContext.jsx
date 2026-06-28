@@ -569,9 +569,9 @@ export function HealthProvider({ children }) {
           }),
         })
       } else {
-        const dates = scheduleDatesFromWeekdays(forms.schedule.weekdays, forms.schedule.repeatWeeks)
+        const dates = Array.from(new Set(scheduleDatesFromWeekdays(forms.schedule.weekdays, forms.schedule.repeatWeeks)))
         const selectedStartTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes.filter(Boolean) : splitBatchValues(forms.schedule.startTimes)
-        const startTimes = selectedStartTimes.length ? selectedStartTimes : splitBatchValues(forms.schedule.startTime)
+        const startTimes = Array.from(new Set((selectedStartTimes.length ? selectedStartTimes : splitBatchValues(forms.schedule.startTime)).filter(Boolean)))
         if (!dates.length || !startTimes.length) throw new Error('请至少勾选一个星期和一个开始时间')
         const requests = []
         for (const date of dates) {
@@ -579,7 +579,14 @@ export function HealthProvider({ children }) {
             requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, period: '', endTime: scheduleEndTime(startTime) }) }))
           }
         }
-        await Promise.all(requests)
+        const results = await Promise.allSettled(requests)
+        const rejected = results.filter((result) => result.status === 'rejected').map((result) => result.reason)
+        const overlapErrors = rejected.filter((error) => error?.message === '该医生在这个时间段已有号源，请调整时间后再试')
+        const otherErrors = rejected.filter((error) => error?.message !== '该医生在这个时间段已有号源，请调整时间后再试')
+        const successCount = results.length - rejected.length
+        if (otherErrors.length) throw otherErrors[0]
+        if (!successCount && overlapErrors.length) throw new Error('所选时间段都已有号源，请调整后再试')
+        if (successCount && overlapErrors.length) notify('warn', `已新增 ${successCount} 个号源，另有 ${overlapErrors.length} 个时间段已有号源，已跳过`)
       }
       resetForm('schedule')
       await loaders.loadSlotsPage()
