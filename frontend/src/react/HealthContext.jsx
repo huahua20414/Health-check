@@ -61,6 +61,7 @@ const dataKeys = [
   'notifications', 'adminNotifications', 'supportTickets', 'adminSupportTickets', 'loginLogs', 'operationLogs',
   'rolePermissions', 'rolePermissionRows', 'permissionCodes', 'systemSettings', 'systemSettingRows', 'coupons',
   'activeCoupons', 'reviews', 'announcements', 'activeAnnouncements', 'checkupItems', 'checkupItemRows', 'packageItems',
+  'schedulePreviewSlots',
   'doctorUsers', 'pendingDoctorUsers', 'activeDoctors',
 ]
 
@@ -412,6 +413,7 @@ export function HealthProvider({ children }) {
     loadPackageItemsPage: (params = {}) => loadPage('/package-items', 'packageItems', 'packageItems', params),
     loadPackageItemsCollection: (params = {}) => loadCollection('/package-items', 'packageItems', params),
     loadSlotsPage: (params = {}, key = 'slots', stateKey = 'scheduleSlotRows') => loadPage('/schedule/slots', key, stateKey, params),
+    loadSchedulePreviewSlots: (params = {}) => loadCollection('/schedule/slots', 'schedulePreviewSlots', params),
   }), [loadPage, loadCollection])
 
   const paginationActions = useMemo(() => ({
@@ -573,12 +575,15 @@ export function HealthProvider({ children }) {
         const selectedStartTimes = Array.isArray(forms.schedule.startTimes) ? forms.schedule.startTimes.filter(Boolean) : splitBatchValues(forms.schedule.startTimes)
         const startTimes = Array.from(new Set((selectedStartTimes.length ? selectedStartTimes : splitBatchValues(forms.schedule.startTime)).filter(Boolean)))
         if (!dates.length || !startTimes.length) throw new Error('请至少勾选一个星期和一个开始时间')
+        const existingKeys = new Set((data.schedulePreviewSlots || []).map((slot) => `${slot.date}|${slot.startTime}`))
         const requests = []
         for (const date of dates) {
           for (const startTime of startTimes) {
+            if (existingKeys.has(`${date}|${startTime}`)) continue
             requests.push(request('/schedule/slots', { method: 'POST', body: JSON.stringify({ ...base, date, startTime, period: '', endTime: scheduleEndTime(startTime) }) }))
           }
         }
+        if (!requests.length && existingKeys.size) throw new Error('所选组合已有号源，请直接编辑下方已有号源')
         const results = await Promise.allSettled(requests)
         const rejected = results.filter((result) => result.status === 'rejected').map((result) => result.reason)
         const overlapErrors = rejected.filter((error) => error?.message === '该医生在这个时间段已有号源，请调整时间后再试')
@@ -607,7 +612,7 @@ export function HealthProvider({ children }) {
     importFile: (path, file, key, after) => action(key, '导入完成', async () => { const formData = new FormData(); formData.append('file', file); await request(path, { method: 'POST', body: formData }); if (after) await after() }),
     downloadAppointment: (appointment) => downloadHTML(`appointment-${appointment.orderNo || appointment.id}.html`, documentHTML('体检预约订单', [['订单号', appointment.orderNo], ['客户', appointment.user?.name], ['机构', appointment.institution?.name], ['套餐', appointment.package?.name], ['日期', appointment.date], ['时段', `${appointment.startTime || ''}-${appointment.endTime || ''}`], ['支付状态', paymentStatusText(appointment.paymentStatus)], ['状态', statusText(appointment.status)]], '请按预约时间携带有效证件到检。')),
     downloadReport: (report) => downloadReportImage(`report-${report.reportNo || report.id}.png`, [['报告编号', report.reportNo], ['客户', report.user?.name], ['套餐', report.appointment?.package?.name], ['医生', report.doctor?.name], ['检查摘要', report.summary], ['体检结论', report.conclusion], ['健康建议', report.recommendation], ['报告时间', formatDate(report.createdAt)]], '本报告仅供健康管理参考。'),
-  }), [action, data.favorites, forms, loadAll, loaders, notify, role, saveUser, updateData, updateForm, resetForm])
+  }), [action, data.favorites, data.schedulePreviewSlots, forms, loadAll, loaders, notify, role, saveUser, updateData, updateForm, resetForm])
 
   const derived = useMemo(() => {
     const peopleMap = new Map()

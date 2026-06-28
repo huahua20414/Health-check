@@ -613,6 +613,16 @@ a { color: inherit; text-decoration: none; }
   cursor: not-allowed;
 }
 .schedule-option.is-disabled input { cursor: not-allowed; }
+.schedule-existing-list {
+  display: grid;
+  gap: 10px;
+}
+.schedule-existing-button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
 .schedule-lock-note {
   grid-column: 1 / -1;
   margin: -2px 0 0;

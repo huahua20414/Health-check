@@ -372,11 +372,28 @@ function SchedulePanel({ h }) {
   const selectedWeekdays = new Set((f.weekdays || []).map(Number))
   const selectedStartTimes = normalizeScheduleStartTimes(f.startTimes)
   const assignmentLocked = Boolean(f.id && Number(f.bookedCount || 0) > 0)
+  const previewDates = !f.id ? scheduleDatesFromWeekdays(f.weekdays, f.repeatWeeks) : []
+  const previewDateSet = new Set(previewDates)
+  const previewTimeSet = new Set(selectedStartTimes)
+  const existingPreviewSlots = !f.id
+    ? (h.schedulePreviewSlots || []).filter((slot) => previewDateSet.has(slot.date) && previewTimeSet.has(slot.startTime))
+    : []
   useEffect(() => {
     if (f.category && f.institutionId && !categories.includes(f.category)) {
       h.updateForm('schedule', { category: '' })
     }
   }, [f.institutionId, f.category, categories.join('|')])
+  useEffect(() => {
+    if (!open || f.id || !f.doctorId || !f.institutionId) return
+    const previewRange = schedulePreviewRange(f.repeatWeeks)
+    h.loadSchedulePreviewSlots({
+      doctorId: f.doctorId,
+      institutionId: f.institutionId,
+      fromDate: previewRange.fromDate,
+      toDate: previewRange.toDate,
+      pageSize: 500,
+    }).catch((e) => h.notify('error', e.message))
+  }, [open, f.id, f.doctorId, f.institutionId, f.repeatWeeks])
   const toggleWeekday = (value) => {
     const next = new Set((f.weekdays || []).map(Number))
     if (next.has(value)) next.delete(value)
@@ -433,6 +450,22 @@ function SchedulePanel({ h }) {
         {!f.id && <Field label="重复周数"><Select value={f.repeatWeeks} onChange={(e) => h.updateForm('schedule', { repeatWeeks: Number(e.target.value) })}><option value={1}>1 周</option><option value={2}>2 周</option><option value={4}>4 周</option><option value={8}>8 周</option></Select></Field>}
         <Field label="星期" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-weekday-grid">{scheduleWeekdays.map((day) => <label key={day.value} className={`package-item-option schedule-option ${selectedWeekdays.has(day.value) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedWeekdays.has(day.value)} onChange={() => f.id ? selectEditWeekday(day.value) : toggleWeekday(day.value)} /><strong>{day.label}</strong><small>{f.id ? '本周' : '重复'}</small></label>)}</div></Field>
         <Field label="时间段" className="schedule-wide-field"><div className="package-item-picker schedule-option-grid schedule-time-grid">{scheduleTimeOptions.map((time) => <label key={time.start} className={`package-item-option schedule-option ${selectedStartTimes.includes(time.start) ? 'is-checked' : ''} ${assignmentLocked ? 'is-disabled' : ''}`}><input type="checkbox" disabled={assignmentLocked} checked={selectedStartTimes.includes(time.start)} onChange={() => f.id ? selectEditTime(time.start) : toggleStartTime(time.start)} /><strong>{time.label}</strong></label>)}</div></Field>
+        {!f.id && f.doctorId && f.institutionId && <div className="schedule-wide-field">
+          {h.loading.schedulePreviewSlots && <p className="muted schedule-lock-note">正在检查该医生未来排班...</p>}
+          {!h.loading.schedulePreviewSlots && existingPreviewSlots.length > 0 && (
+            <div className="schedule-existing-list">
+              <p className="muted schedule-lock-note">以下组合已存在号源，可直接编辑：</p>
+              <div className="package-item-picker schedule-option-grid">
+                {existingPreviewSlots.map((slot) => (
+                  <button key={slot.id} type="button" className="package-item-option schedule-option is-checked schedule-existing-button" onClick={() => openEdit(slot)}>
+                    <strong>{formatDate(slot.date)} {slot.startTime}-{slot.endTime}</strong>
+                    <small>{slot.doctor?.name || '医生'} · {slot.category || '未分类'}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>}
         {assignmentLocked && <p className="muted schedule-lock-note">该号源已有预约，医生、机构、星期、时间段和容量已锁定，只能调整状态或分类。</p>}
         <Field label="容量"><TextInput type="number" min="1" value={f.capacity} disabled={assignmentLocked} onChange={(e) => h.updateForm('schedule', { capacity: e.target.value })} /></Field>
         <Field label="状态"><Select value={f.status} onChange={(e) => h.updateForm('schedule', { status: e.target.value })}><option value="available">可预约</option><option value="disabled">停用</option></Select></Field>
@@ -460,4 +493,25 @@ function institutionPackageCategoryOptions(institution, packages) {
 function normalizeScheduleStartTimes(value) {
   if (Array.isArray(value)) return value
   return String(value || '').split(/[\n,，\s]+/).map((item) => item.trim()).filter(Boolean)
+}
+
+function schedulePreviewRange(repeatWeeks) {
+  const today = new Date()
+  const end = new Date(today)
+  end.setDate(today.getDate() + Math.min(Math.max(Number(repeatWeeks || 2), 1), 8) * 7 - 1)
+  return { fromDate: formatDate(today), toDate: formatDate(end) }
+}
+
+function scheduleDatesFromWeekdays(weekdays, repeatWeeks) {
+  const selected = new Set((weekdays || []).map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
+  if (!selected.size) return []
+  const weeks = Math.min(Math.max(Number(repeatWeeks || 2), 1), 8)
+  const dates = []
+  const today = new Date()
+  for (let offset = 0; offset < weeks * 7; offset += 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() + offset)
+    if (selected.has(date.getDay())) dates.push(formatDate(date))
+  }
+  return dates
 }
