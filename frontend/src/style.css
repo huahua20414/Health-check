@@ -692,6 +692,8 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid currentColor;
   font-size: 12px;
   font-weight: 760;
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
 .tag-success { color: var(--success-text); background: var(--soft-green); }
 .tag-info, .tag-muted { color: var(--muted); background: var(--tag-muted-bg); }

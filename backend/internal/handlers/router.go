@@ -1742,7 +1742,7 @@ func (h *Handler) scheduleSlotsQuery(c *gin.Context) *gorm.DB {
 		Preload("Institution").
 		Joins("LEFT JOIN users doctor_filter ON doctor_filter.id = schedule_slots.doctor_id").
 		Joins("LEFT JOIN checkup_institutions institution_filter ON institution_filter.id = schedule_slots.institution_id").
-		Order("schedule_slots.date asc, schedule_slots.start_time asc, schedule_slots.doctor_id asc")
+		Order("schedule_slots.id desc")
 	if doctorID := c.Query("doctorId"); doctorID != "" {
 		query = query.Where("schedule_slots.doctor_id = ?", doctorID)
 	}
