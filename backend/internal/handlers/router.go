@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"health-checkup/backend/internal/aiassist"
 	"health-checkup/backend/internal/auth"
 	"health-checkup/backend/internal/config"
 	"health-checkup/backend/internal/mail"
@@ -34,10 +35,11 @@ type Handler struct {
 	redis  *redis.Client
 	config config.Config
 	mailer mail.Sender
+	ai     *aiassist.Service
 }
 
 func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.Engine {
-	handler := &Handler{db: db, redis: redisClient, config: cfg, mailer: mail.NewSender(cfg)}
+	handler := &Handler{db: db, redis: redisClient, config: cfg, mailer: mail.NewSender(cfg), ai: aiassist.New(cfg, db)}
 	router := gin.New()
 	router.Use(gin.Logger(), middleware.RequestID(), middleware.UnifiedJSONResponse(), middleware.Recovery())
 	router.Use(cors.Default())
@@ -64,6 +66,7 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 	protected.Use(handler.authRequired())
 	protected.POST("/auth/logout", handler.logout)
 	protected.GET("/auth/me", handler.me)
+	protected.POST("/ai/chat", handler.aiChat)
 	protected.PATCH("/profile", handler.updateProfile)
 	protected.POST("/profile/email-code", handler.sendEmailCode)
 	protected.PATCH("/profile/email", handler.updateEmail)
@@ -171,6 +174,24 @@ func NewRouter(db *gorm.DB, redisClient *redis.Client, cfg config.Config) *gin.E
 
 func (h *Handler) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handler) aiChat(c *gin.Context) {
+	var req aiChatRequest
+	if !bind(c, &req) {
+		return
+	}
+	if h.ai == nil || !h.ai.Enabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 助手当前未启用"})
+		return
+	}
+	current := currentUser(c)
+	result, err := h.ai.Chat(c.Request.Context(), current.Role, req.Question)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *Handler) sendAuthEmailCode(c *gin.Context) {
@@ -5625,6 +5646,10 @@ type familyMemberRequest struct {
 	Gender   string `json:"gender"`
 	IDCard   string `json:"idCard"`
 	Phone    string `json:"phone"`
+}
+
+type aiChatRequest struct {
+	Question string `json:"question" binding:"required"`
 }
 
 func normalizeStatus(value, fallback string) string {

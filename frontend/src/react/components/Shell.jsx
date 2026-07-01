@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronDown, ChevronRight, ClipboardList, Database, FileText, Home, LogOut, Megaphone, Moon, RefreshCcw, Settings, ShieldCheck, Sun, User, Users } from 'lucide-react'
+import { Bell, Bot, Calendar, ChevronDown, ChevronRight, ClipboardList, Database, FileText, Home, LogOut, Megaphone, Moon, RefreshCcw, Settings, ShieldCheck, Sun, User, Users } from 'lucide-react'
 import { Button } from './UI.jsx'
 import { useHealth } from '../HealthContext.jsx'
 
-const iconMap = { Home, Database, Calendar, ClipboardList, FileText, User, Users, Bell, ShieldCheck, Megaphone, Settings }
+const iconMap = { Home, Database, Calendar, ClipboardList, FileText, User, Users, Bell, ShieldCheck, Megaphone, Settings, Bot }
 
 export const menuItems = [
   { path: '/', label: '工作台', icon: 'Home', roles: ['user'] },
@@ -21,6 +21,7 @@ export const menuItems = [
     { path: '/family-members', label: '家庭成员', icon: 'Users', roles: ['user'] },
     { path: '/notifications', label: '消息与客服', icon: 'Bell', roles: ['user'] },
   ] },
+  { path: '/ai-assistant', label: 'AI 助手', icon: 'Bot', roles: ['user', 'doctor', 'admin'] },
   { path: '/doctor', label: '医生工作台', icon: 'Home', roles: ['doctor'] },
   { label: '体检业务', icon: 'ClipboardList', roles: ['doctor'], children: [
     { path: '/doctor/schedule', label: '我的排班', icon: 'Calendar', roles: ['doctor'] },

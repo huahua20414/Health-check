@@ -1,0 +1,13 @@
+# 本文件配置 GoFrame CLI 的本地开发参数，例如 DAO 生成和 Docker 构建选项。
+# CLI tool, only in development environment.
+# https://goframe.org/docs/cli
+gfcli:
+  gen:
+    dao:
+      - link: "mysql:root:12345678@tcp(127.0.0.1:3306)/test"
+        descriptionTag: true
+
+  docker:
+    build: "-a amd64 -s linux -p temp -ew"
+    tagPrefixes:
+      - my.image.pub/my-app

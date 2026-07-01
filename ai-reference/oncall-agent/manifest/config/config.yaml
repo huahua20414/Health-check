@@ -1,0 +1,65 @@
+# 本文件是后端服务的主配置，包含 HTTP 服务、模型参数和知识库路径等运行项。
+# https://goframe.org/docs/web/server-config-file-template
+# google:<redacted>
+# 火山:<redacted>
+# 阿里:<redacted>
+
+#curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent" \
+#  -H 'Content-Type: application/json' \
+#  -H 'X-goog-api-key: <redacted>' \
+#  -X POST \
+#  -d '{
+#    "contents": [
+#      {
+#        "parts": [
+#          {
+#            "text": "Explain how AI works in a few words"
+#          }
+#        ]
+#      }
+#    ]
+#  }'
+server:
+  address: ":8000"
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+
+# https://goframe.org/docs/core/glog-config
+logger:
+  level: "all"
+  stdout: true
+
+think_chat_model:
+  api_key: "<redacted>"
+  base_url: "https://generativelanguage.googleapis.com"
+  model: "gemini-3.1-flash-lite"
+
+quick_chat_model:
+  api_key: "<redacted>"
+  base_url: "https://generativelanguage.googleapis.com"
+  model: "gemini-3.1-flash-lite"
+#  model: "gemini-2.5-flash-lite"
+embedding_model:
+  api_key: "<redacted>"
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "text-embedding-v4"
+
+file_dir: "/Users/huahua/workspace/AI/oncall-agent/docs"
+
+grafana_alerts:
+  url: http://127.0.0.1:3000/api/alertmanager/grafana/api/v2/alerts
+  authorization: Bearer <redacted>
+
+memory_store:
+  dsn: "root:root@tcp(127.0.0.1:3307)/superbiz_memory?charset=utf8mb4&parseTime=True&loc=Local"
+  max_window_size: 6
+  max_summary_chars: 4000
+  max_fact_count: 12
+  semantic_recall_enabled: true
+  semantic_top_k: 4
+  semantic_collection: "memory_facts"
+
+knowledge_index:
+  chunk_size: 800
+  chunk_overlap: 120
+  min_chunk_size: 120

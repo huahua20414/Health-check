@@ -1,0 +1,29 @@
+# 本文件是知识库入库命令的运行配置，包含模型参数和本地服务配置。
+# https://goframe.org/docs/web/server-config-file-template
+server:
+  address: ":8000"
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+
+# https://goframe.org/docs/core/glog-config
+logger:
+  level: "all"
+  stdout: true
+
+think_chat_model:
+  api_key: "<redacted>"
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  model: "deepseek-v3-1-terminus"
+
+quick_chat_model:
+  api_key: "<redacted>"
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  model: "deepseek-v3-1-terminus"
+
+embedding_model:
+  api_key: "<redacted>"
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "text-embedding-v4"
+
+
+file_dir: "/你的路径/SuperBizAgent/internal/ai/cmd/knowledge_cmd/docs"

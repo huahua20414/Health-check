@@ -12,6 +12,7 @@ import { ReportsView } from './views/ReportsView.jsx'
 import { ProfileView } from './views/ProfileView.jsx'
 import { FamilyView } from './views/FamilyView.jsx'
 import { NotificationsView } from './views/NotificationsView.jsx'
+import { AIAssistantView } from './views/AIAssistantView.jsx'
 import { DoctorAppointmentsView, DoctorReportsView, DoctorScheduleView, PeopleView } from './views/DoctorViews.jsx'
 import { AdminDashboardView, AdminUsersView, DoctorReviewView, PackageManageView, ResourceManageView } from './views/AdminViews.jsx'
 import { AdminCommunicationView, AdminEngagementView, AdminSystemView } from './views/AdminExtraViews.jsx'
@@ -91,6 +92,7 @@ function AppRoutes() {
           <Route path="profile" element={<Guarded roles={['user']}><ProfileView /></Guarded>} />
           <Route path="family-members" element={<Guarded roles={['user']}><FamilyView /></Guarded>} />
           <Route path="notifications" element={<Guarded roles={['user']}><NotificationsView /></Guarded>} />
+          <Route path="ai-assistant" element={<Guarded roles={['user', 'doctor', 'admin']}><AIAssistantView /></Guarded>} />
           <Route path="doctor" element={<Guarded roles={['doctor']}><DashboardView /></Guarded>} />
           <Route path="doctor/schedule" element={<Guarded roles={['doctor']}><DoctorScheduleView /></Guarded>} />
           <Route path="appointments" element={<Guarded roles={['doctor']}><DoctorAppointmentsView /></Guarded>} />

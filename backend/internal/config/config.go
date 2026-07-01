@@ -14,6 +14,10 @@ type Config struct {
 	SMTPUser       string
 	SMTPPass       string
 	DevAuthEnabled bool
+	AIEnabled      bool
+	AIBaseURL      string
+	AIAPIKey       string
+	AIModel        string
 }
 
 func Load() Config {
@@ -29,6 +33,10 @@ func Load() Config {
 		SMTPUser:       getEnv("SMTP_USER", ""),
 		SMTPPass:       getEnv("SMTP_PASS", ""),
 		DevAuthEnabled: getEnv("DEV_AUTH_ENABLED", "false") == "true",
+		AIEnabled:      getEnv("AI_ENABLED", "true") == "true",
+		AIBaseURL:      getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
+		AIAPIKey:       getEnv("AI_API_KEY", ""),
+		AIModel:        getEnv("AI_MODEL", "gpt-4.1-mini"),
 	}
 }
 

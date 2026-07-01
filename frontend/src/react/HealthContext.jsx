@@ -61,7 +61,7 @@ const dataKeys = [
   'notifications', 'adminNotifications', 'supportTickets', 'adminSupportTickets', 'loginLogs', 'operationLogs',
   'rolePermissions', 'rolePermissionRows', 'permissionCodes', 'systemSettings', 'systemSettingRows', 'coupons',
   'activeCoupons', 'reviews', 'announcements', 'activeAnnouncements', 'checkupItems', 'checkupItemRows', 'packageItems',
-  'schedulePreviewSlots',
+  'schedulePreviewSlots', 'aiAnswer',
   'doctorUsers', 'pendingDoctorUsers', 'activeDoctors',
 ]
 
@@ -598,6 +598,11 @@ export function HealthProvider({ children }) {
     importFile: (path, file, key, after) => action(key, '导入完成', async () => { const formData = new FormData(); formData.append('file', file); await request(path, { method: 'POST', body: formData }); if (after) await after() }),
     downloadAppointment: (appointment) => downloadHTML(`appointment-${appointment.orderNo || appointment.id}.html`, documentHTML('体检预约订单', [['订单号', appointment.orderNo], ['客户', appointment.user?.name], ['机构', appointment.institution?.name], ['套餐', appointment.package?.name], ['日期', appointment.date], ['时段', `${appointment.startTime || ''}-${appointment.endTime || ''}`], ['支付状态', paymentStatusText(appointment.paymentStatus)], ['状态', statusText(appointment.status)]], '请按预约时间携带有效证件到检。')),
     downloadReport: (report) => downloadReportImage(`report-${report.reportNo || report.id}.png`, [['报告编号', report.reportNo], ['客户', report.user?.name], ['套餐', report.appointment?.package?.name], ['医生', report.doctor?.name], ['检查摘要', report.summary], ['体检结论', report.conclusion], ['健康建议', report.recommendation], ['报告时间', formatDate(report.createdAt)]], '本报告仅供健康管理参考。'),
+    askAI: (question) => action('aiAssistant', '', async () => {
+      const result = await request('/ai/chat', { method: 'POST', body: JSON.stringify({ question }) })
+      updateData({ aiAnswer: result })
+      return result
+    }),
   }), [action, data.favorites, data.schedulePreviewSlots, forms, loadAll, loaders, notify, role, saveUser, updateData, updateForm, resetForm])
 
   const derived = useMemo(() => {
