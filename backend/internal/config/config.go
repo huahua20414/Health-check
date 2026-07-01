@@ -15,9 +15,13 @@ type Config struct {
 	SMTPPass       string
 	DevAuthEnabled bool
 	AIEnabled      bool
-	AIBaseURL      string
-	AIAPIKey       string
-	AIModel        string
+	AIPrimaryProvider string
+	AIDeepSeekBaseURL string
+	AIDeepSeekAPIKey  string
+	AIDeepSeekModel   string
+	AIGeminiBaseURL   string
+	AIGeminiAPIKey    string
+	AIGeminiModel     string
 }
 
 func Load() Config {
@@ -34,9 +38,13 @@ func Load() Config {
 		SMTPPass:       getEnv("SMTP_PASS", ""),
 		DevAuthEnabled: getEnv("DEV_AUTH_ENABLED", "false") == "true",
 		AIEnabled:      getEnv("AI_ENABLED", "true") == "true",
-		AIBaseURL:      getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
-		AIAPIKey:       getEnv("AI_API_KEY", ""),
-		AIModel:        getEnv("AI_MODEL", "gpt-4.1-mini"),
+		AIPrimaryProvider: getEnv("AI_PRIMARY_PROVIDER", "deepseek"),
+		AIDeepSeekBaseURL: getEnv("AI_DEEPSEEK_BASE_URL", getEnv("AI_BASE_URL", "https://api.deepseek.com/v1")),
+		AIDeepSeekAPIKey:  getEnv("AI_DEEPSEEK_API_KEY", getEnv("AI_API_KEY", "")),
+		AIDeepSeekModel:   getEnv("AI_DEEPSEEK_MODEL", getEnv("AI_MODEL", "deepseek-chat")),
+		AIGeminiBaseURL:   getEnv("AI_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com"),
+		AIGeminiAPIKey:    getEnv("AI_GEMINI_API_KEY", ""),
+		AIGeminiModel:     getEnv("AI_GEMINI_MODEL", "gemini-2.0-flash"),
 	}
 }
 

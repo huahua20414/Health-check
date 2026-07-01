@@ -24,11 +24,11 @@ import (
 var embeddedKnowledgeFS embed.FS
 
 type Service struct {
-	cfg   config.Config
-	db    *gorm.DB
-	once  sync.Once
-	docs  []KnowledgeDoc
-	loadErr error
+	cfg        config.Config
+	db         *gorm.DB
+	once       sync.Once
+	docs       []KnowledgeDoc
+	loadErr    error
 	httpClient *http.Client
 }
 
@@ -73,6 +73,13 @@ type openAIResponse struct {
 	} `json:"error,omitempty"`
 }
 
+type providerConfig struct {
+	name      string
+	baseURL   string
+	apiKey    string
+	model     string
+}
+
 func New(cfg config.Config, db *gorm.DB) *Service {
 	return &Service{
 		cfg: cfg,
@@ -102,7 +109,8 @@ func (s *Service) Chat(ctx context.Context, role, question string) (ChatResult, 
 			Snippet: summarizeSnippet(doc.Content, question),
 		})
 	}
-	if s.cfg.AIAPIKey == "" || s.cfg.AIModel == "" {
+	providers := s.providerChain()
+	if len(providers) == 0 {
 		return ChatResult{
 			Answer:      fallbackAnswer(question, role, citations),
 			Citations:   citations,
@@ -111,21 +119,29 @@ func (s *Service) Chat(ctx context.Context, role, question string) (ChatResult, 
 			KnowledgeOn: true,
 		}, nil
 	}
-	answer, err := s.generateAnswer(ctx, role, question, citations)
-	if err != nil {
-		return ChatResult{
-			Answer:      fallbackAnswer(question, role, citations),
-			Citations:   citations,
-			Mode:        "retrieval_fallback",
-			UsedModel:   false,
-			KnowledgeOn: true,
-		}, nil
+	prompt := fmt.Sprintf("用户问题：%s\n\n可参考资料：\n%s", question, buildKnowledgeContext(citations))
+	var lastErr error
+	for _, provider := range providers {
+		answer, err := s.generateAnswer(ctx, role, provider, prompt)
+		if err == nil && strings.TrimSpace(answer) != "" {
+			return ChatResult{
+				Answer:      answer,
+				Citations:   citations,
+				Mode:        provider.name,
+				UsedModel:   true,
+				KnowledgeOn: true,
+			}, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("ai model returned empty answer")
 	}
 	return ChatResult{
-		Answer:      answer,
+		Answer:      fallbackAnswer(question, role, citations),
 		Citations:   citations,
-		Mode:        "rag_chat",
-		UsedModel:   true,
+		Mode:        "retrieval_fallback",
+		UsedModel:   false,
 		KnowledgeOn: true,
 	}, nil
 }
@@ -197,26 +213,25 @@ func (s *Service) loadKnowledge() error {
 	return s.loadErr
 }
 
-func (s *Service) generateAnswer(ctx context.Context, role, question string, citations []Citation) (string, error) {
-	knowledgeText := buildKnowledgeContext(citations)
+func (s *Service) generateAnswer(ctx context.Context, role string, provider providerConfig, prompt string) (string, error) {
 	body, err := json.Marshal(openAIRequest{
-		Model: s.cfg.AIModel,
+		Model: provider.model,
 		Messages: []openAIMessage{
 			{Role: "system", Content: systemPrompt(role)},
-			{Role: "user", Content: fmt.Sprintf("用户问题：%s\n\n可参考资料：\n%s", question, knowledgeText)},
+			{Role: "user", Content: prompt},
 		},
 		Temperature: 0.2,
 	})
 	if err != nil {
 		return "", err
 	}
-	url := strings.TrimRight(s.cfg.AIBaseURL, "/") + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	endpoint := strings.TrimRight(provider.baseURL, "/") + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+s.cfg.AIAPIKey)
+	req.Header.Set("Authorization", "Bearer "+provider.apiKey)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", err
@@ -240,6 +255,30 @@ func (s *Service) generateAnswer(ctx context.Context, role, question string, cit
 		return "", fmt.Errorf("ai model returned empty answer")
 	}
 	return answer, nil
+}
+
+func (s *Service) providerChain() []providerConfig {
+	providers := []providerConfig{}
+	primary := strings.ToLower(strings.TrimSpace(s.cfg.AIPrimaryProvider))
+	deepseek := providerConfig{name: "deepseek", baseURL: s.cfg.AIDeepSeekBaseURL, apiKey: s.cfg.AIDeepSeekAPIKey, model: s.cfg.AIDeepSeekModel}
+	gemini := providerConfig{name: "gemini", baseURL: s.cfg.AIGeminiBaseURL, apiKey: s.cfg.AIGeminiAPIKey, model: s.cfg.AIGeminiModel}
+	switch primary {
+	case "gemini":
+		providers = append(providers, gemini, deepseek)
+	default:
+		providers = append(providers, deepseek, gemini)
+	}
+	filtered := make([]providerConfig, 0, len(providers))
+	for _, provider := range providers {
+		if provider.ready() {
+			filtered = append(filtered, provider)
+		}
+	}
+	return filtered
+}
+
+func (p providerConfig) ready() bool {
+	return strings.TrimSpace(p.baseURL) != "" && strings.TrimSpace(p.apiKey) != "" && strings.TrimSpace(p.model) != ""
 }
 
 func systemPrompt(role string) string {
@@ -285,7 +324,7 @@ func fallbackAnswer(question, role string, citations []Citation) string {
 	for i, item := range citations {
 		builder.WriteString(fmt.Sprintf("\n%d. %s：%s", i+1, item.Title, item.Snippet))
 	}
-	builder.WriteString("\n\n如果你希望我给出更自然的总结，需要配置 `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`。")
+	builder.WriteString("\n\n如果你希望我给出更自然的总结，需要配置 DeepSeek 或 Gemini 的 API 参数。")
 	return builder.String()
 }
 
@@ -356,15 +395,16 @@ func summarizeSnippet(content, query string) string {
 	plain = strings.Join(strings.Fields(plain), " ")
 	terms := extractTerms(query)
 	bestIndex := 0
+	lowerPlain := strings.ToLower(plain)
 	for _, term := range terms {
-		if idx := strings.Index(strings.ToLower(plain), term); idx >= 0 {
+		if idx := strings.Index(lowerPlain, term); idx >= 0 {
 			bestIndex = idx
 			break
 		}
 	}
-	start := max(0, bestIndex-40)
-	end := min(len([]rune(plain)), start+140)
 	runes := []rune(plain)
+	start := max(0, bestIndex-40)
+	end := min(len(runes), start+140)
 	snippet := strings.TrimSpace(string(runes[start:end]))
 	if start > 0 {
 		snippet = "..." + snippet
